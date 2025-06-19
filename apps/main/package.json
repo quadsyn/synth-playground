@@ -1,0 +1,6 @@
+{
+  "name": "@synth-playground/main",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts"
+}

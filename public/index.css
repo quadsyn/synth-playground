@@ -1,0 +1,43 @@
+body {
+    max-width: 80ch;
+    font-family: sans-serif;
+    padding: 0 1em 1em 1em;
+    background-color: #1e1e1e;
+    color: #ffffff;
+}
+
+a {
+    color: #46adff;
+}
+
+a:visited {
+    color: #c5a4f4;
+}
+
+code {
+    background-color: #101010;
+    outline: 1px solid #050505;
+    padding: 0 .1em;
+}
+
+pre {
+    background-color: #101010;
+    outline: 1px solid #050505;
+    padding: .5em .5em;
+    white-space: pre-wrap;
+}
+
+pre code {
+    background-color: initial;
+    outline: initial;
+    padding: initial;
+}
+
+ul {
+    margin: 0;
+}
+
+hr {
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}

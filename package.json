@@ -1,0 +1,21 @@
+{
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build.js",
+    "build-dev": "node ./scripts/build.js --dev",
+    "build-fast": "node ./scripts/build.js --skip-type-checking",
+    "build-dev-fast": "node ./scripts/build.js --dev --skip-type-checking"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/audioworklet": "0.0.74",
+    "esbuild": "0.25.2",
+    "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "dockview-core": "4.2.5"
+  }
+}

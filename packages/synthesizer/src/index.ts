@@ -1,0 +1,377 @@
+import * as IITree from "@synth-playground/common/iitree.js";
+import { splitmix32 } from "@synth-playground/common/splitmix32.js";
+import { lerp } from "@synth-playground/common/math.js";
+import { LongId } from "@synth-playground/common/LongId.js";
+import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
+
+// Rule of thumb: keep strings and the like outside of here. The synthesizer
+// should mostly operate on numbers and lists of numbers. Code that deals with
+// strings usually involves allocation, which you don't want here, at least not
+// without care.
+// (yes, I know this allocates a lot currently. That will be dealt with.)
+
+// Generally, this code is working with plain objects and "free functions", as
+// that makes life simpler when passing data around between threads. If you pass
+// classes around, you need to handle the needed reattachment of prototypes, and
+// probably other weird details like that.
+//
+// Passing data around between threads is also why this uses IDs instead of
+// plain pointers/object references. Since we're copying, pointers are not
+// stable. This of course introduces issues around ID allocation and the like,
+// but it's manageable.
+//
+// The objects should always be constructed via their corresponding `make*`
+// functions, to keep object shapes consistent (from the perspective of the JS
+// engines).
+
+export interface Note {
+    // In pulses per quarter note.
+    start: number;
+    end: number;
+
+    // Not necessarily in semitones, depends on the song tuning.
+    pitch: number;
+
+    // For the "implicit interval tree" acceleration structure.
+    maxEnd: number;
+
+    // Internal ID. Don't serialize this.
+    idLo: number;
+    idHi: number;
+}
+
+export function makeNote(
+    start: number,
+    end: number,
+    pitch: number,
+    idLo: number,
+    idHi: number,
+): Note {
+    return {
+        start: start,
+        end: end,
+        pitch: pitch,
+        maxEnd: end,
+        idLo: idLo,
+        idHi: idHi,
+    };
+}
+
+export interface Song {
+    ppqn: number;
+    patternDuration: number; // In pulses per quarter note.
+    beatsPerBar: number;
+
+    maxPitch: number;
+
+    notes: Note[];
+
+    // For the "implicit interval tree" acceleration structure.
+    notesMaxLevel: number;
+}
+
+export function makeSong(): Song {
+    const ppqn: number = 24;
+    const beatsPerBar: number = 4;
+    const barCount: number = 1;
+    const pitchesPerOctave: number = 12;
+    const octaves: number = 9;
+    return {
+        ppqn: ppqn,
+        patternDuration: barCount * beatsPerBar * ppqn,
+        beatsPerBar: beatsPerBar,
+        maxPitch: pitchesPerOctave * octaves,
+        notes: [],
+        notesMaxLevel: -1,
+    };
+}
+
+export function addRandomNotesToSong(
+    song: Song,
+    seed: number,
+    idGenerator: LongId,
+): void {
+    song.patternDuration = (song.beatsPerBar * 2048) * song.ppqn;
+
+    const noteRng: () => number = splitmix32(seed);
+    const noteMinStart: number = 0;
+    const noteMaxStart: number = song.patternDuration;
+    const noteMinDuration: number = 1;
+    const noteMaxDuration: number = song.ppqn;
+
+    for (let i: number = 0; i < 100_000; i++) {
+        const duration: number = lerp(noteRng(), noteMinDuration, noteMaxDuration) | 0;
+        const start: number = lerp(noteRng(), noteMinStart, noteMaxStart - duration) | 0;
+        const end: number = start + duration;
+        const pitch: number = lerp(noteRng(), 40, song.maxPitch - 1) | 0;
+        song.notes.push(makeNote(start, end, pitch, idGenerator.lo, idGenerator.hi));
+        idGenerator.increment();
+    }
+
+    reindexNotesInSong(song);
+}
+
+export function addExampleNotesToSong(song: Song, idGenerator: LongId): void {
+    for (let i: number = 0; i < song.ppqn; i++) {
+        const duration: number = i + 1;
+        const start: number = i;
+        const end: number = start + duration;
+        const pitch: number = 12 * 4 + i;
+        song.notes.push(makeNote(start, end, pitch, idGenerator.lo, idGenerator.hi));
+        idGenerator.increment();
+    }
+
+    reindexNotesInSong(song);
+}
+
+export function reindexNotesInSong(song: Song): void {
+    // console.time("note sort");
+    song.notes.sort(IITree.byStartAscending);
+    // console.timeEnd("note sort");
+    // console.time("note indexing");
+    song.notesMaxLevel = IITree.performIndexing(song.notes);
+    // console.timeEnd("note indexing");
+}
+
+class Tone {
+    public note: Note;
+    public phase: number;
+    public phaseDelta: number;
+    public volume: number;
+    public volumeDelta: number;
+
+    constructor(note: Note, phaseDelta: number) {
+        this.note = note;
+        this.phase = 0;
+        this.phaseDelta = phaseDelta;
+        this.volume = 1;
+        this.volumeDelta = 0;
+    }
+}
+
+export function pitchToFrequency(pitch: number): number {
+    const referencePitch: number = 69.0;
+    const referenceFrequency: number = 440.0;
+    return referenceFrequency * Math.pow(2.0, (pitch - referencePitch) / 12.0);
+}
+
+export class Synthesizer {
+    public samplesPerSecond: number;
+    public song: Song;
+    public playing: boolean;
+    public tick: number;
+    // @TODO: Hacky. I guess the cleaner thing is to also free tones if
+    // necessary after generating a tick, as BeepBox does.
+    public wrappedAround: boolean;
+    public tickSampleCountdown: number;
+    public samplesPerTick: number;
+    // @TODO: Use a deque-backed pool of `Tone`s.
+    public activeTones: Tone[];
+    public activeTonesByNoteId: Uint64ToUint32Table.Type;
+
+    constructor(samplesPerSecond: number) {
+        this.samplesPerSecond = samplesPerSecond;
+        this.song = makeSong();
+        this.playing = false;
+        this.tick = -1;
+        this.wrappedAround = false;
+        this.samplesPerTick = Math.ceil(this.getSamplesPerTick()); // @TODO: Not sure if this should always be rounded.
+        this.tickSampleCountdown = this.samplesPerTick;
+        this.activeTones = [];
+        this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
+    }
+
+    public loadSong(song: Song): void {
+        this.song = song;
+        // this.tick = -1;
+        // this.wrappedAround = false;
+        // this.samplesPerTick = Math.ceil(this.getSamplesPerTick());
+        // this.tickSampleCountdown = this.samplesPerTick;
+        // this.activeTones = [];
+    }
+
+    public stop(): void {
+        this.playing = false;
+        this.tick = -1;
+        this.wrappedAround = false;
+        this.tickSampleCountdown = 0;
+        this.activeTones = [];
+        Uint64ToUint32Table.clear(this.activeTonesByNoteId);
+    }
+
+    private getSamplesPerTick(): number {
+        const beatsPerMinute: number = 120; // This is really quarter notes per minute, but whatever.
+        const secondsPerBeat: number = 60 / beatsPerMinute;
+        const ticksPerBeat: number = this.song.ppqn;
+        const secondsPerTick: number = secondsPerBeat / ticksPerBeat;
+        const samplesPerTick: number = this.samplesPerSecond * secondsPerTick;
+        return samplesPerTick;
+    }
+
+    private _determineActiveTones(): void {
+        // @TODO: Inline findOverlapping manually.
+        const activeTones: Tone[] = this.activeTones;
+        const activeTonesByNoteId: Uint64ToUint32Table.Type = this.activeTonesByNoteId;
+        const song: Song = this.song;
+        const tick: number = this.tick;
+        const samplesPerTick: number = this.samplesPerTick;
+        const samplesPerSecond: number = this.samplesPerSecond;
+        const secondsPerSample: number = 1 / samplesPerSecond;
+        IITree.findOverlapping(
+            song.notes,
+            song.notesMaxLevel,
+            tick,
+            tick + 1,
+            (note: Note, index: number) => {
+                const activeToneTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+                    activeTonesByNoteId,
+                    note.idLo,
+                    note.idHi,
+                );
+                if (activeToneTableIndex === -1) {
+                    if (tick >= note.start && tick < note.end) {
+                        // Note is supposed to be playing, but there's no active
+                        // tones associated with it (note on).
+                        const phaseDelta: number = pitchToFrequency(note.pitch) * secondsPerSample;
+                        const tone: Tone = new Tone(note, phaseDelta);
+                        const duration: number = note.end - note.start;
+                        tone.volumeDelta = (0 - 1) / (duration * samplesPerTick);
+                        Uint64ToUint32Table.set(
+                            activeTonesByNoteId,
+                            note.idLo,
+                            note.idHi,
+                            activeTones.length,
+                        );
+                        activeTones.push(tone);
+                    }
+                } else {
+                    const activeToneIndex: number = Uint64ToUint32Table.getValueFromIndex(
+                        activeTonesByNoteId,
+                        activeToneTableIndex,
+                    );
+                    const existing: Tone = activeTones[activeToneIndex];
+                    if (tick >= note.end || (this.wrappedAround && tick <= note.start)) {
+                        // Note is done (or playback wrapped around).
+                        existing.phaseDelta = 0;
+                        existing.volumeDelta = 0;
+                        existing.volume = 0;
+                    } else {
+                        const existingNote: Note = existing.note;
+                        const oldDuration: number = existingNote.end - existingNote.start;
+                        const newDuration: number = note.end - note.start;
+                        if (newDuration > oldDuration || newDuration < oldDuration) {
+                            // @TODO: This isn't correct but will do for now.
+                            // Restart playing note if it's longer or shorter.
+                            const newRemainingDuration: number = note.end - tick;
+                            const phaseDelta: number = pitchToFrequency(note.pitch) * secondsPerSample;
+                            existing.phaseDelta = phaseDelta;
+                            existing.volumeDelta = (0 - 1) / (newRemainingDuration * samplesPerTick);
+                            existing.volume = 1;
+                        }
+                    }
+                    // Update reference.
+                    existing.note = note;
+                }
+            },
+        );
+        for (let i: number = activeTones.length - 1; i >= 0; i--) {
+            const tone: Tone = activeTones[i];
+            if (tick >= tone.note.end || (this.wrappedAround && tick <= tone.note.start)) {
+                const other: Tone = activeTones[activeTones.length - 1];
+                Uint64ToUint32Table.set(
+                    activeTonesByNoteId,
+                    other.note.idLo,
+                    other.note.idHi,
+                    i,
+                );
+                Uint64ToUint32Table.remove(
+                    activeTonesByNoteId,
+                    tone.note.idLo,
+                    tone.note.idHi,
+                );
+                activeTones[activeTones.length - 1] = tone;
+                activeTones[i] = other;
+                activeTones.pop();
+            }
+        }
+    }
+
+    public processBlock(
+        size: number,
+        outL: Float32Array,
+        outR: Float32Array,
+        playheadBuffer: Float32Array | null,
+        timeTakenBuffer: Float32Array |  null,
+    ): void {
+        // @TODO: This shouldn't really be costing me much (I hope...), but in
+        // case it is, add a way to only enable this for development builds.
+        const timeTakenStart: number = Date.now();
+
+        const songDurationInTicks: number = this.song.patternDuration;
+
+        let samplesRemaining: number = size;
+        let bufferIndex: number = 0;
+
+        while (samplesRemaining > 0) {
+            const runLength: number = Math.min(samplesRemaining, this.samplesPerTick);
+
+            if (this.tickSampleCountdown <= 0) {
+                this.tick++;
+                if (this.tick >= songDurationInTicks) {
+                    this.tick = 0;
+                    this.wrappedAround = true;
+                } else {
+                    this.wrappedAround = false;
+                }
+                this.tickSampleCountdown = this.samplesPerTick;
+                this._determineActiveTones();
+            }
+
+            const activeTones: Tone[] = this.activeTones;
+            const activeToneCount: number = activeTones.length;
+            for (let toneIndex: number = 0; toneIndex < activeToneCount; toneIndex++) {
+                const tone: Tone = activeTones[toneIndex];
+
+                let phase: number = tone.phase;
+                let phaseDelta: number = tone.phaseDelta;
+                let volume: number = tone.volume;
+                let volumeDelta: number = tone.volumeDelta;
+
+                // @TODO: Hacky. Should just make sure that we never reach a
+                // point where this is true elsewhere. But for now, when placing
+                // notes that end where the pattern ends, I was getting some
+                // noise at the end of the notes that indicated the volume was
+                // being flipped around, so.
+                if (volume > 0) {
+                    for (let i: number = 0; i < runLength; i++) {
+                        // @TODO: Use a lookup table instead of this.
+                        const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                        phase += phaseDelta;
+                        if (phase >= 1) phase -= 1;
+                        volume += volumeDelta;
+
+                        const outSampleL: number = outSample;
+                        const outSampleR: number = outSample;
+
+                        outL[bufferIndex + i] += outSampleL;
+                        outR[bufferIndex + i] += outSampleR;
+                    }
+                }
+
+                tone.phase = phase;
+                tone.phaseDelta = phaseDelta;
+                tone.volume = volume;
+                tone.volumeDelta = volumeDelta;
+            }
+
+            bufferIndex += runLength;
+            this.tickSampleCountdown -= runLength;
+            samplesRemaining -= runLength;
+        }
+
+        if (playheadBuffer != null) playheadBuffer.fill(this.tick);
+
+        const timeTakenEnd: number = Date.now();
+        if (timeTakenBuffer != null) timeTakenBuffer.fill(timeTakenEnd - timeTakenStart);
+    }
+}
