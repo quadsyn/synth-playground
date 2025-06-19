@@ -262,7 +262,7 @@
   - [ ] Piano roll
   - [ ] Timeline
 
-## UIScheduler
+## UIContext
 
 - [ ] Pass timestamp to render functions?
 - [ ] Add scheduling for "layout" (DOM reads) functions? Those would be executed
