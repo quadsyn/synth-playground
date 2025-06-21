@@ -14,12 +14,14 @@ export type StretchyScrollBarOnRenderOverlay = (
 
 export class StretchyScrollBar implements Component {
     public element: HTMLDivElement;
+    public size: number;
+    public handleSize: number;
     private _ui: UIContext;
     private _thumb: HTMLDivElement;
     private _thumbStartHandle: HTMLDivElement;
     private _thumbEndHandle: HTMLDivElement;
-    private _overlayCanvas: HTMLCanvasElement;
-    private _overlayContext: CanvasRenderingContext2D;
+    private _overlayCanvas: HTMLCanvasElement | null;
+    private _overlayContext: CanvasRenderingContext2D | null;
     private _width: number;
     private _height: number;
     private _minThumbSize: number;
@@ -41,6 +43,8 @@ export class StretchyScrollBar implements Component {
     private _renderedThumbHeightStr: string | null;
     private _renderedThumbXStr: string | null;
     private _renderedThumbYStr: string | null;
+    private _renderedScrollBarWidth: number | null;
+    private _renderedScrollBarHeight: number | null;
 
     constructor(
         ui: UIContext,
@@ -71,19 +75,20 @@ export class StretchyScrollBar implements Component {
         this._renderedThumbHeightStr = null;
         this._renderedThumbXStr = null;
         this._renderedThumbYStr = null;
-
-        const handleSize: number = 10;
-        const containerSize: number = 20;
+        this._renderedScrollBarWidth = null;
+        this._renderedScrollBarHeight = null;
+        this.size = 20;
+        this.handleSize = 10;
 
         // Anything much smaller than this means we can't pan, only zoom.
         // The actual minimum for this is something slightly above 2, which is
         // annoyingly tiny if too close to 2.
-        this._minThumbSize = handleSize * 3;
+        this._minThumbSize = this.handleSize * 3;
 
         // These values don't really matter because they'll be overwritten as
         // our parent element is resized.
-        this._width  = this._vertical ? containerSize : 500;
-        this._height = this._vertical ? 500 : containerSize;
+        this._width  = this._vertical ? this.size : 500;
+        this._height = this._vertical ? 500 : this.size;
 
         const scrollBarSize: number = this._vertical ? this._height : this._width;
         const thumbSize: number = lerp(this._zoom, this._minThumbSize, scrollBarSize);
@@ -94,11 +99,11 @@ export class StretchyScrollBar implements Component {
         const thumbXStr: string = this._vertical ? "unset" : `${thumbPosition}px`;
         const thumbYStr: string = this._vertical ? `${thumbPosition}px` : "unset";
 
-        const containerWidthStr: string = this._vertical ? `${containerSize}px` : "100%";
-        const containerHeightStr: string = this._vertical ? "100%" : `${containerSize}px`;
+        const containerWidthStr: string = this._vertical ? `${this.size}px` : `${this._width}px`;
+        const containerHeightStr: string = this._vertical ? `${this._height}px` : `${this.size}px`;
 
-        const handleWidthStr: string = this._vertical ? "100%" : `${handleSize}px`;
-        const handleHeightStr: string = this._vertical ? `${handleSize}px` : "100%";
+        const handleWidthStr: string = this._vertical ? "100%" : `${this.handleSize}px`;
+        const handleHeightStr: string = this._vertical ? `${this.handleSize}px` : "100%";
         const startHandleXStr: string = this._vertical ? "unset" : "0";
         const startHandleYStr: string = this._vertical ? "0" : "unset";
         const endHandleXStr: string = this._vertical ? "unset" : "0";
@@ -140,21 +145,8 @@ export class StretchyScrollBar implements Component {
                 position: relative;
             `,
         }, this._thumbStartHandle, this._thumbEndHandle);
-        this._overlayCanvas = H("canvas", {
-            width: this._width + "",
-            height: this._height + "",
-            style: `
-                width: 100%;
-                height: 100%;
-                display: block;
-                box-sizing: border-box;
-                pointer-events: none;
-                left: 0;
-                top: 0;
-                position: absolute;
-            `,
-        });
-        this._overlayContext = this._overlayCanvas.getContext("2d")!;
+        this._overlayCanvas = null;
+        this._overlayContext = null;
         this.element = H("div", {
             class: "stretchy-scrollbar",
             style: `
@@ -162,8 +154,26 @@ export class StretchyScrollBar implements Component {
                 width: ${containerWidthStr};
                 height: ${containerHeightStr};
                 position: relative;
+                flex-shrink: 0;
             `,
-        }, this._thumb, this._overlayCanvas);
+        }, this._thumb);
+        if (this._onRenderOverlay != null) {
+            // Save a bit of memory.
+            this._overlayCanvas = H("canvas", {
+                width: this._width + "",
+                height: this._height + "",
+                style: `
+                    display: block;
+                    box-sizing: border-box;
+                    pointer-events: none;
+                    left: 0;
+                    top: 0;
+                    position: absolute;
+                `,
+            });
+            this._overlayContext = this._overlayCanvas.getContext("2d")!;
+            this.element.appendChild(this._overlayCanvas);
+        }
 
         this._thumb.addEventListener("dragstart", this._disableDragging);
         this._thumb.addEventListener("mousedown", this._onPointerDownForThumb);
@@ -438,15 +448,27 @@ export class StretchyScrollBar implements Component {
         }
 
         const scrollBarSize: number = this._vertical ? this._height : this._width;
-        const thumbSize: number = lerp(this._zoom, this._minThumbSize, scrollBarSize);
+        // @TODO: Hide or make handles smaller when scrollBarSize < minThumbSize?
+        const minThumbSize: number = Math.min(scrollBarSize, this._minThumbSize);
+        const thumbSize: number = lerp(this._zoom, minThumbSize, scrollBarSize);
         const thumbPosition: number = lerp(this._pan, 0, scrollBarSize - thumbSize);
 
+        const containerWidth: number = this._vertical ? this.size : scrollBarSize;
+        const containerHeight: number = this._vertical ? scrollBarSize : this.size;
         // @TODO: Avoid these string allocations...
         const thumbWidthStr: string = this._vertical ? "100%" : `${thumbSize}px`;
         const thumbHeightStr: string = this._vertical ? `${thumbSize}px` : "100%";
         const thumbXStr: string = this._vertical ? "unset" : `${thumbPosition}px`;
         const thumbYStr: string = this._vertical ? `${thumbPosition}px` : "unset";
 
+        if (this._renderedScrollBarWidth != containerWidth) {
+            this.element.style.width = `${containerWidth}px`;
+            this._renderedScrollBarWidth = containerWidth;
+        }
+        if (this._renderedScrollBarHeight != containerHeight) {
+            this.element.style.height = `${containerHeight}px`;
+            this._renderedScrollBarHeight = containerHeight;
+        }
         if (this._renderedThumbWidthStr != thumbWidthStr) {
             this._thumb.style.width = thumbWidthStr;
             this._renderedThumbWidthStr = thumbWidthStr;
@@ -467,8 +489,8 @@ export class StretchyScrollBar implements Component {
 
     private _renderOverlay(): void {
         this._onRenderOverlay?.(
-            this._overlayCanvas,
-            this._overlayContext,
+            this._overlayCanvas!,
+            this._overlayContext!,
             this._width,
             this._height,
         );

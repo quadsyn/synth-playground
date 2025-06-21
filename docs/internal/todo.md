@@ -29,6 +29,7 @@
   - Maybe use import attributes for the inline worker plugin instead?
 - How to best avoid including the Synthesizer code twice?
 - [ ] Development-only asserts?
+- [ ] Merge the dom and browser packages? Probably should merge into browser.
 
 # Audio
 
@@ -103,7 +104,7 @@
 
 ## Docking
 
-- [ ] Update to Dockview 4.3.1
+- [ ] Update to Dockview 4.4.0
 - [ ] Use only one `Panel` class? The React wrapper does something like that,
       should look at it more closely. Maybe one class per type of panel, like
       "modals" vs others.

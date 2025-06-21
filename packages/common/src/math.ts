@@ -31,15 +31,10 @@ export function isPowerOfTwo(x: number): boolean {
 }
 
 export function nextHighestPowerOfTwo(x: number): number {
-    // https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-    x--;
-    x |= x >> 1;
-    x |= x >> 2;
-    x |= x >> 4;
-    x |= x >> 8;
-    x |= x >> 16;
-    x++;
-    return x;
+    // Borrowed from https://github.com/johnnesky/beepbox/blob/4b10adb789e6917cc3db747bd6cf472331ec3c22/synth/synth.ts#L7734-L7736
+    // Equivalent to https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+    // with the tweak for x=0 added. This will also round up floats.
+    return (1 << (32 - Math.clz32(Math.ceil(x) - 1))) >>> 0;
 }
 
 export function rotateLeft32(x: number, n: number): number {

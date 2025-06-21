@@ -19,7 +19,6 @@ export class PianoRoll implements Component {
     private _timeScrollBar: StretchyScrollBar;
     private _pitchScrollBar: StretchyScrollBar;
     private _pitchScrollBarOverlayDirty: boolean;
-    private _scrollBarSpacer: HTMLDivElement;
     private _gridCanvas: HTMLCanvasElement;
     private _gridContext: CanvasRenderingContext2D;
     private _notesCanvas: HTMLCanvasElement;
@@ -155,14 +154,6 @@ export class PianoRoll implements Component {
             this._onPitchScrollBarChange,
             this._onPitchScrollBarRenderOverlay,
         );
-        this._scrollBarSpacer = H("div", {
-            style: `
-                width: 100%;
-                height: 20px;
-                flex-shrink: 0;
-                background-color: #000000;
-            `,
-        });
         this._gridCanvas = H("canvas", {
             width: "100",
             height: "100",
@@ -264,7 +255,6 @@ export class PianoRoll implements Component {
                 `,
             },
                 this._pitchScrollBar.element,
-                this._scrollBarSpacer,
              ),
         );
 
@@ -272,11 +262,6 @@ export class PianoRoll implements Component {
         window.addEventListener("mousemove", this._onPointerMove);
         window.addEventListener("mouseup", this._onPointerUp);
         this._canvasesContainer.addEventListener("dblclick", this._onDoubleClick);
-
-        // this._gridCanvas.width = this._gridCanvas.clientWidth;
-        // this._gridCanvas.height = this._gridCanvas.clientHeight;
-
-        // this.render();
     }
 
     public dispose(): void {
@@ -287,11 +272,17 @@ export class PianoRoll implements Component {
     }
 
     public resize(): void {
-        this._width = this._canvasesContainer.clientWidth;
-        this._height = this._canvasesContainer.clientHeight;
+        const pitchScrollBarSize: number = this._pitchScrollBar.size;
+        const timeScrollBarSize: number = this._timeScrollBar.size;
+        const gapW: number = pitchScrollBarSize;
+        const gapH: number = timeScrollBarSize;
+        const newWidth: number = this.element.clientWidth;
+        const newHeight: number = this.element.clientHeight;
 
-        this._timeScrollBar.resize(Math.min(this.element.clientWidth - 20, this._timeScrollBar.element.clientWidth), this._timeScrollBar.element.clientHeight);
-        this._pitchScrollBar.resize(this._pitchScrollBar.element.clientWidth, Math.min(this.element.clientHeight - 20, this._pitchScrollBar.element.clientHeight));
+        this._width = newWidth;
+        this._height = newHeight;
+        this._timeScrollBar.resize(newWidth - gapW, timeScrollBarSize);
+        this._pitchScrollBar.resize(pitchScrollBarSize, newHeight - gapH);
 
         this._renderedNotesDirty = true;
         this._renderedSelectionOverlayDirty = true;

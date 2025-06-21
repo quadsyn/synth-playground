@@ -20,6 +20,12 @@ import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64
 // stable. This of course introduces issues around ID allocation and the like,
 // but it's manageable.
 //
+// One might wonder why 64-bit IDs (split into two 32-bit parts). The reason is
+// that worrying about ID reuse complicates the code a bit further. With 64-bit
+// IDs, and reasonable use cases (i.e. not gimmicks like trying to use the
+// editor as a paint program), reuse should not be needed. Since this is all
+// internal, it could be changed in the future, to improve e.g. memory usage.
+//
 // The objects should always be constructed via their corresponding `make*`
 // functions, to keep object shapes consistent (from the perspective of the JS
 // engines).
@@ -59,11 +65,17 @@ export function makeNote(
 
 export interface Song {
     ppqn: number;
-    patternDuration: number; // In pulses per quarter note.
+
+    // In pulses per quarter note.
+    patternDuration: number;
+
     beatsPerBar: number;
 
+    // The minimum is 0, of course. This is an inclusive range.
+    // May be turned into a constant.
     maxPitch: number;
 
+    // Should remain sorted and indexed for playback.
     notes: Note[];
 
     // For the "implicit interval tree" acceleration structure.
@@ -160,9 +172,7 @@ export class Synthesizer {
     public song: Song;
     public playing: boolean;
     public tick: number;
-    // @TODO: Hacky. I guess the cleaner thing is to also free tones if
-    // necessary after generating a tick, as BeepBox does.
-    public wrappedAround: boolean;
+    public isAtStartOfTick: boolean;
     public tickSampleCountdown: number;
     public samplesPerTick: number;
     // @TODO: Use a deque-backed pool of `Tone`s.
@@ -174,9 +184,9 @@ export class Synthesizer {
         this.song = makeSong();
         this.playing = false;
         this.tick = -1;
-        this.wrappedAround = false;
+        this.isAtStartOfTick = false;
         this.samplesPerTick = Math.ceil(this.getSamplesPerTick()); // @TODO: Not sure if this should always be rounded.
-        this.tickSampleCountdown = this.samplesPerTick;
+        this.tickSampleCountdown = 0;
         this.activeTones = [];
         this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
     }
@@ -184,22 +194,22 @@ export class Synthesizer {
     public loadSong(song: Song): void {
         this.song = song;
         // this.tick = -1;
-        // this.wrappedAround = false;
+        // this.isAtStartOfTick = false;
         // this.samplesPerTick = Math.ceil(this.getSamplesPerTick());
-        // this.tickSampleCountdown = this.samplesPerTick;
+        // this.tickSampleCountdown = 0;
         // this.activeTones = [];
     }
 
     public stop(): void {
         this.playing = false;
         this.tick = -1;
-        this.wrappedAround = false;
+        this.isAtStartOfTick = false;
         this.tickSampleCountdown = 0;
         this.activeTones = [];
         Uint64ToUint32Table.clear(this.activeTonesByNoteId);
     }
 
-    private getSamplesPerTick(): number {
+    public getSamplesPerTick(): number {
         const beatsPerMinute: number = 120; // This is really quarter notes per minute, but whatever.
         const secondsPerBeat: number = 60 / beatsPerMinute;
         const ticksPerBeat: number = this.song.ppqn;
@@ -250,8 +260,8 @@ export class Synthesizer {
                         activeToneTableIndex,
                     );
                     const existing: Tone = activeTones[activeToneIndex];
-                    if (tick >= note.end || (this.wrappedAround && tick <= note.start)) {
-                        // Note is done (or playback wrapped around).
+                    if (tick >= note.end) {
+                        // Note is done.
                         existing.phaseDelta = 0;
                         existing.volumeDelta = 0;
                         existing.volume = 0;
@@ -276,7 +286,7 @@ export class Synthesizer {
         );
         for (let i: number = activeTones.length - 1; i >= 0; i--) {
             const tone: Tone = activeTones[i];
-            if (tick >= tone.note.end || (this.wrappedAround && tick <= tone.note.start)) {
+            if (tick >= tone.note.end) {
                 const other: Tone = activeTones[activeTones.length - 1];
                 Uint64ToUint32Table.set(
                     activeTonesByNoteId,
@@ -305,6 +315,9 @@ export class Synthesizer {
     ): void {
         // @TODO: This shouldn't really be costing me much (I hope...), but in
         // case it is, add a way to only enable this for development builds.
+        // Also what I really need is more precision than milliseconds (with
+        // 128-sample blocks, our deadline is ~3ms!), but that depends on this:
+        // https://github.com/WebAudio/web-audio-api/issues/2413
         const timeTakenStart: number = Date.now();
 
         const songDurationInTicks: number = this.song.patternDuration;
@@ -312,18 +325,19 @@ export class Synthesizer {
         let samplesRemaining: number = size;
         let bufferIndex: number = 0;
 
+        if (this.tickSampleCountdown <= 0) {
+            this.isAtStartOfTick = true;
+            this.tick++;
+            this.tickSampleCountdown += this.samplesPerTick;
+            if (this.tick >= songDurationInTicks) {
+                this.tick = 0;
+            }
+        }
+
         while (samplesRemaining > 0) {
             const runLength: number = Math.min(samplesRemaining, this.samplesPerTick);
 
-            if (this.tickSampleCountdown <= 0) {
-                this.tick++;
-                if (this.tick >= songDurationInTicks) {
-                    this.tick = 0;
-                    this.wrappedAround = true;
-                } else {
-                    this.wrappedAround = false;
-                }
-                this.tickSampleCountdown = this.samplesPerTick;
+            if (this.isAtStartOfTick) {
                 this._determineActiveTones();
             }
 
@@ -337,25 +351,18 @@ export class Synthesizer {
                 let volume: number = tone.volume;
                 let volumeDelta: number = tone.volumeDelta;
 
-                // @TODO: Hacky. Should just make sure that we never reach a
-                // point where this is true elsewhere. But for now, when placing
-                // notes that end where the pattern ends, I was getting some
-                // noise at the end of the notes that indicated the volume was
-                // being flipped around, so.
-                if (volume > 0) {
-                    for (let i: number = 0; i < runLength; i++) {
-                        // @TODO: Use a lookup table instead of this.
-                        const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
-                        phase += phaseDelta;
-                        if (phase >= 1) phase -= 1;
-                        volume += volumeDelta;
+                for (let i: number = 0; i < runLength; i++) {
+                    // @TODO: Use a lookup table instead of this.
+                    const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                    phase += phaseDelta;
+                    if (phase >= 1) phase -= 1;
+                    volume += volumeDelta;
 
-                        const outSampleL: number = outSample;
-                        const outSampleR: number = outSample;
+                    const outSampleL: number = outSample;
+                    const outSampleR: number = outSample;
 
-                        outL[bufferIndex + i] += outSampleL;
-                        outR[bufferIndex + i] += outSampleR;
-                    }
+                    outL[bufferIndex + i] += outSampleL;
+                    outR[bufferIndex + i] += outSampleR;
                 }
 
                 tone.phase = phase;
@@ -367,6 +374,48 @@ export class Synthesizer {
             bufferIndex += runLength;
             this.tickSampleCountdown -= runLength;
             samplesRemaining -= runLength;
+            this.isAtStartOfTick = false;
+
+            if (this.tickSampleCountdown <= 0) {
+                this.isAtStartOfTick = true;
+                this.tick++;
+                this.tickSampleCountdown += this.samplesPerTick;
+
+                // @TODO: I really need to look at voice allocation carefully.
+                // This does seem less hacky than trying to figure out when wrap
+                // around happens and use that in determineActiveTones (what I
+                // initially did here just to get things going), but having to
+                // defer wrapping around to after this seems fragile. It seems
+                // that BeepBox doesn't defer this, but rather, if a note is on
+                // its last tick, that's detected earlier, in the control-rate
+                // code (i.e. computeTone).
+                const activeTones: Tone[] = this.activeTones;
+                const activeTonesByNoteId: Uint64ToUint32Table.Type = this.activeTonesByNoteId;
+                for (let i: number = activeTones.length - 1; i >= 0; i--) {
+                    const tone: Tone = activeTones[i];
+                    if (this.tick >= tone.note.end) {
+                        const other: Tone = activeTones[activeTones.length - 1];
+                        Uint64ToUint32Table.set(
+                            activeTonesByNoteId,
+                            other.note.idLo,
+                            other.note.idHi,
+                            i,
+                        );
+                        Uint64ToUint32Table.remove(
+                            activeTonesByNoteId,
+                            tone.note.idLo,
+                            tone.note.idHi,
+                        );
+                        activeTones[activeTones.length - 1] = tone;
+                        activeTones[i] = other;
+                        activeTones.pop();
+                    }
+                }
+
+                if (this.tick >= songDurationInTicks) {
+                    this.tick = 0;
+                }
+            }
         }
 
         if (playheadBuffer != null) playheadBuffer.fill(this.tick);

@@ -29,7 +29,7 @@ import {
 
 // For now, bump this once changes are made, to effectively clear the saved
 // dockable panel layout.
-const SERIALIZED_DOCKVIEW_VERSION = 1;
+const SERIALIZED_DOCKVIEW_VERSION = 2;
 
 // @TODO: Generalize this properly. Probably by storing something in the panel
 // objects.

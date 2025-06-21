@@ -229,3 +229,5 @@ counter.render();
 - Also talk about these things, once they exist:
   - Helper functions for list reconciliation
   - System for animating things when the song is playing
+  - A consistent way to use Dockview (and potentially something else for mobile)
+  - Some consistent patterns for canvas-backed components
