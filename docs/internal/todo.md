@@ -66,6 +66,8 @@
       `handle*` randomly. The idea should be to use `handle*` for everything,
       and `on*` for callbacks given in the constructor of a component.
 - [ ] Order class fields for components consistently.
+- [ ] Once there's more code written, look at whether it will be okay to do
+      something like BeepBox's auto-render after browser events are fired.
 
 ## DOM
 
@@ -196,7 +198,9 @@
       fit.
 - [ ] Leave a gap after the end for the x axis? Allow x < 0?
 - [ ] Deal with this "tentative" note property business properly.
-- [ ] Piano
+- [x] Piano
+  - [ ] Map horizontal position to volume
+  - [ ] Generalize key colors
 - [ ] Coalesce fillRect calls? Examples:
   - Catapult's `FastRectRenderer`: <https://github.com/catapult-project/catapult/blob/99a1dc34979a66d97407dd7559735c4ad45cdd84/tracing/tracing/ui/base/fast_rect_renderer.html>
   - <https://github.com/loov/spector/tree/javascript>
@@ -222,9 +226,9 @@
   - Maybe I should just make this a concern of the parent.
 - [ ] Do something with the scroll wheel
   - Zoom? Pan? Gate one with a modifier key and do both?
-- [ ] Make sizes configurable
-  - [ ] Handle size
-  - [ ] Container size
+- [-] Make sizes configurable
+  - [-] Handle size
+  - [-] Container size
   - [ ] Minimum thumb size
 - [ ] Revise internal and public names
 - [ ] Arrow buttons?

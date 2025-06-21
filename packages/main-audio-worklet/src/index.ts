@@ -20,16 +20,22 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
                 this.synthesizer.loadSong(event.data["song"]);
             } break;
             case "play": {
-                this.synthesizer.playing = true;
+                this.synthesizer.play();
             } break;
             case "pause": {
-                this.synthesizer.playing = false;
+                this.synthesizer.pause();
             } break;
             case "stop": {
                 this.synthesizer.stop();
             } break;
             case "quit": {
                 this._quit = true;
+            } break;
+            case "playPianoNote": {
+                this.synthesizer.playPianoNote(event.data["pitch"]);
+            } break;
+            case "stopPianoNote": {
+                this.synthesizer.stopPianoNote(event.data["pitch"]);
             } break;
         }
     };
@@ -46,7 +52,7 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
         const playheadBuffer: Float32Array | null = outputCount > 1 ? outputs[1][0] : null;
         const timeTakenBuffer: Float32Array | null = outputCount > 2 ? outputs[2][0] : null;
         const blockSize: number = outL.length;
-        if (this.synthesizer.playing) {
+        if (this.synthesizer.playing || this.synthesizer.playingPianoNote) {
             this.synthesizer.processBlock(
                 blockSize,
                 outL,

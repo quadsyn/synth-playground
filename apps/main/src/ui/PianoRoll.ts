@@ -10,6 +10,327 @@ import {
     type Song,
 } from "@synth-playground/synthesizer/index.js";
 
+class TimeRuler implements Component {
+    public element: HTMLDivElement;
+    public size: number;
+    private _ui: UIContext;
+    private _canvas: HTMLCanvasElement;
+    private _context: CanvasRenderingContext2D;
+    private _width: number;
+    private _height: number;
+    private _viewportX0: number;
+    private _viewportX1: number;
+    private _renderedViewportX0: number | null;
+    private _renderedViewportX1: number | null;
+    private _ppqn: number;
+    private _renderedPpqn: number | null;
+
+    constructor(
+        ui: UIContext,
+        viewportX0: number,
+        viewportX1: number,
+        ppqn: number,
+    ) {
+        this._ui = ui;
+
+        this.size = 20;
+        this._width = 500;
+        this._height = this.size;
+
+        this._viewportX0 = viewportX0;
+        this._viewportX1 = viewportX1;
+        this._renderedViewportX0 = null;
+        this._renderedViewportX1 = null;
+        this._ppqn = ppqn;
+        this._renderedPpqn = null;
+
+        this._canvas = H("canvas", {
+            width: this._width + "",
+            height: this._height + "",
+            style: `
+                display: block;
+            `,
+        });
+        this._context = this._canvas.getContext("2d")!;
+        this.element = H("div", {
+            style: `
+            `,
+        }, this._canvas);
+    }
+
+    public dispose(): void {}
+
+    public render(): void {
+        const canvas: HTMLCanvasElement = this._canvas;
+        const context: CanvasRenderingContext2D = this._context;
+        const width: number = this._width;
+        const height: number = this._height;
+        const viewportX0: number = this._viewportX0;
+        const viewportX1: number = this._viewportX1;
+        const ppqn: number = this._ppqn;
+
+        let dirty: boolean = (
+            viewportX0 !== this._renderedViewportX0
+            || viewportX1 !== this._renderedViewportX1
+            || ppqn !== this._renderedPpqn
+        );
+
+        let cleared: boolean = false;
+
+        if (width !== canvas.width || height !== canvas.height) {
+            canvas.width = width;
+            canvas.height = height;
+            dirty = true;
+            cleared = true;
+        }
+
+        if (!dirty) return;
+
+        if (!cleared) context.clearRect(0, 0, width, height);
+
+        const viewportWidth: number = viewportX1 - viewportX0;
+        const pixelsPerTick: number = width / viewportWidth;
+
+        context.strokeStyle = "#ffffff";
+        context.lineWidth = 2;
+        let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqn) * ppqn);
+        while (worldX < this._viewportX1) {
+            const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
+            context.beginPath();
+            context.moveTo(screenX, 0);
+            context.lineTo(screenX, height);
+            context.stroke();
+            worldX += ppqn;
+        }
+
+        this._renderedViewportX0 = viewportX0;
+        this._renderedViewportX1 = viewportX1;
+        this._renderedPpqn = ppqn;
+    }
+
+    public resize(width: number): void {
+        this._width = width;
+
+        this._renderedViewportX0 = null;
+        this._renderedViewportX1 = null;
+
+        this._ui.scheduleMainRender();
+    }
+
+    public setViewport(x0: number, x1: number): void {
+        this._viewportX0 = x0;
+        this._viewportX1 = x1;
+    }
+
+    public setPpqn(ppqn: number): void {
+        this._ppqn = ppqn;
+    }
+}
+
+type PianoOnKeyDownCallback = (pitch: number) => void;
+type PianoOnKeyUpCallback = (pitch: number) => void;
+
+const keyColors: number[] = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
+
+class Piano implements Component {
+    public element: HTMLDivElement;
+    public size: number;
+    private _ui: UIContext;
+    private _maxPitch: number;
+    private _width: number;
+    private _height: number;
+    private _canvas: HTMLCanvasElement;
+    private _context: CanvasRenderingContext2D;
+    private _viewportY0: number;
+    private _viewportY1: number;
+    private _renderedViewportY0: number | null;
+    private _renderedViewportY1: number | null;
+    private _cursorPitch: number | null;
+    private _renderedCursorPitch: number | null;
+    private _pointerIsDown: boolean;
+    private _onKeyDown: PianoOnKeyDownCallback;
+    private _onKeyUp: PianoOnKeyUpCallback;
+
+    constructor(
+        ui: UIContext,
+        viewportY0: number,
+        viewportY1: number,
+        maxPitch: number,
+        onKeyDown: PianoOnKeyDownCallback,
+        onKeyUp: PianoOnKeyUpCallback,
+    ) {
+        this._ui = ui;
+
+        this._onKeyDown = onKeyDown;
+        this._onKeyUp = onKeyUp;
+
+        this.size = 50;
+        this._width = this.size;
+        this._height = 500;
+
+        this._maxPitch = maxPitch;
+
+        this._viewportY0 = viewportY0;
+        this._viewportY1 = viewportY1;
+        this._renderedViewportY0 = null;
+        this._renderedViewportY1 = null;
+
+        this._pointerIsDown = false;
+        this._cursorPitch = null;
+        this._renderedCursorPitch = null;
+
+        this._canvas = H("canvas", {
+            width: this._width + "",
+            height: this._height + "",
+            style: `
+                display: block;
+            `,
+        });
+        this._context = this._canvas.getContext("2d")!;
+        this.element = H("div", {
+            style: `
+                position: relative;
+            `,
+        }, this._canvas);
+
+        this.element.addEventListener("mousedown", this._onPointerDown);
+        window.addEventListener("mousemove", this._onPointerMove);
+        window.addEventListener("mouseup", this._onPointerUp);
+    }
+
+    public dispose(): void {
+        this.element.removeEventListener("mousedown", this._onPointerDown);
+        window.removeEventListener("mousemove", this._onPointerMove);
+        window.removeEventListener("mouseup", this._onPointerUp);
+    }
+
+    public render(): void {
+        const canvas: HTMLCanvasElement = this._canvas;
+        const context: CanvasRenderingContext2D = this._context;
+        const width: number = this._width;
+        const height: number = this._height;
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        // const maxPitch: number = this._maxPitch;
+        const cursorPitch: number | null = this._cursorPitch;
+
+        let dirty: boolean = (
+            viewportY0 !== this._renderedViewportY0
+            || viewportY1 !== this._renderedViewportY1
+            || cursorPitch !== this._renderedCursorPitch
+        );
+
+        let cleared: boolean = false;
+
+        if (width !== canvas.width || height !== canvas.height) {
+            canvas.width = width;
+            canvas.height = height;
+            dirty = true;
+            cleared = true;
+        }
+
+        if (!dirty) return;
+
+        if (!cleared) context.clearRect(0, 0, width, height);
+
+        let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
+        while (worldY < viewportY1) {
+            const screenY: number = remap(worldY, viewportY0, viewportY1, height, 0);
+            context.fillStyle = (
+                worldY === cursorPitch
+                ? "#17d15b"
+                : keyColors[worldY % 12] === 0
+                    ? "#a5a5a5"
+                    : "#232323"
+            );
+            const x: number = 0;
+            const w: number = width;
+            const h: number = screenY - remap(worldY + 1, viewportY0, viewportY1, height, 0);
+            const y: number = screenY - h;
+            context.fillRect(x, y, w, h);
+            context.strokeRect(x, y, w, h);
+            worldY++;
+        }
+
+        this._renderedViewportY0 = viewportY0;
+        this._renderedViewportY1 = viewportY1;
+        this._renderedCursorPitch = cursorPitch;
+    }
+
+    public resize(height: number): void {
+        this._height = height;
+
+        this._renderedViewportY0 = null;
+        this._renderedViewportY1 = null;
+
+        this._ui.scheduleMainRender();
+    }
+
+    public setViewport(y0: number, y1: number): void {
+        this._viewportY0 = y0;
+        this._viewportY1 = y1;
+    }
+
+    private _onPointerDown = (event: MouseEvent): void => {
+        const bounds: DOMRect = this.element.getBoundingClientRect();
+        // const width: number = bounds.width;
+        // const height: number = bounds.height;
+        const height: number = this._height;
+        // const mouseX: number = event.clientX - bounds.left;
+        const mouseY: number = event.clientY - bounds.top;
+
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const viewportHeight: number = viewportY1 - viewportY0;
+        const cursorPitch: number = clamp((
+            viewportY0 + remap(mouseY, height, 0, 0, viewportHeight)
+        ) | 0, 0, this._maxPitch);
+        if (this._cursorPitch !== cursorPitch) {
+            if (this._cursorPitch != null) this._onKeyUp(this._cursorPitch);
+            this._onKeyDown(cursorPitch);
+        }
+        this._cursorPitch = cursorPitch;
+
+        this._pointerIsDown = true;
+
+        this._ui.scheduleMainRender();
+    }
+
+    private _onPointerUp = (event: MouseEvent): void => {
+        if (this._cursorPitch != null) this._onKeyUp(this._cursorPitch);
+        this._cursorPitch = null;
+
+        this._pointerIsDown = false;
+
+        this._ui.scheduleMainRender();
+    }
+
+    private _onPointerMove = (event: MouseEvent): void => {
+        if (!this._pointerIsDown) return;
+
+        const bounds: DOMRect = this.element.getBoundingClientRect();
+        // const width: number = bounds.width;
+        // const height: number = bounds.height;
+        const height: number = this._height;
+        // const mouseX: number = event.clientX - bounds.left;
+        const mouseY: number = event.clientY - bounds.top;
+
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const viewportHeight: number = viewportY1 - viewportY0;
+        const cursorPitch: number = clamp((
+            viewportY0 + remap(mouseY, height, 0, 0, viewportHeight)
+        ) | 0, 0, this._maxPitch);
+
+        if (this._cursorPitch !== cursorPitch) {
+            if (this._cursorPitch != null) this._onKeyUp(this._cursorPitch);
+            this._onKeyDown(cursorPitch);
+        }
+
+        this._cursorPitch = cursorPitch;
+    }
+}
+
 export class PianoRoll implements Component {
     public element: HTMLDivElement;
     private _ui: UIContext;
@@ -28,6 +349,8 @@ export class PianoRoll implements Component {
     private _playheadOverlayCanvas: HTMLCanvasElement;
     private _playheadOverlayContext: CanvasRenderingContext2D;
     private _canvasesContainer: HTMLDivElement;
+    private _timeRuler: TimeRuler;
+    private _piano: Piano;
     private _viewportX0: number;
     private _viewportX1: number;
     private _viewportY0: number;
@@ -226,6 +549,20 @@ export class PianoRoll implements Component {
             this._selectionOverlayCanvas,
             this._playheadOverlayCanvas,
         );
+        this._timeRuler = new TimeRuler(
+            this._ui,
+            this._viewportX0,
+            this._viewportX1,
+            this._doc.song.ppqn,
+        );
+        this._piano = new Piano(
+            this._ui,
+            this._viewportY0,
+            this._viewportY1,
+            this._doc.song.maxPitch,
+            this._onPianoKeyDown,
+            this._onPianoKeyUp,
+        );
         this.element = H("div", {
             style: `
                 display: flex;
@@ -235,6 +572,7 @@ export class PianoRoll implements Component {
                 overflow: hidden;
             `,
         },
+            this._piano.element,
             H("div", {
                 style: `
                     display: flex;
@@ -243,10 +581,12 @@ export class PianoRoll implements Component {
                     height: 100%;
                 `,
             },
+                this._timeRuler.element,
                 this._canvasesContainer,
                 this._timeScrollBar.element,
             ),
             H("div", {
+                // @TODO: I need to set the width on this too.
                 style: `
                     display: flex;
                     flex-direction: column;
@@ -255,7 +595,7 @@ export class PianoRoll implements Component {
                 `,
             },
                 this._pitchScrollBar.element,
-             ),
+            ),
         );
 
         this._canvasesContainer.addEventListener("mousedown", this._onPointerDown);
@@ -265,6 +605,10 @@ export class PianoRoll implements Component {
     }
 
     public dispose(): void {
+        this._timeScrollBar.dispose();
+        this._pitchScrollBar.dispose();
+        this._timeRuler.dispose();
+        this._piano.dispose();
         this._canvasesContainer.removeEventListener("mousedown", this._onPointerDown);
         window.removeEventListener("mousemove", this._onPointerMove);
         window.removeEventListener("mouseup", this._onPointerUp);
@@ -274,15 +618,24 @@ export class PianoRoll implements Component {
     public resize(): void {
         const pitchScrollBarSize: number = this._pitchScrollBar.size;
         const timeScrollBarSize: number = this._timeScrollBar.size;
-        const gapW: number = pitchScrollBarSize;
-        const gapH: number = timeScrollBarSize;
+        const timeRulerSize: number = this._timeRuler.size;
+        const pianoSize: number = this._piano.size;
+        const rightGapW: number = pitchScrollBarSize;
+        const bottomRightGapH: number = timeScrollBarSize;
+        const topRightGapH: number = timeRulerSize;
         const newWidth: number = this.element.clientWidth;
         const newHeight: number = this.element.clientHeight;
 
-        this._width = newWidth;
+        // @TODO: I probably should really be driving this mostly from CSS.
+
+        this._width = newWidth - pianoSize - rightGapW;
         this._height = newHeight;
-        this._timeScrollBar.resize(newWidth - gapW, timeScrollBarSize);
-        this._pitchScrollBar.resize(pitchScrollBarSize, newHeight - gapH);
+        this._timeScrollBar.resize(newWidth - pianoSize - rightGapW, timeScrollBarSize);
+        this._pitchScrollBar.element.style.top = `${topRightGapH}px`;
+        this._pitchScrollBar.resize(pitchScrollBarSize, newHeight - bottomRightGapH - topRightGapH);
+        this._timeRuler.resize(newWidth - pianoSize - rightGapW);
+        this._piano.element.style.top = `${topRightGapH}px`;
+        this._piano.resize(newHeight - bottomRightGapH - topRightGapH);
 
         this._renderedNotesDirty = true;
         this._renderedSelectionOverlayDirty = true;
@@ -324,6 +677,11 @@ export class PianoRoll implements Component {
         this._renderPlayhead();
         this._pitchScrollBar.render();
         this._timeScrollBar.render();
+        this._timeRuler.setViewport(this._viewportX0, this._viewportX1);
+        this._timeRuler.setPpqn(this._doc.song.ppqn);
+        this._timeRuler.render();
+        this._piano.setViewport(this._viewportY0, this._viewportY1);
+        this._piano.render();
 
         this._renderedNotesDirty = false;
         this._renderedSelectionOverlayDirty = false;
@@ -1037,4 +1395,12 @@ export class PianoRoll implements Component {
             );
         }
     }
+
+    private _onPianoKeyDown = (pitch: number): void => {
+        this._doc.playPianoNote(pitch);
+    };
+
+    private _onPianoKeyUp = (pitch: number): void => {
+        this._doc.stopPianoNote(pitch);
+    };
 }

@@ -85,7 +85,7 @@ export interface Song {
 export function makeSong(): Song {
     const ppqn: number = 24;
     const beatsPerBar: number = 4;
-    const barCount: number = 1;
+    const barCount: number = 2;
     const pitchesPerOctave: number = 12;
     const octaves: number = 9;
     return {
@@ -178,31 +178,42 @@ export class Synthesizer {
     // @TODO: Use a deque-backed pool of `Tone`s.
     public activeTones: Tone[];
     public activeTonesByNoteId: Uint64ToUint32Table.Type;
+    public pianoNotePitch: number | null;
+    public pianoNotePhase: number;
+    public pianoNotePhaseDelta: number;
+    public playingPianoNote: boolean;
 
     constructor(samplesPerSecond: number) {
         this.samplesPerSecond = samplesPerSecond;
         this.song = makeSong();
         this.playing = false;
-        this.tick = -1;
+        this.tick = 0;
         this.isAtStartOfTick = false;
         this.samplesPerTick = Math.ceil(this.getSamplesPerTick()); // @TODO: Not sure if this should always be rounded.
         this.tickSampleCountdown = 0;
         this.activeTones = [];
         this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
+        this.pianoNotePitch = null;
+        this.pianoNotePhase = 0;
+        this.pianoNotePhaseDelta = 0;
+        this.playingPianoNote = false;
     }
 
     public loadSong(song: Song): void {
         this.song = song;
-        // this.tick = -1;
-        // this.isAtStartOfTick = false;
-        // this.samplesPerTick = Math.ceil(this.getSamplesPerTick());
-        // this.tickSampleCountdown = 0;
-        // this.activeTones = [];
+    }
+
+    public play(): void {
+        this.playing = true;
+    }
+
+    public pause(): void {
+        this.playing = false;
     }
 
     public stop(): void {
         this.playing = false;
-        this.tick = -1;
+        this.tick = 0;
         this.isAtStartOfTick = false;
         this.tickSampleCountdown = 0;
         this.activeTones = [];
@@ -325,18 +336,16 @@ export class Synthesizer {
         let samplesRemaining: number = size;
         let bufferIndex: number = 0;
 
+        if (this.playing)
         if (this.tickSampleCountdown <= 0) {
             this.isAtStartOfTick = true;
-            this.tick++;
-            this.tickSampleCountdown += this.samplesPerTick;
-            if (this.tick >= songDurationInTicks) {
-                this.tick = 0;
-            }
+            this.tickSampleCountdown = this.samplesPerTick;
         }
 
         while (samplesRemaining > 0) {
             const runLength: number = Math.min(samplesRemaining, this.samplesPerTick);
 
+            if (this.playing)
             if (this.isAtStartOfTick) {
                 this._determineActiveTones();
             }
@@ -352,7 +361,6 @@ export class Synthesizer {
                 let volumeDelta: number = tone.volumeDelta;
 
                 for (let i: number = 0; i < runLength; i++) {
-                    // @TODO: Use a lookup table instead of this.
                     const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
                     phase += phaseDelta;
                     if (phase >= 1) phase -= 1;
@@ -371,11 +379,33 @@ export class Synthesizer {
                 tone.volumeDelta = volumeDelta;
             }
 
-            bufferIndex += runLength;
-            this.tickSampleCountdown -= runLength;
-            samplesRemaining -= runLength;
-            this.isAtStartOfTick = false;
+            if (this.playingPianoNote) {
+                let phase: number = this.pianoNotePhase;
+                let phaseDelta: number = this.pianoNotePhaseDelta;
+                const volume: number = 1;
 
+                for (let i: number = 0; i < runLength; i++) {
+                    const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                    phase += phaseDelta;
+                    if (phase >= 1) phase -= 1;
+
+                    const outSampleL: number = outSample;
+                    const outSampleR: number = outSample;
+
+                    outL[bufferIndex + i] += outSampleL;
+                    outR[bufferIndex + i] += outSampleR;
+                }
+
+                this.pianoNotePhase = phase;
+                this.pianoNotePhaseDelta = phaseDelta;
+            }
+
+            bufferIndex += runLength;
+            if (this.playing) this.tickSampleCountdown -= runLength;
+            samplesRemaining -= runLength;
+            if (this.playing) this.isAtStartOfTick = false;
+
+            if (this.playing)
             if (this.tickSampleCountdown <= 0) {
                 this.isAtStartOfTick = true;
                 this.tick++;
@@ -418,9 +448,24 @@ export class Synthesizer {
             }
         }
 
+        if (this.playing)
         if (playheadBuffer != null) playheadBuffer.fill(this.tick);
 
         const timeTakenEnd: number = Date.now();
         if (timeTakenBuffer != null) timeTakenBuffer.fill(timeTakenEnd - timeTakenStart);
+    }
+
+    public playPianoNote(pitch: number): void {
+        this.pianoNotePitch = pitch;
+        this.pianoNotePhase = 0;
+        this.pianoNotePhaseDelta = pitchToFrequency(pitch) / this.samplesPerSecond;
+        this.playingPianoNote = true;
+    }
+
+    public stopPianoNote(pitch: number): void {
+        this.pianoNotePitch = null;
+        this.pianoNotePhase = 0;
+        this.pianoNotePhaseDelta = 0;
+        this.playingPianoNote = false;
     }
 }

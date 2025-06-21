@@ -311,11 +311,7 @@ export class SongDocument {
     public markSongAsDirty(): void {
         reindexNotesInSong(this.song);
 
-        if (
-            // Don't have to bother in these cases.
-            this.audioContext != null
-            && this.audioWorkletNode != null
-        ) {
+        if (this.audioContext != null && this.audioWorkletNode != null) {
             this.audioWorkletNode.port.postMessage({
                 type: "loadSong",
                 song: this.song,
@@ -324,5 +320,24 @@ export class SongDocument {
         }
 
         this.onSongChanged.notifyListeners();
+    }
+
+    public async playPianoNote(pitch: number): Promise<void> {
+        if (this.audioContext == null) await this.createAudioContext();
+        if (this.audioContext != null && this.audioWorkletNode != null) {
+            this.audioWorkletNode.port.postMessage({
+                type: "playPianoNote",
+                pitch: pitch,
+            });
+        }
+    }
+
+    public stopPianoNote(pitch: number): void {
+        if (this.audioContext != null && this.audioWorkletNode != null) {
+            this.audioWorkletNode.port.postMessage({
+                type: "stopPianoNote",
+                pitch: pitch,
+            });
+        }
     }
 }
