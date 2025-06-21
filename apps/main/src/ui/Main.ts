@@ -55,7 +55,7 @@ export class Main implements Component {
     private _dockview: DockviewApi;
     private _renderablePanels: IContentRenderer[];
     private _renderRequest: number;
-    private _animating: boolean;
+    private _animating: number;
 
     constructor(ui: UIContext, doc: SongDocument) {
         this._doc = doc;
@@ -63,12 +63,14 @@ export class Main implements Component {
         this._doc.onSongChanged.addListener(this._onSongChanged);
         this._doc.onStartedPlaying.addListener(this._onStartedPlaying);
         this._doc.onStoppedPlaying.addListener(this._onStoppedPlaying);
+        this._doc.onStartedPlayingPianoNote.addListener(this._onStartedPlayingPianoNote);
+        this._doc.onStoppedPlayingPianoNote.addListener(this._onStoppedPlayingPianoNote);
 
         this._ui = ui;
         this._mounted = false;
         this._renderablePanels = [];
         this._renderRequest = -1;
-        this._animating = false;
+        this._animating = 0;
 
         this._menuContainer = H("div", {
             style: `
@@ -514,24 +516,27 @@ export class Main implements Component {
     }
 
     private _startAnimating(): void {
-        if (this._animating) return;
-        this._animating = true;
-        cancelAnimationFrame(this._renderRequest);
-        this._renderRequest = requestAnimationFrame(this._animate);
+        this._animating++;
+        if (this._animating <= 1) {
+            cancelAnimationFrame(this._renderRequest);
+            this._renderRequest = requestAnimationFrame(this._animate);
+        }
     }
 
     private _stopAnimating(): void {
-        if (!this._animating) return;
-        this._animating = false;
-        cancelAnimationFrame(this._renderRequest);
-        this._ui.scheduleMainRender();
+        this._animating--;
+        if (this._animating <= 0) {
+            cancelAnimationFrame(this._renderRequest);
+            this._ui.scheduleMainRender();
+        }
     }
 
     private _animate = (timestamp: number): void => {
-        if (!this._animating) return;
+        if (this._animating <= 0) return;
         // If everything is "memoized", this should not increase the CPU usage
         // by much. Otherwise, we'll need a more specialized setup here, though
         // in the long run we should eventually add that anyway.
+        this._doc.advanceVisualizationsByOneFrame();
         this.render();
         this._renderRequest = requestAnimationFrame(this._animate);
     };
@@ -583,6 +588,14 @@ export class Main implements Component {
     };
 
     private _onStoppedPlaying = (): void => {
+        this._stopAnimating();
+    };
+
+    private _onStartedPlayingPianoNote = (): void => {
+        this._startAnimating();
+    };
+
+    private _onStoppedPlayingPianoNote = (): void => {
         this._stopAnimating();
     };
 }

@@ -17,7 +17,7 @@ class SpectrumAnalyzer implements Component {
     private _height: number;
     private _canvas: HTMLCanvasElement;
     private _context: CanvasRenderingContext2D;
-    private _renderedPlayhead: number | null;
+    private _renderedCounter: number | null;
 
     constructor(ui: UIContext, doc: SongDocument) {
         // this._ui = ui;
@@ -26,7 +26,7 @@ class SpectrumAnalyzer implements Component {
         this._width = 1;
         this._height = 1;
 
-        this._renderedPlayhead = null;
+        this._renderedCounter = null;
 
         this._canvas = H("canvas", {
             width: this._width + "",
@@ -59,9 +59,9 @@ class SpectrumAnalyzer implements Component {
         if (this._doc.outputAnalyserNode == null) return;
         const data: Float32Array | null = this._doc.getOutputFreqDomainData();
         if (data == null) return;
-        const playhead: number | null = this._doc.outputAnalyserFreqRenderedPlayhead;
-        if (playhead === this._renderedPlayhead) return;
-        this._renderedPlayhead = playhead;
+        const counter: number | null = this._doc.outputAnalyserFreqCounter;
+        if (counter === this._renderedCounter) return;
+        this._renderedCounter = counter;
         // const canvas: HTMLCanvasElement = this._canvas;
         const context: CanvasRenderingContext2D = this._context;
         const width: number = this._width;

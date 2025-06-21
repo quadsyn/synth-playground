@@ -42,22 +42,27 @@ export class SongDocument {
     public onSongChanged: Emitter;
     public onStartedPlaying: Emitter;
     public onStoppedPlaying: Emitter;
+    public onStartedPlayingPianoNote: Emitter;
+    public onStoppedPlayingPianoNote: Emitter;
     public playing: boolean;
+    public playingPianoNote: boolean;
     public audioContext: AudioContext | null;
     public samplesPerSecond: number;
     public fftSize: number;
+    public visualizationCounter: number;
     public outputAnalyserNode: AnalyserNode | null;
     public outputAnalyserBuffer: Float32Array | null;
     public outputAnalyserFreqBuffer: Float32Array | null;
-    public outputAnalyserFreqRenderedPlayhead: number | null;
-    public outputAnalyserTimeRenderedPlayhead: number | null;
+    public outputAnalyserFreqCounter: number | null;
+    public outputAnalyserTimeCounter: number | null;
     // @TODO: This is a total hack.
     // But it's easier than setting up SharedArrayBuffer!
     public playheadAnalyserNode: AnalyserNode | null;
     public playheadAnalyserBuffer: Float32Array | null;
-    public playheadAnalyserTimestamp: number;
+    public playheadAnalyserCounter: number | null;
     public timeTakenAnalyserNode: AnalyserNode | null;
     public timeTakenAnalyserBuffer: Float32Array | null;
+    public timeTakenAnalyserCounter: number | null;
     public audioWorkletNode: AudioWorkletNode | null;
     public sentSongForTheFirstTime: boolean;
 
@@ -74,24 +79,29 @@ export class SongDocument {
         this.onSongChanged = new Emitter();
         this.onStartedPlaying = new Emitter();
         this.onStoppedPlaying = new Emitter();
+        this.onStartedPlayingPianoNote = new Emitter();
+        this.onStoppedPlayingPianoNote = new Emitter();
 
         this.playing = false;
+        this.playingPianoNote = false;
 
         // @TODO: Formalize this value as the default for projects.
         this.samplesPerSecond = 48000;
 
         this.audioContext = null;
         this.fftSize = 2048;
+        this.visualizationCounter = 0;
         this.outputAnalyserNode = null;
         this.outputAnalyserBuffer = null;
         this.outputAnalyserFreqBuffer = null;
-        this.outputAnalyserFreqRenderedPlayhead = null;
-        this.outputAnalyserTimeRenderedPlayhead = null;
+        this.outputAnalyserFreqCounter = null;
+        this.outputAnalyserTimeCounter = null;
         this.playheadAnalyserNode = null;
         this.playheadAnalyserBuffer = null;
-        this.playheadAnalyserTimestamp = 0;
+        this.playheadAnalyserCounter = null;
         this.timeTakenAnalyserNode = null;
         this.timeTakenAnalyserBuffer = null;
+        this.timeTakenAnalyserCounter = null;
         this.audioWorkletNode = null;
         this.sentSongForTheFirstTime = false;
     }
@@ -123,8 +133,8 @@ export class SongDocument {
         if (this.outputAnalyserBuffer == null || this.outputAnalyserBuffer.length !== this.fftSize) {
             this.outputAnalyserBuffer = new Float32Array(this.fftSize);
             this.outputAnalyserFreqBuffer = new Float32Array(this.outputAnalyserNode.frequencyBinCount);
-            this.outputAnalyserFreqRenderedPlayhead = null;
-            this.outputAnalyserTimeRenderedPlayhead = null;
+            this.outputAnalyserFreqCounter = null;
+            this.outputAnalyserTimeCounter = null;
         }
         const dataFftSize: number = 32;
         this.playheadAnalyserNode = new AnalyserNode(
@@ -141,6 +151,7 @@ export class SongDocument {
         );
         if (this.playheadAnalyserBuffer == null || this.playheadAnalyserBuffer.length !== dataFftSize) {
             this.playheadAnalyserBuffer = new Float32Array(dataFftSize);
+            this.playheadAnalyserCounter = null;
         }
         this.timeTakenAnalyserNode = new AnalyserNode(
             this.audioContext,
@@ -156,6 +167,7 @@ export class SongDocument {
         );
         if (this.timeTakenAnalyserBuffer == null || this.timeTakenAnalyserBuffer.length !== dataFftSize) {
             this.timeTakenAnalyserBuffer = new Float32Array(dataFftSize);
+            this.timeTakenAnalyserCounter = null;
         }
         this.audioWorkletNode = new AudioWorkletNode(
             this.audioContext,
@@ -181,6 +193,8 @@ export class SongDocument {
         }
     }
 
+    // @TODO: Check what happens if this is called more than once before it
+    // finishes executing.
     public async startPlaying(): Promise<void> {
         if (this.audioContext == null) return;
         if (this.audioWorkletNode == null) return;
@@ -216,6 +230,8 @@ export class SongDocument {
         // including large things like samples. So that's not great.
         // this.audioWorkletNode = null;
 
+        // @TODO: Suspend the audio context?
+
         this.playing = false;
         this.onStoppedPlaying.notifyListeners();
     }
@@ -229,17 +245,20 @@ export class SongDocument {
         }
     }
 
+    public advanceVisualizationsByOneFrame(): void {
+        this.visualizationCounter++;
+    }
+
     public getOutputTimeDomainData(): Float32Array | null {
         if (this.audioContext == null) return null;
         if (this.audioWorkletNode == null) return null;
         if (this.outputAnalyserNode == null) return null;
-        if (!this.playing) return null;
+        if (!this.playing && !this.playingPianoNote) return null;
         const buffer: Float32Array | null = this.outputAnalyserBuffer;
         if (buffer == null) return null;
-        const playhead: number | null = this.getPlayheadInTicks();
-        if (playhead !== this.outputAnalyserTimeRenderedPlayhead) {
+        if (this.visualizationCounter !== this.outputAnalyserTimeCounter) {
             this.outputAnalyserNode.getFloatTimeDomainData(buffer);
-            this.outputAnalyserTimeRenderedPlayhead = playhead;
+            this.outputAnalyserTimeCounter = this.visualizationCounter;
         }
         return buffer;
     }
@@ -248,13 +267,12 @@ export class SongDocument {
         if (this.audioContext == null) return null;
         if (this.audioWorkletNode == null) return null;
         if (this.outputAnalyserNode == null) return null;
-        if (!this.playing) return null;
+        if (!this.playing && !this.playingPianoNote) return null;
         const buffer: Float32Array | null = this.outputAnalyserFreqBuffer;
         if (buffer == null) return null;
-        const playhead: number | null = this.getPlayheadInTicks();
-        if (playhead !== this.outputAnalyserFreqRenderedPlayhead) {
+        if (this.visualizationCounter !== this.outputAnalyserFreqCounter) {
             this.outputAnalyserNode.getFloatFrequencyData(buffer);
-            this.outputAnalyserFreqRenderedPlayhead = playhead;
+            this.outputAnalyserFreqCounter = this.visualizationCounter;
         }
         return buffer;
     }
@@ -266,14 +284,11 @@ export class SongDocument {
         if (!this.playing) return null;
         const buffer: Float32Array | null = this.playheadAnalyserBuffer;
         if (buffer == null) return null;
-        // @TODO: I have to introduce the animation system here even if just to
-        // throttle this kind of thing properly.
-        const currentTimestamp: number = performance.now();
-        const distance: number = currentTimestamp - this.playheadAnalyserTimestamp;
-        const milliseconds: number = 1000 / 60; // @TODO: Get actual refresh rate.
-        if (distance >= milliseconds) {
+        // @TODO: I don't think this is really the proper way to throttle this
+        // stuff but it will do for now.
+        if (this.visualizationCounter !== this.playheadAnalyserCounter) {
             this.playheadAnalyserNode.getFloatTimeDomainData(buffer);
-            this.playheadAnalyserTimestamp = currentTimestamp;
+            this.playheadAnalyserCounter = this.visualizationCounter;
         }
         return buffer[buffer.length - 1];
     }
@@ -282,10 +297,13 @@ export class SongDocument {
         if (this.audioContext == null) return 0.0;
         if (this.audioWorkletNode == null) return 0.0;
         if (this.timeTakenAnalyserNode == null) return 0.0;
-        if (!this.playing) return 0.0;
+        if (!this.playing && !this.playingPianoNote) return 0.0;
         const buffer: Float32Array | null = this.timeTakenAnalyserBuffer;
         if (buffer == null) return 0.0;
-        this.timeTakenAnalyserNode.getFloatTimeDomainData(buffer);
+        if (this.visualizationCounter !== this.timeTakenAnalyserCounter) {
+            this.timeTakenAnalyserNode.getFloatTimeDomainData(buffer);
+            this.timeTakenAnalyserCounter = this.visualizationCounter;
+        }
         const count: number = buffer.length;
         let max: number = 0.0;
         for (let index: number = 0; index < count; index++) {
@@ -330,6 +348,8 @@ export class SongDocument {
                 pitch: pitch,
             });
         }
+        this.playingPianoNote = true;
+        this.onStartedPlayingPianoNote.notifyListeners();
     }
 
     public stopPianoNote(pitch: number): void {
@@ -339,5 +359,7 @@ export class SongDocument {
                 pitch: pitch,
             });
         }
+        this.playingPianoNote = false;
+        this.onStoppedPlayingPianoNote.notifyListeners();
     }
 }

@@ -27,7 +27,7 @@ class Spectrogram implements Component {
     private _currentImage: ImageData | null;
     private _paletteSize: number;
     private _palette: Uint8ClampedArray;
-    private _renderedPlayhead: number | null;
+    private _renderedCounter: number | null;
 
     constructor(ui: UIContext, doc: SongDocument) {
         // this._ui = ui;
@@ -49,7 +49,7 @@ class Spectrogram implements Component {
             this._palette[i * 3 + 2] = b * 256;
         }
 
-        this._renderedPlayhead = null;
+        this._renderedCounter = null;
 
         this._canvas = H("canvas", {
             width: this._width + "",
@@ -88,9 +88,9 @@ class Spectrogram implements Component {
         if (this._doc.outputAnalyserNode == null) return;
         const data: Float32Array | null = this._doc.getOutputFreqDomainData();
         if (data == null) return;
-        const playhead: number | null = this._doc.outputAnalyserFreqRenderedPlayhead;
-        if (playhead === this._renderedPlayhead) return;
-        this._renderedPlayhead = playhead;
+        const counter: number | null = this._doc.outputAnalyserFreqCounter;
+        if (counter === this._renderedCounter) return;
+        this._renderedCounter = counter;
         const canvas: HTMLCanvasElement = this._canvas;
         const context: CanvasRenderingContext2D = this._context;
         const width: number = this._width;

@@ -585,17 +585,7 @@ export class PianoRoll implements Component {
                 this._canvasesContainer,
                 this._timeScrollBar.element,
             ),
-            H("div", {
-                // @TODO: I need to set the width on this too.
-                style: `
-                    display: flex;
-                    flex-direction: column;
-                    width: 20px;
-                    height: 100%;
-                `,
-            },
-                this._pitchScrollBar.element,
-            ),
+            this._pitchScrollBar.element,
         );
 
         this._canvasesContainer.addEventListener("mousedown", this._onPointerDown);
