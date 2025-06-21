@@ -24,12 +24,15 @@ class TimeRuler implements Component {
     private _renderedViewportX1: number | null;
     private _ppqn: number;
     private _renderedPpqn: number | null;
+    private _beatsPerBar: number;
+    private _renderedBeatsPerBar: number | null;
 
     constructor(
         ui: UIContext,
         viewportX0: number,
         viewportX1: number,
         ppqn: number,
+        beatsPerBar: number,
     ) {
         this._ui = ui;
 
@@ -43,6 +46,8 @@ class TimeRuler implements Component {
         this._renderedViewportX1 = null;
         this._ppqn = ppqn;
         this._renderedPpqn = null;
+        this._beatsPerBar = beatsPerBar;
+        this._renderedBeatsPerBar = null;
 
         this._canvas = H("canvas", {
             width: this._width + "",
@@ -68,11 +73,13 @@ class TimeRuler implements Component {
         const viewportX0: number = this._viewportX0;
         const viewportX1: number = this._viewportX1;
         const ppqn: number = this._ppqn;
+        const beatsPerBar: number = this._beatsPerBar;
 
         let dirty: boolean = (
             viewportX0 !== this._renderedViewportX0
             || viewportX1 !== this._renderedViewportX1
             || ppqn !== this._renderedPpqn
+            || beatsPerBar !== this._renderedBeatsPerBar
         );
 
         let cleared: boolean = false;
@@ -90,17 +97,54 @@ class TimeRuler implements Component {
 
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
+        const pixelsPerBeat: number = ppqn * pixelsPerTick;
+        let multiplier: number = 1;
+        while (
+            width > 0
+            && height > 0
+            && pixelsPerBeat * multiplier < 50
+        ) multiplier *= beatsPerBar;
 
+        const fontSize: number = 12;
+        context.font = "12px sans-serif";
+        context.textBaseline = "top";
+        context.fillStyle = "#ffffff";
         context.strokeStyle = "#ffffff";
-        context.lineWidth = 2;
-        let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqn) * ppqn);
-        while (worldX < this._viewportX1) {
-            const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
-            context.beginPath();
-            context.moveTo(screenX, 0);
-            context.lineTo(screenX, height);
-            context.stroke();
-            worldX += ppqn;
+        {
+            context.lineWidth = 2;
+            const ppqnScaled: number = (multiplier > 1 ? 1 : beatsPerBar) * ppqn * multiplier;
+            let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
+            while (worldX < this._viewportX1) {
+                const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
+                let beat: number = Math.floor(worldX / ppqn);
+                const bar: number = Math.floor(beat / beatsPerBar);
+                beat %= beatsPerBar;
+                context.beginPath();
+                context.moveTo(screenX, 0);
+                context.lineTo(screenX, height);
+                context.stroke();
+                context.fillText((bar + 1) + "", screenX + 5, height - fontSize);
+                worldX += ppqnScaled;
+            }
+        }
+        if (multiplier <= 1) {
+            context.lineWidth = 1;
+            const ppqnScaled: number = ppqn * multiplier;
+            let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
+            while (worldX < this._viewportX1) {
+                let beat: number = Math.floor(worldX / ppqn);
+                const bar: number = Math.floor(beat / beatsPerBar);
+                beat %= beatsPerBar;
+                if (beat > 0) {
+                    const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
+                    context.beginPath();
+                    context.moveTo(screenX, Math.min(10, height));
+                    context.lineTo(screenX, height);
+                    context.stroke();
+                    context.fillText((bar + 1) + "." + (beat + 1), screenX + 5, height - fontSize);
+                }
+                worldX += ppqnScaled;
+            }
         }
 
         this._renderedViewportX0 = viewportX0;
@@ -124,6 +168,10 @@ class TimeRuler implements Component {
 
     public setPpqn(ppqn: number): void {
         this._ppqn = ppqn;
+    }
+
+    public setBeatsPerBar(beatsPerBar: number): void {
+        this._beatsPerBar = beatsPerBar;
     }
 }
 
@@ -223,6 +271,7 @@ class Piano implements Component {
         let cleared: boolean = false;
 
         if (width !== canvas.width || height !== canvas.height) {
+            this.element.style.height = height + "px";
             canvas.width = width;
             canvas.height = height;
             dirty = true;
@@ -554,6 +603,7 @@ export class PianoRoll implements Component {
             this._viewportX0,
             this._viewportX1,
             this._doc.song.ppqn,
+            this._doc.song.beatsPerBar,
         );
         this._piano = new Piano(
             this._ui,
@@ -645,7 +695,7 @@ export class PianoRoll implements Component {
                 if (targetPlayhead < this._playhead) {
                     this._playhead = targetPlayhead;
                 } else {
-                    this._playhead += (targetPlayhead - this._playhead) * 0.6;
+                    this._playhead += (targetPlayhead - this._playhead) * 0.5;
                 }
             }
             this._playheadIsVisible = true;
@@ -669,6 +719,7 @@ export class PianoRoll implements Component {
         this._timeScrollBar.render();
         this._timeRuler.setViewport(this._viewportX0, this._viewportX1);
         this._timeRuler.setPpqn(this._doc.song.ppqn);
+        this._timeRuler.setBeatsPerBar(this._doc.song.beatsPerBar);
         this._timeRuler.render();
         this._piano.setViewport(this._viewportY0, this._viewportY1);
         this._piano.render();
@@ -704,7 +755,7 @@ export class PianoRoll implements Component {
 
         const song: Song = this._doc.song;
         const ppqn: number = song.ppqn;
-        // const beatsPerBar: number = song.beatsPerBar;
+        const beatsPerBar: number = song.beatsPerBar;
         const canvas: HTMLCanvasElement = this._gridCanvas;
         const context: CanvasRenderingContext2D = this._gridContext;
         const width: number = canvas.width;
@@ -716,24 +767,6 @@ export class PianoRoll implements Component {
         context.fillStyle = "#303030";
         context.fillRect(0, 0, width, height);
         context.strokeStyle = "#000000";
-        {
-            // Odd time grid cells.
-            let worldX: number = Math.max(0, Math.floor(this._viewportX0 / ppqn) * ppqn);
-            let isOdd: boolean = worldX % (ppqn * 2) === ppqn;
-            context.fillStyle = "rgba(0, 0, 0, 0.1)";
-            if (pixelsPerBeat >= 2) while (worldX < this._viewportX1) {
-                const screenX: number = (worldX - this._viewportX0) * pixelsPerTick;
-                if (isOdd) {
-                    const x: number = screenX;
-                    const w: number = pixelsPerTick * ppqn;
-                    const h: number = height;
-                    const y: number = 0;
-                    context.fillRect(x, y, w, h);
-                }
-                isOdd = !isOdd;
-                worldX += ppqn;
-            }
-        }
         {
             // Octaves.
             context.fillStyle = "#886644";
@@ -780,14 +813,22 @@ export class PianoRoll implements Component {
         }
         {
             // Time grid.
-            let worldX: number = Math.max(0, Math.floor(this._viewportX0 / ppqn) * ppqn);
-            if (pixelsPerBeat >= 5) while (worldX < this._viewportX1) {
+            // @TODO: Avoid this duplication
+            let multiplier: number = 1;
+            while (
+                width > 0
+                && height > 0
+                && pixelsPerBeat * multiplier < 50
+            ) multiplier *= beatsPerBar;
+            const ppqnScaled: number = ppqn * multiplier;
+            let worldX: number = Math.max(0, Math.floor(this._viewportX0 / ppqnScaled) * ppqnScaled);
+            while (worldX < this._viewportX1) {
                 const screenX: number = ((worldX - this._viewportX0) * pixelsPerTick) | 0;
                 context.beginPath();
                 context.moveTo(screenX, 0);
                 context.lineTo(screenX, height);
                 context.stroke();
-                worldX += ppqn;
+                worldX += ppqnScaled;
             }
         }
     }
@@ -1159,20 +1200,20 @@ export class PianoRoll implements Component {
             // @TODO: Skip committing if the note properties didn't change.
 
             const note: Note = this._doc.song.notes[this._selectedNoteIndex];
+            let newStart: number = note.start;
+            let newEnd: number = note.end;
+            let newPitch: number = note.pitch;
             if (this._movingStartOfNote) {
-                note.start = clamp(this._tentativeNoteStart, 0, this._doc.song.patternDuration - 1);
+                newStart = clamp(this._tentativeNoteStart, 0, this._doc.song.patternDuration - 1);
             } else if (this._movingEndOfNote) {
-                note.end = clamp(this._tentativeNoteEnd, 1, this._doc.song.patternDuration);
+                newEnd = clamp(this._tentativeNoteEnd, 1, this._doc.song.patternDuration);
             } else {
-                note.start = clamp(this._tentativeNoteStart, 0, this._doc.song.patternDuration - 1);
-                note.end = clamp(this._tentativeNoteEnd, 1, this._doc.song.patternDuration);
-                note.pitch = clamp(this._tentativeNotePitch, 0, this._doc.song.maxPitch);
+                newStart = clamp(this._tentativeNoteStart, 0, this._doc.song.patternDuration - 1);
+                newEnd = clamp(this._tentativeNoteEnd, 1, this._doc.song.patternDuration);
+                newPitch = clamp(this._tentativeNotePitch, 0, this._doc.song.maxPitch);
             }
-            this._lastCommittedSize = note.end - note.start;
-
-            // @TODO: Skip sorting if not needed. Reindexing is always necessary
-            // though, I think.
-            this._doc.markSongAsDirty();
+            this._lastCommittedSize = newEnd - newStart;
+            this._doc.changeNote(note, newStart, newEnd, newPitch);
 
             this._movingNote = false;
             this._movingStartOfNote = false;
@@ -1306,8 +1347,7 @@ export class PianoRoll implements Component {
             }
         } else if (this._hoveredNoteIndex !== -1) {
             // Double clicked while hovering over a note, remove it.
-            this._doc.song.notes.splice(this._hoveredNoteIndex, 1);
-            this._doc.markSongAsDirty();
+            this._doc.removeNote(this._hoveredNoteIndex);
             this._selectedNoteIndex = -1;
             this._hoveredNoteIndex = -1;
             this._hoveringOverStartOfNote = false;

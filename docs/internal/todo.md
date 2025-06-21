@@ -198,6 +198,8 @@
       fit.
 - [ ] Leave a gap after the end for the x axis? Allow x < 0?
 - [ ] Deal with this "tentative" note property business properly.
+- [ ] Play notes when created
+  - Also when moved?
 - [x] Piano
   - [ ] Map horizontal position to volume
   - [ ] Generalize key colors

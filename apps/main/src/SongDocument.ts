@@ -290,7 +290,8 @@ export class SongDocument {
             this.playheadAnalyserNode.getFloatTimeDomainData(buffer);
             this.playheadAnalyserCounter = this.visualizationCounter;
         }
-        return buffer[buffer.length - 1];
+        return buffer[0];
+        // return buffer[buffer.length - 1];
     }
 
     public getTimeTaken(): number {
@@ -322,6 +323,20 @@ export class SongDocument {
         );
         this.idGenerator.increment();
         this.song.notes.push(note);
+        this.markSongAsDirty();
+    }
+
+    public removeNote(index: number): void {
+        this.song.notes.splice(index, 1);
+        this.markSongAsDirty();
+    }
+
+    public changeNote(note: Note, start: number, end: number, pitch: number): void {
+        note.start = start;
+        note.end = end;
+        note.pitch = pitch;
+        // @TODO: Skip sorting if not needed. Reindexing is always necessary
+        // though, I think.
         this.markSongAsDirty();
     }
 
