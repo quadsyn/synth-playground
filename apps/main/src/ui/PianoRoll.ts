@@ -118,7 +118,7 @@ class TimeRuler implements Component {
                 const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
                 let beat: number = Math.floor(worldX / ppqn);
                 const bar: number = Math.floor(beat / beatsPerBar);
-                beat %= beatsPerBar;
+                // beat %= beatsPerBar;
                 context.beginPath();
                 context.moveTo(screenX, 0);
                 context.lineTo(screenX, height);
@@ -150,6 +150,7 @@ class TimeRuler implements Component {
         this._renderedViewportX0 = viewportX0;
         this._renderedViewportX1 = viewportX1;
         this._renderedPpqn = ppqn;
+        this._renderedBeatsPerBar = beatsPerBar;
     }
 
     public resize(width: number): void {
@@ -1033,7 +1034,7 @@ export class PianoRoll implements Component {
                 song.notes,
                 song.notesMaxLevel,
                 playhead,
-                playhead + 1,
+                playhead,
                 (note: Note, index: number) => {
                     const noteStart: number = note.start;
                     const noteEnd: number = note.end;

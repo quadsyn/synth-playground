@@ -342,6 +342,9 @@ export class Synthesizer {
             this.tickSampleCountdown = this.samplesPerTick;
         }
 
+        const previousTick: number = this.tick;
+        const previousTickSampleCountdown: number = this.tickSampleCountdown;
+
         while (samplesRemaining > 0) {
             const runLength: number = Math.min(samplesRemaining, this.samplesPerTick);
 
@@ -449,7 +452,12 @@ export class Synthesizer {
         }
 
         if (this.playing)
-        if (playheadBuffer != null) playheadBuffer.fill(this.tick);
+        if (playheadBuffer != null) {
+            const samplesPerTick: number = this.samplesPerTick;
+            const invSamplesPerTick: number = 1 / samplesPerTick;
+            const fraction: number = ((samplesPerTick - previousTickSampleCountdown) + (size - 1)) * invSamplesPerTick;
+            playheadBuffer.fill(previousTick + fraction);
+        }
 
         const timeTakenEnd: number = Date.now();
         if (timeTakenBuffer != null) timeTakenBuffer.fill(timeTakenEnd - timeTakenStart);
