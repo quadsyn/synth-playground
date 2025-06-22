@@ -50,6 +50,7 @@ export class StretchyScrollBar implements Component {
         ui: UIContext,
         vertical: boolean,
         flip: boolean,
+        initialLongSideSize: number,
         zoom: number,
         pan: number,
         onChange: StretchyScrollBarOnChange,
@@ -62,7 +63,7 @@ export class StretchyScrollBar implements Component {
         this._onChange = onChange;
         this._onRenderOverlay = onRenderOverlay;
         this._zoom = zoom;
-        this._pan = pan;
+        this._pan = this._flip ? 1.0 - pan : pan;
         this._zoom0 = 0;
         this._pan0 = 0;
         this._mouseX0 = 0;
@@ -87,8 +88,8 @@ export class StretchyScrollBar implements Component {
 
         // These values don't really matter because they'll be overwritten as
         // our parent element is resized.
-        this._width  = this._vertical ? this.size : 500;
-        this._height = this._vertical ? 500 : this.size;
+        this._width  = this._vertical ? this.size : initialLongSideSize;
+        this._height = this._vertical ? initialLongSideSize : this.size;
 
         const scrollBarSize: number = this._vertical ? this._height : this._width;
         const thumbSize: number = lerp(this._zoom, this._minThumbSize, scrollBarSize);
@@ -217,8 +218,16 @@ export class StretchyScrollBar implements Component {
         return this._zoom;
     }
 
+    public setZoom(zoom: number): void {
+        this._zoom = zoom;
+    }
+
     public getPan(): number {
         return this._flip ? 1.0 - this._pan : this._pan;
+    }
+
+    public setPan(pan: number): void {
+        this._pan = this._flip ? 1.0 - pan : pan;
     }
 
     private _getDeltaDivisor(event: MouseEvent): number {

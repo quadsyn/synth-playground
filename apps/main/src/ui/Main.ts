@@ -485,7 +485,7 @@ export class Main implements Component {
 
         this._dockview.onDidAddPanel((panel) => {
             this._renderablePanels.push(panel.view.content);
-            this._ui.scheduleMainRender();
+            if (this._mounted) this._ui.scheduleMainRender();
         })
         this._dockview.onDidRemovePanel((panel) => {
             const index: number = this._renderablePanels.indexOf(panel.view.content);

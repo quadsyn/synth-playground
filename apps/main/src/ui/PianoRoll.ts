@@ -29,6 +29,7 @@ class TimeRuler implements Component {
 
     constructor(
         ui: UIContext,
+        initialWidth: number,
         viewportX0: number,
         viewportX1: number,
         ppqn: number,
@@ -37,7 +38,7 @@ class TimeRuler implements Component {
         this._ui = ui;
 
         this.size = 20;
-        this._width = 500;
+        this._width = initialWidth;
         this._height = this.size;
 
         this._viewportX0 = viewportX0;
@@ -54,11 +55,13 @@ class TimeRuler implements Component {
             height: this._height + "",
             style: `
                 display: block;
+                box-sizing: border-box;
             `,
         });
         this._context = this._canvas.getContext("2d")!;
         this.element = H("div", {
             style: `
+                box-sizing: border-box;
             `,
         }, this._canvas);
     }
@@ -82,18 +85,16 @@ class TimeRuler implements Component {
             || beatsPerBar !== this._renderedBeatsPerBar
         );
 
-        let cleared: boolean = false;
-
         if (width !== canvas.width || height !== canvas.height) {
             canvas.width = width;
             canvas.height = height;
             dirty = true;
-            cleared = true;
         }
 
         if (!dirty) return;
 
-        if (!cleared) context.clearRect(0, 0, width, height);
+        context.fillStyle = "#000000";
+        context.fillRect(0, 0, width, height);
 
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
@@ -204,6 +205,7 @@ class Piano implements Component {
 
     constructor(
         ui: UIContext,
+        initialHeight: number,
         viewportY0: number,
         viewportY1: number,
         maxPitch: number,
@@ -217,7 +219,7 @@ class Piano implements Component {
 
         this.size = 50;
         this._width = this.size;
-        this._height = 500;
+        this._height = initialHeight;
 
         this._maxPitch = maxPitch;
 
@@ -235,12 +237,14 @@ class Piano implements Component {
             height: this._height + "",
             style: `
                 display: block;
+                box-sizing: border-box;
             `,
         });
         this._context = this._canvas.getContext("2d")!;
         this.element = H("div", {
             style: `
                 position: relative;
+                box-sizing: border-box;
             `,
         }, this._canvas);
 
@@ -386,6 +390,7 @@ class Piano implements Component {
 export class PianoRoll implements Component {
     public element: HTMLDivElement;
     private _ui: UIContext;
+    private _mounted: boolean;
     private _doc: SongDocument;
     private _width: number;
     private _height: number;
@@ -444,11 +449,13 @@ export class PianoRoll implements Component {
     ) {
         this._ui = ui;
 
+        this._mounted = false;
+
         this._doc = doc;
         const song: Song = this._doc.song;
 
-        this._width = 200;
-        this._height = 200;
+        this._width = 600;
+        this._height = 400;
 
         this._minViewportWidth = 1;
         this._maxViewportWidth = Math.max(this._minViewportWidth, song.patternDuration);
@@ -507,13 +514,14 @@ export class PianoRoll implements Component {
         const initialPitchPan: number = (
             this._maxViewportHeight - viewportHeight === 0
             ? 0
-            : remap(viewportPositionY, 0, this._maxViewportHeight - viewportHeight, 1, 0)
+            : remap(viewportPositionY, 0, this._maxViewportHeight - viewportHeight, 0, 1)
         );
 
         this._timeScrollBar = new StretchyScrollBar(
             this._ui,
             /* vertical */ false,
             /* flip */ false,
+            /* initialLongSideSize */ this._width,
             initialTimeZoom,
             initialTimePan,
             this._onTimeScrollBarChange,
@@ -524,14 +532,15 @@ export class PianoRoll implements Component {
             this._ui,
             /* vertical */ true,
             /* flip */ true,
+            /* initialLongSideSize */ this._height,
             initialPitchZoom,
             initialPitchPan,
             this._onPitchScrollBarChange,
             this._onPitchScrollBarRenderOverlay,
         );
         this._gridCanvas = H("canvas", {
-            width: "100",
-            height: "100",
+            width: this._width + "",
+            height: this._height + "",
             style: `
                 flex-grow: 1;
                 width: 100%;
@@ -545,8 +554,8 @@ export class PianoRoll implements Component {
         });
         this._gridContext = this._gridCanvas.getContext("2d")!;
         this._notesCanvas = H("canvas", {
-            width: "100",
-            height: "100",
+            width: this._width + "",
+            height: this._height + "",
             style: `
                 flex-grow: 1;
                 width: 100%;
@@ -560,8 +569,8 @@ export class PianoRoll implements Component {
         });
         this._notesContext = this._notesCanvas.getContext("2d")!;
         this._selectionOverlayCanvas = H("canvas", {
-            width: "100",
-            height: "100",
+            width: this._width + "",
+            height: this._height + "",
             style: `
                 flex-grow: 1;
                 width: 100%;
@@ -575,8 +584,8 @@ export class PianoRoll implements Component {
         });
         this._selectionOverlayContext = this._selectionOverlayCanvas.getContext("2d")!;
         this._playheadOverlayCanvas = H("canvas", {
-            width: "100",
-            height: "100",
+            width: this._width + "",
+            height: this._height + "",
             style: `
                 flex-grow: 1;
                 width: 100%;
@@ -594,6 +603,7 @@ export class PianoRoll implements Component {
                 width: 100%;
                 height: 100%;
                 position: relative;
+                box-sizing: border-box;
             `,
         },
             this._gridCanvas,
@@ -603,6 +613,7 @@ export class PianoRoll implements Component {
         );
         this._timeRuler = new TimeRuler(
             this._ui,
+            /* initialWidth */ this._width,
             this._viewportX0,
             this._viewportX1,
             this._doc.song.ppqn,
@@ -610,6 +621,7 @@ export class PianoRoll implements Component {
         );
         this._piano = new Piano(
             this._ui,
+            /* initialHeight */ this._height,
             this._viewportY0,
             this._viewportY1,
             this._doc.song.maxPitch,
@@ -632,6 +644,7 @@ export class PianoRoll implements Component {
                     flex-direction: column;
                     width: 100%;
                     height: 100%;
+                    box-sizing: border-box;
                 `,
             },
                 this._timeRuler.element,
@@ -659,6 +672,8 @@ export class PianoRoll implements Component {
     }
 
     public resize(): void {
+        if (!this._mounted) return;
+
         const pitchScrollBarSize: number = this._pitchScrollBar.size;
         const timeScrollBarSize: number = this._timeScrollBar.size;
         const timeRulerSize: number = this._timeRuler.size;
@@ -668,17 +683,57 @@ export class PianoRoll implements Component {
         const topRightGapH: number = timeRulerSize;
         const newWidth: number = this.element.clientWidth;
         const newHeight: number = this.element.clientHeight;
+        const newNoteAreaWidth: number = Math.max(1, newWidth - pianoSize - rightGapW);
+        const newNoteAreaHeight: number = Math.max(1, newHeight - topRightGapH - bottomRightGapH);
+
+        let newViewportX0: number = remap(0, 0, this._width, this._viewportX0, this._viewportX1);
+        let newViewportX1: number = remap(newNoteAreaWidth, 0, this._width, this._viewportX0, this._viewportX1);
+        let newViewportPositionX: number = newViewportX0;
+        let newViewportWidth: number = clamp(newViewportX1 - newViewportX0, this._minViewportWidth, this._maxViewportWidth);
+        // These have Y0 and Y1 flipped to anchor resizes to the top part of the viewport.
+        let newViewportY0: number = remap(0, 0, this._height, this._viewportY1, this._viewportY0);
+        let newViewportY1: number = remap(newNoteAreaHeight, 0, this._height, this._viewportY1, this._viewportY0);
+        let newViewportPositionY: number = newViewportY1;
+        let newViewportHeight: number = clamp(newViewportY0 - newViewportY1, this._minViewportHeight, this._maxViewportHeight);
+        const newTimeZoom: number = clamp(remap(newViewportWidth, this._minViewportWidth, this._maxViewportWidth, 0, 1), 0, 1);
+        const newTimePan: number = clamp((
+            this._maxViewportWidth - newViewportWidth === 0
+            ? 0
+            : remap(newViewportPositionX, 0, this._maxViewportWidth - newViewportWidth, 0, 1)
+        ), 0, 1);
+        const newPitchZoom: number = clamp(remap(newViewportHeight, this._minViewportHeight, this._maxViewportHeight, 0, 1), 0, 1);
+        const newPitchPan: number = clamp((
+            this._maxViewportHeight - newViewportHeight === 0
+            ? 0
+            : remap(newViewportPositionY, 0, this._maxViewportHeight - newViewportHeight, 0, 1)
+        ), 0, 1);
+        newViewportWidth = lerp(newTimeZoom, this._minViewportWidth, this._maxViewportWidth);
+        newViewportPositionX = lerp(newTimePan, 0, this._maxViewportWidth - newViewportWidth);
+        newViewportHeight = lerp(newPitchZoom, this._minViewportHeight, this._maxViewportHeight);
+        newViewportPositionY = lerp(newPitchPan, 0, this._maxViewportHeight - newViewportHeight);
+        newViewportX0 = newViewportPositionX;
+        newViewportX1 = newViewportPositionX + newViewportWidth;
+        newViewportY0 = newViewportPositionY;
+        newViewportY1 = newViewportPositionY + newViewportHeight;
+        this._viewportX0 = newViewportX0;
+        this._viewportX1 = newViewportX1;
+        this._viewportY0 = newViewportY0;
+        this._viewportY1 = newViewportY1;
+        this._timeScrollBar.setZoom(newTimeZoom);
+        this._timeScrollBar.setPan(newTimePan);
+        this._pitchScrollBar.setZoom(newPitchZoom);
+        this._pitchScrollBar.setPan(newPitchPan);
 
         // @TODO: I probably should really be driving this mostly from CSS.
 
-        this._width = newWidth - pianoSize - rightGapW;
-        this._height = newHeight;
-        this._timeScrollBar.resize(newWidth - pianoSize - rightGapW, timeScrollBarSize);
+        this._width = newNoteAreaWidth;
+        this._height = newNoteAreaHeight;
+        this._timeScrollBar.resize(newNoteAreaWidth, timeScrollBarSize);
         this._pitchScrollBar.element.style.top = `${topRightGapH}px`;
-        this._pitchScrollBar.resize(pitchScrollBarSize, newHeight - bottomRightGapH - topRightGapH);
-        this._timeRuler.resize(newWidth - pianoSize - rightGapW);
+        this._pitchScrollBar.resize(pitchScrollBarSize, newNoteAreaHeight);
+        this._timeRuler.resize(newNoteAreaWidth);
         this._piano.element.style.top = `${topRightGapH}px`;
-        this._piano.resize(newHeight - bottomRightGapH - topRightGapH);
+        this._piano.resize(newNoteAreaHeight);
 
         this._renderedNotesDirty = true;
         this._renderedSelectionOverlayDirty = true;
@@ -691,6 +746,8 @@ export class PianoRoll implements Component {
     }
 
     public render(): void {
+        if (!this._mounted) this._onDidMount();
+
         if (this._doc.playing) {
             const targetPlayhead: number | null = this._doc.getPlayheadInTicks();
             if (targetPlayhead != null) {
@@ -1067,6 +1124,10 @@ export class PianoRoll implements Component {
                 },
             );
         }
+    }
+
+    private _onDidMount(): void {
+        this._mounted = true;
     }
 
     private _onTimeScrollBarChange = (zoom: number, pan: number): void => {

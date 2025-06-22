@@ -165,6 +165,7 @@
   - [ ] Support multiple layouts.
 - Support detaching panels into a separate browser window? Seems pretty dicey.
 - [ ] Add "always on" panels (namely for the transport and timeline ones).
+- Floating groups seem to grow after reloading? Not sure what's up with that.
 
 ## Keyboard shortcuts
 
@@ -194,7 +195,7 @@
 ### Piano roll
 
 - [ ] Disable note stretch handles when `noteSizeInPixels < handleSize * 3`
-- [ ] When resizing the panel, resize the viewport instead of stretching to
+- [x] When resizing the panel, resize the viewport instead of stretching to
       fit.
 - [ ] Leave a gap after the end for the x axis? Allow x < 0?
 - [ ] Deal with this "tentative" note property business properly.
@@ -203,6 +204,7 @@
 - [x] Piano
   - [ ] Map horizontal position to volume
   - [ ] Generalize key colors
+  - [ ] Draw pitch names
 - [ ] Coalesce fillRect calls? Examples:
   - Catapult's `FastRectRenderer`: <https://github.com/catapult-project/catapult/blob/99a1dc34979a66d97407dd7559735c4ad45cdd84/tracing/tracing/ui/base/fast_rect_renderer.html>
   - <https://github.com/loov/spector/tree/javascript>
@@ -211,7 +213,6 @@
 
 - [ ] Revise the CSS used for this.
 - [ ] `setZoom(centerPan: number, factor: number): void`
-- [ ] `setPan(pan: number): void`
 - [ ] I added this `deltaDivisor` thing to make scrolling easier in larger
       patterns. It's hardcoded to 128 when holding shift, but maybe I could
       make it different powers of two as you move the mouse along the axis

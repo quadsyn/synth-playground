@@ -66,7 +66,7 @@ export class PianoRollPanel implements DockablePanel {
         );
         this._visible = parameters.api.isVisible;
         this._ui.resizeObserver.observe(this._element);
-        this._resize();
+        // this._resize();
     }
 
     public dispose(): void {
