@@ -119,7 +119,7 @@ class TimeRuler implements Component {
         {
             context.lineWidth = 2;
             let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaledBar) * ppqnScaledBar);
-            while (worldX < this._viewportX1) {
+            while (worldX < viewportX1) {
                 const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
                 let beat: number = Math.floor(worldX / ppqn);
                 const bar: number = Math.floor(beat / beatsPerBar);
@@ -135,7 +135,7 @@ class TimeRuler implements Component {
         if (exponent <= 0) {
             context.lineWidth = 1;
             let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
-            while (worldX < this._viewportX1) {
+            while (worldX < viewportX1) {
                 let beat: number = Math.floor(worldX / ppqn);
                 const bar: number = Math.floor(beat / beatsPerBar);
                 beat %= beatsPerBar;
@@ -652,6 +652,7 @@ export class PianoRoll implements Component {
         window.addEventListener("mouseup", this._onPointerUp);
         this._canvasesContainer.addEventListener("dblclick", this._onDoubleClick);
         this._canvasesContainer.addEventListener("wheel", this._onWheel);
+        this._piano.element.addEventListener("wheel", this._onPianoWheel);
     }
 
     public dispose(): void {
@@ -664,6 +665,7 @@ export class PianoRoll implements Component {
         window.removeEventListener("mouseup", this._onPointerUp);
         this._canvasesContainer.removeEventListener("dblclick", this._onDoubleClick);
         this._canvasesContainer.removeEventListener("wheel", this._onWheel);
+        this._piano.element.removeEventListener("wheel", this._onPianoWheel);
     }
 
     public resize(): void {
@@ -676,40 +678,58 @@ export class PianoRoll implements Component {
         const rightGapW: number = pitchScrollBarSize;
         const bottomRightGapH: number = timeScrollBarSize;
         const topRightGapH: number = timeRulerSize;
+        const oldWidth: number = this._width;
+        const oldHeight: number = this._height;
         const newWidth: number = this.element.clientWidth;
         const newHeight: number = this.element.clientHeight;
         const newNoteAreaWidth: number = Math.max(1, newWidth - pianoSize - rightGapW);
         const newNoteAreaHeight: number = Math.max(1, newHeight - topRightGapH - bottomRightGapH);
+        const minViewportWidth: number = this._minViewportWidth;
+        const maxViewportWidth: number = this._maxViewportWidth;
+        const minViewportHeight: number = this._minViewportHeight;
+        const maxViewportHeight: number = this._maxViewportHeight;
+        const oldViewportX0: number = this._viewportX0;
+        const oldViewportX1: number = this._viewportX1;
+        const oldViewportY0: number = this._viewportY0;
+        const oldViewportY1: number = this._viewportY1;
 
-        let newViewportX0: number = remap(0, 0, this._width, this._viewportX0, this._viewportX1);
-        let newViewportX1: number = remap(newNoteAreaWidth, 0, this._width, this._viewportX0, this._viewportX1);
+        let newViewportX0: number = remap(0, 0, oldWidth, oldViewportX0, oldViewportX1);
+        let newViewportX1: number = remap(newNoteAreaWidth, 0, oldWidth, oldViewportX0, oldViewportX1);
         let newViewportPositionX: number = newViewportX0;
-        let newViewportWidth: number = clamp(newViewportX1 - newViewportX0, this._minViewportWidth, this._maxViewportWidth);
+        let newViewportWidth: number = clamp(newViewportX1 - newViewportX0, minViewportWidth, maxViewportWidth);
+
         // These have Y0 and Y1 flipped to anchor resizes to the top part of the viewport.
-        let newViewportY0: number = remap(0, 0, this._height, this._viewportY1, this._viewportY0);
-        let newViewportY1: number = remap(newNoteAreaHeight, 0, this._height, this._viewportY1, this._viewportY0);
+        let newViewportY0: number = remap(0, 0, oldHeight, oldViewportY1, oldViewportY0);
+        let newViewportY1: number = remap(newNoteAreaHeight, 0, oldHeight, oldViewportY1, oldViewportY0);
         let newViewportPositionY: number = newViewportY1;
-        let newViewportHeight: number = clamp(newViewportY0 - newViewportY1, this._minViewportHeight, this._maxViewportHeight);
-        const newTimeZoom: number = clamp(remap(newViewportWidth, this._minViewportWidth, this._maxViewportWidth, 0, 1), 0, 1);
+        let newViewportHeight: number = clamp(newViewportY0 - newViewportY1, minViewportHeight, maxViewportHeight);
+
+        const newTimeZoom: number = clamp(remap(newViewportWidth, minViewportWidth, maxViewportWidth, 0, 1), 0, 1);
         const newTimePan: number = clamp((
-            this._maxViewportWidth - newViewportWidth === 0
+            maxViewportWidth - newViewportWidth === 0
             ? 0
-            : remap(newViewportPositionX, 0, this._maxViewportWidth - newViewportWidth, 0, 1)
+            : remap(newViewportPositionX, 0, maxViewportWidth - newViewportWidth, 0, 1)
         ), 0, 1);
-        const newPitchZoom: number = clamp(remap(newViewportHeight, this._minViewportHeight, this._maxViewportHeight, 0, 1), 0, 1);
+
+        const newPitchZoom: number = clamp(remap(newViewportHeight, minViewportHeight, maxViewportHeight, 0, 1), 0, 1);
         const newPitchPan: number = clamp((
-            this._maxViewportHeight - newViewportHeight === 0
+            maxViewportHeight - newViewportHeight === 0
             ? 0
-            : remap(newViewportPositionY, 0, this._maxViewportHeight - newViewportHeight, 0, 1)
+            : remap(newViewportPositionY, 0, maxViewportHeight - newViewportHeight, 0, 1)
         ), 0, 1);
-        newViewportWidth = lerp(newTimeZoom, this._minViewportWidth, this._maxViewportWidth);
-        newViewportPositionX = lerp(newTimePan, 0, this._maxViewportWidth - newViewportWidth);
-        newViewportHeight = lerp(newPitchZoom, this._minViewportHeight, this._maxViewportHeight);
-        newViewportPositionY = lerp(newPitchPan, 0, this._maxViewportHeight - newViewportHeight);
+
+        newViewportWidth = lerp(newTimeZoom, minViewportWidth, maxViewportWidth);
+        newViewportPositionX = lerp(newTimePan, 0, maxViewportWidth - newViewportWidth);
+
+        newViewportHeight = lerp(newPitchZoom, minViewportHeight, maxViewportHeight);
+        newViewportPositionY = lerp(newPitchPan, 0, maxViewportHeight - newViewportHeight);
+
         newViewportX0 = newViewportPositionX;
         newViewportX1 = newViewportPositionX + newViewportWidth;
+
         newViewportY0 = newViewportPositionY;
         newViewportY1 = newViewportPositionY + newViewportHeight;
+
         this._viewportX0 = newViewportX0;
         this._viewportX1 = newViewportX1;
         this._viewportY0 = newViewportY0;
@@ -723,8 +743,8 @@ export class PianoRoll implements Component {
 
         this._width = newNoteAreaWidth;
         this._height = newNoteAreaHeight;
-        this._canvasesContainer.style.width = this._width + "px";
-        this._canvasesContainer.style.height = this._height + "px";
+        this._canvasesContainer.style.width = newNoteAreaWidth + "px";
+        this._canvasesContainer.style.height = newNoteAreaHeight + "px";
         this._timeScrollBar.resize(newNoteAreaWidth, timeScrollBarSize);
         this._pitchScrollBar.element.style.top = `${topRightGapH}px`;
         this._pitchScrollBar.resize(pitchScrollBarSize, newNoteAreaHeight);
@@ -817,23 +837,26 @@ export class PianoRoll implements Component {
         const context: CanvasRenderingContext2D = this._gridContext;
         const width: number = canvas.width;
         const height: number = canvas.height;
-        const viewportWidth: number = this._viewportX1 - this._viewportX0;
+        const viewportX0: number = this._viewportX0;
+        const viewportX1: number = this._viewportX1;
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        // const pixelsPerBeat: number = pixelsPerTick * ppqn;
-        // const ticksPerPixel: number = viewportWidth / width;
+
         context.fillStyle = "#303030";
         context.fillRect(0, 0, width, height);
         context.strokeStyle = "#000000";
         {
             // Octaves.
             context.fillStyle = "#886644";
-            let worldY: number = Math.max(0, Math.floor(this._viewportY0) - 1);
-            while (worldY < this._viewportY1) {
-                const screenY: number = remap(worldY, this._viewportY0, this._viewportY1, height, 0);
+            let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
+            while (worldY < viewportY1) {
+                const screenY: number = remap(worldY, viewportY0, viewportY1, height, 0);
                 if (worldY % 12 === 0) {
                     const x: number = 0;
                     const w: number = width;
-                    const h: number = screenY - remap(worldY + 1, this._viewportY0, this._viewportY1, height, 0);
+                    const h: number = screenY - remap(worldY + 1, viewportY0, viewportY1, height, 0);
                     const y: number = screenY - h;
                     context.fillRect(x, y, w, h);
                 }
@@ -843,13 +866,13 @@ export class PianoRoll implements Component {
         {
             // Fifths.
             context.fillStyle = "#446688";
-            let worldY: number = Math.max(0, Math.floor(this._viewportY0) - 1);
-            while (worldY < this._viewportY1) {
-                const screenY: number = remap(worldY, this._viewportY0, this._viewportY1, height, 0);
+            let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
+            while (worldY < viewportY1) {
+                const screenY: number = remap(worldY, viewportY0, viewportY1, height, 0);
                 if (worldY % 12 === 7) {
                     const x: number = 0;
                     const w: number = width;
-                    const h: number = screenY - remap(worldY + 1, this._viewportY0, this._viewportY1, height, 0);
+                    const h: number = screenY - remap(worldY + 1, viewportY0, viewportY1, height, 0);
                     const y: number = screenY - h;
                     context.fillRect(x, y, w, h);
                 }
@@ -858,9 +881,9 @@ export class PianoRoll implements Component {
         }
         {
             // Pitch grid.
-            let worldY: number = Math.max(0, Math.floor(this._viewportY0) - 1);
-            while (worldY < this._viewportY1) {
-                const screenY: number = remap(worldY, this._viewportY0, this._viewportY1, height, 0) | 0;
+            let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
+            while (worldY < viewportY1) {
+                const screenY: number = remap(worldY, viewportY0, viewportY1, height, 0) | 0;
                 context.beginPath();
                 context.moveTo(0, screenY);
                 context.lineTo(width, screenY);
@@ -880,9 +903,9 @@ export class PianoRoll implements Component {
                 / Math.log(beatsPerBar)
             )) : 1;
             const ppqnScaled: number = ppqn * Math.pow(beatsPerBar, exponent);
-            let worldX: number = Math.max(0, Math.floor(this._viewportX0 / ppqnScaled) * ppqnScaled);
-            while (worldX < this._viewportX1) {
-                const screenX: number = ((worldX - this._viewportX0) * pixelsPerTick) | 0;
+            let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
+            while (worldX < viewportX1) {
+                const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
                 context.beginPath();
                 context.moveTo(screenX, 0);
                 context.lineTo(screenX, height);
@@ -913,17 +936,20 @@ export class PianoRoll implements Component {
         }
 
         const song: Song = this._doc.song;
-        // const ppqn: number = song.ppqn;
         const canvas: HTMLCanvasElement = this._notesCanvas;
         const context: CanvasRenderingContext2D = this._notesContext;
         const width: number = canvas.width;
         const height: number = canvas.height;
-        const viewportWidth: number = this._viewportX1 - this._viewportX0;
+        const viewportX0: number = this._viewportX0;
+        const viewportX1: number = this._viewportX1;
+        const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        // const pixelsPerBeat: number = pixelsPerTick * ppqn;
-        // const ticksPerPixel: number = viewportWidth / width;
-        const viewportHeight: number = this._viewportY1 - this._viewportY0;
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
+        const selectedNoteIndex: number = this._selectedNoteIndex;
+
         context.fillStyle = "#17d15b";
         context.strokeStyle = "#000000";
         context.lineWidth = 1;
@@ -931,19 +957,19 @@ export class PianoRoll implements Component {
         IITree.findOverlapping(
             song.notes,
             song.notesMaxLevel,
-            this._viewportX0,
-            this._viewportX1,
+            viewportX0,
+            viewportX1,
             (note: Note, index: number) => {
-                if (index === this._selectedNoteIndex) return;
+                if (index === selectedNoteIndex) return;
                 const noteStart: number = note.start;
                 const noteEnd: number = note.end;
                 const notePitch: number = note.pitch;
-                const x0: number = ((noteStart - this._viewportX0) * pixelsPerTick);
-                const x1: number = ((noteEnd - this._viewportX0) * pixelsPerTick);
+                const x0: number = ((noteStart - viewportX0) * pixelsPerTick);
+                const x1: number = ((noteEnd - viewportX0) * pixelsPerTick);
                 let w: number = x1 - x0;
                 if (w <= 1) w = 1;
                 const x: number = x0;
-                const y: number = (height - pixelsPerPitch) - ((notePitch - this._viewportY0) * pixelsPerPitch);
+                const y: number = (height - pixelsPerPitch) - ((notePitch - viewportY0) * pixelsPerPitch);
                 const h: number = pixelsPerPitch;
                 if (w >= 0.5) {
                     context.fillRect(x, y, w, h);
@@ -953,16 +979,16 @@ export class PianoRoll implements Component {
                 }
             },
         );
-        if (this._selectedNoteIndex !== -1) {
+        if (selectedNoteIndex !== -1) {
             const noteStart: number = this._tentativeNoteStart;
             const noteEnd: number = this._tentativeNoteEnd;
             const notePitch: number = this._tentativeNotePitch;
-            const x0: number = ((noteStart - this._viewportX0) * pixelsPerTick);
-            const x1: number = ((noteEnd - this._viewportX0) * pixelsPerTick);
+            const x0: number = ((noteStart - viewportX0) * pixelsPerTick);
+            const x1: number = ((noteEnd - viewportX0) * pixelsPerTick);
             let w: number = x1 - x0;
             if (w <= 1) w = 1;
             const x: number = x0;
-            const y: number = (height - pixelsPerPitch) - ((notePitch - this._viewportY0) * pixelsPerPitch);
+            const y: number = (height - pixelsPerPitch) - ((notePitch - viewportY0) * pixelsPerPitch);
             const h: number = pixelsPerPitch;
             context.fillRect(x, y, w, h);
             if (w >= 4) {
@@ -995,28 +1021,36 @@ export class PianoRoll implements Component {
         const context: CanvasRenderingContext2D = this._selectionOverlayContext;
         const width: number = canvas.width;
         const height: number = canvas.height;
-        const viewportWidth: number = this._viewportX1 - this._viewportX0;
+        const viewportX0: number = this._viewportX0;
+        const viewportX1: number = this._viewportX1;
+        const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
         // const ticksPerPixel: number = viewportWidth / width;
-        const viewportHeight: number = this._viewportY1 - this._viewportY0;
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
+        const hoveredNoteIndex: number = this._hoveredNoteIndex;
+
         context.clearRect(0, 0, width, height);
+
         if (this._selectedNoteIndex !== -1) return;
-        if (this._hoveredNoteIndex === -1) return;
+        if (hoveredNoteIndex === -1) return;
+
         context.fillStyle = "rgba(255, 255, 255, 0.8)";
         context.strokeStyle = "#ffffff";
         context.lineWidth = 2;
-        const hoveredNoteIndex: number = this._hoveredNoteIndex;
+
         const notes: Note[] = this._doc.song.notes;
         {
             const noteIndex: number = hoveredNoteIndex;
             const note: Note = notes[noteIndex];
-            const x0: number = ((note.start - this._viewportX0) * pixelsPerTick);
-            const x1: number = ((note.end - this._viewportX0) * pixelsPerTick);
+            const x0: number = ((note.start - viewportX0) * pixelsPerTick);
+            const x1: number = ((note.end - viewportX0) * pixelsPerTick);
             let w: number = x1 - x0;
             if (w <= 1) w = 1;
             const x: number = x0;
-            const y: number = (height - pixelsPerPitch) - ((note.pitch - this._viewportY0) * pixelsPerPitch);
+            const y: number = (height - pixelsPerPitch) - ((note.pitch - viewportY0) * pixelsPerPitch);
             const h: number = pixelsPerPitch;
             if (this._hoveringOverStartOfNote) {
                 const hX0: number = x0;
@@ -1077,6 +1111,7 @@ export class PianoRoll implements Component {
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
         const playhead: number | null = this._playhead;
+
         context.clearRect(0, 0, width, height);
         context.strokeStyle = "#ffffff";
         context.lineWidth = 2;
@@ -1128,8 +1163,10 @@ export class PianoRoll implements Component {
     }
 
     private _onTimeScrollBarChange = (zoom: number, pan: number): void => {
-        const viewportWidth: number = lerp(zoom, this._minViewportWidth, this._maxViewportWidth);
-        const viewportPositionX: number = lerp(pan, 0, this._maxViewportWidth - viewportWidth);
+        const minViewportWidth: number = this._minViewportWidth;
+        const maxViewportWidth: number = this._maxViewportWidth;
+        const viewportWidth: number = lerp(zoom, minViewportWidth, maxViewportWidth);
+        const viewportPositionX: number = lerp(pan, 0, maxViewportWidth - viewportWidth);
         this._viewportX0 = viewportPositionX;
         this._viewportX1 = viewportPositionX + viewportWidth;
 
@@ -1137,8 +1174,10 @@ export class PianoRoll implements Component {
     };
 
     private _onPitchScrollBarChange = (zoom: number, pan: number): void => {
-        const viewportHeight: number = lerp(zoom, this._minViewportHeight, this._maxViewportHeight);
-        const viewportPositionY: number = lerp(pan, 0, this._maxViewportHeight - viewportHeight);
+        const minViewportHeight: number = this._minViewportHeight;
+        const maxViewportHeight: number = this._maxViewportHeight;
+        const viewportHeight: number = lerp(zoom, minViewportHeight, maxViewportHeight);
+        const viewportPositionY: number = lerp(pan, 0, maxViewportHeight - viewportHeight);
         this._viewportY0 = viewportPositionY;
         this._viewportY1 = viewportPositionY + viewportHeight;
 
@@ -1161,15 +1200,17 @@ export class PianoRoll implements Component {
         if (this._pitchScrollBarOverlayDirty) {
             this._pitchScrollBarOverlayDirty = false;
 
+            const maxViewportHeight: number = this._maxViewportHeight;
+
             context.clearRect(0, 0, width, height);
             context.fillStyle = "#886644";
             let worldY: number = 0;
             while (worldY < this._maxViewportHeight) {
-                const screenY: number = remap(worldY, 0, this._maxViewportHeight, height, 0);
+                const screenY: number = remap(worldY, 0, maxViewportHeight, height, 0);
                 if (worldY % 12 === 0) {
                     const x: number = 1;
                     const w: number = width - 2;
-                    const h: number = screenY - remap(worldY + 1, 0, this._maxViewportHeight, height, 0);
+                    const h: number = screenY - remap(worldY + 1, 0, maxViewportHeight, height, 0);
                     const y: number = screenY - h;
                     context.fillRect(x, y, w, h);
                 }
@@ -1196,10 +1237,7 @@ export class PianoRoll implements Component {
             const note: Note = this._doc.song.notes[this._selectedNoteIndex];
 
             const viewportWidth: number = this._viewportX1 - this._viewportX0;
-            // const pixelsPerTick: number = width / viewportWidth;
-            // const ticksPerPixel: number = viewportWidth / width;
             const viewportHeight: number = this._viewportY1 - this._viewportY0;
-            // const pixelsPerPitch: number = height / viewportHeight;
 
             const cursorPpqn0: number = (
                 this._viewportX0 + remap(this._pointerX0, 0, width, 0, viewportWidth)
@@ -1325,10 +1363,7 @@ export class PianoRoll implements Component {
                 const note: Note = this._doc.song.notes[this._selectedNoteIndex];
 
                 const viewportWidth: number = this._viewportX1 - this._viewportX0;
-                // const pixelsPerTick: number = width / viewportWidth;
-                // const ticksPerPixel: number = viewportWidth / width;
                 const viewportHeight: number = this._viewportY1 - this._viewportY0;
-                // const pixelsPerPitch: number = height / viewportHeight;
                 const cursorPpqn0: number = (
                     this._viewportX0 + remap(this._pointerX0, 0, width, 0, viewportWidth)
                 ) | 0;
@@ -1440,10 +1475,13 @@ export class PianoRoll implements Component {
             || mouseY > height
         );
         if (!outsideCanvas) {
-            const viewportWidth: number = this._viewportX1 - this._viewportX0;
+            const viewportX0: number = this._viewportX0;
+            const viewportX1: number = this._viewportX1;
+            const viewportY0: number = this._viewportY0;
+            const viewportY1: number = this._viewportY1;
+            const viewportWidth: number = viewportX1 - viewportX0;
             const pixelsPerTick: number = width / viewportWidth;
-            // const ticksPerPixel: number = viewportWidth / width;
-            const viewportHeight: number = this._viewportY1 - this._viewportY0;
+            const viewportHeight: number = viewportY1 - viewportY0;
             const pixelsPerPitch: number = height / viewportHeight;
             const searchWindowStart: number = (
                 this._viewportX0 + remap(mouseX, 0, width, 0, viewportWidth)
@@ -1462,9 +1500,9 @@ export class PianoRoll implements Component {
                     if (note.pitch === cursorPitch) {
                         this._hoveredNoteIndex = index;
 
-                        const noteX0: number = ((note.start - this._viewportX0) * pixelsPerTick);
-                        const noteX1: number = ((note.end - this._viewportX0) * pixelsPerTick);
-                        const noteY0: number = (height - pixelsPerPitch) - ((note.pitch - this._viewportY0) * pixelsPerPitch);
+                        const noteX0: number = ((note.start - viewportX0) * pixelsPerTick);
+                        const noteX1: number = ((note.end - viewportX0) * pixelsPerTick);
+                        const noteY0: number = (height - pixelsPerPitch) - ((note.pitch - viewportY0) * pixelsPerPitch);
                         const noteY1: number = noteY0 + pixelsPerPitch;
                         const noteStartStretchHandleX0: number = noteX0;
                         const noteStartStretchHandleX1: number = noteX0 + this._noteStretchHandleSize;
@@ -1492,15 +1530,11 @@ export class PianoRoll implements Component {
     private _onWheel = (event: WheelEvent): void => {
         const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
         const width: number = bounds.width;
-        // const height: number = bounds.height;
         const mouseX: number = event.clientX - bounds.left;
-        // const mouseY: number = event.clientY - bounds.top;
 
         let factor: number = 1.25; // Zoom out
         if (event.deltaY < 0) factor = 1.0 / factor; // Zoom in
 
-        // @TODO: Detect when no visible change occurs, then skip the associated
-        // unnecessary state change + render.
         const viewportX0: number = this._viewportX0;
         const viewportX1: number = this._viewportX1;
         const minViewportWidth: number = this._minViewportWidth;
@@ -1514,7 +1548,7 @@ export class PianoRoll implements Component {
         let newViewportX1: number = newViewportPositionX + newViewportWidth;
         const newTimeZoom: number = clamp(remap(newViewportWidth, minViewportWidth, maxViewportWidth, 0, 1), 0, 1);
         const newTimePan: number = clamp((
-            this._maxViewportWidth - newViewportWidth === 0
+            maxViewportWidth - newViewportWidth === 0
             ? 0
             : remap(newViewportPositionX, 0, maxViewportWidth - newViewportWidth, 0, 1)
         ), 0, 1);
@@ -1522,19 +1556,57 @@ export class PianoRoll implements Component {
         newViewportPositionX = lerp(newTimePan, 0, maxViewportWidth - newViewportWidth);
         newViewportX0 = newViewportPositionX;
         newViewportX1 = newViewportPositionX + newViewportWidth;
-        this._viewportX0 = newViewportX0;
-        this._viewportX1 = newViewportX1;
-        this._timeScrollBar.setZoom(newTimeZoom);
-        this._timeScrollBar.setPan(newTimePan);
+        if (this._viewportX0 !== newViewportX0 || this._viewportX1 !== newViewportX1) {
+            this._viewportX0 = newViewportX0;
+            this._viewportX1 = newViewportX1;
+            this._timeScrollBar.setZoom(newTimeZoom);
+            this._timeScrollBar.setPan(newTimePan);
 
-        this._renderedNotesDirty = true;
-        this._renderedSelectionOverlayDirty = true;
-        this._renderedViewportX0 = null;
-        this._renderedViewportY0 = null;
-        this._renderedViewportX1 = null;
-        this._renderedViewportY1 = null;
+            this._renderedNotesDirty = true;
+            this._renderedSelectionOverlayDirty = true;
+            this._renderedViewportX0 = null;
+            this._renderedViewportY0 = null;
+            this._renderedViewportX1 = null;
+            this._renderedViewportY1 = null;
 
-        this._ui.scheduleMainRender();
+            this._ui.scheduleMainRender();
+        }
+    };
+
+    private _onPianoWheel = (event: WheelEvent): void => {
+        let factor: number = -1 / 24; // Scroll down
+        if (event.deltaY < 0) factor = -factor; // Scroll up
+
+        const viewportY0: number = this._viewportY0;
+        const viewportY1: number = this._viewportY1;
+        const maxViewportHeight: number = this._maxViewportHeight;
+        const viewportHeight: number = viewportY1 - viewportY0;
+        const viewportPositionY: number = viewportY0;
+        let newViewportPositionY: number = viewportPositionY + viewportHeight * factor;
+        let newViewportY0: number = newViewportPositionY;
+        let newViewportY1: number = newViewportPositionY + viewportHeight;
+        const newPitchPan: number = clamp((
+            maxViewportHeight - viewportHeight === 0
+            ? 0
+            : remap(newViewportPositionY, 0, maxViewportHeight - viewportHeight, 0, 1)
+        ), 0, 1);
+        newViewportPositionY = lerp(newPitchPan, 0, maxViewportHeight - viewportHeight);
+        newViewportY0 = newViewportPositionY;
+        newViewportY1 = newViewportPositionY + viewportHeight;
+        if (this._viewportY0 !== newViewportY0 || this._viewportY1 !== newViewportY1) {
+            this._viewportY0 = newViewportY0;
+            this._viewportY1 = newViewportY1;
+            this._pitchScrollBar.setPan(newPitchPan);
+
+            this._renderedNotesDirty = true;
+            this._renderedSelectionOverlayDirty = true;
+            this._renderedViewportX0 = null;
+            this._renderedViewportY0 = null;
+            this._renderedViewportX1 = null;
+            this._renderedViewportY1 = null;
+
+            this._ui.scheduleMainRender();
+        }
     };
 
     private _onPianoKeyDown = (pitch: number): void => {
