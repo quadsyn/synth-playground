@@ -46,6 +46,7 @@ export class SongDocument {
     public onStoppedPlayingPianoNote: Emitter;
     public playing: boolean;
     public playingPianoNote: boolean;
+    public stopPianoNoteTimeout: number;
     public audioContext: AudioContext | null;
     public samplesPerSecond: number;
     public fftSize: number;
@@ -84,6 +85,7 @@ export class SongDocument {
 
         this.playing = false;
         this.playingPianoNote = false;
+        this.stopPianoNoteTimeout = -1;
 
         // @TODO: Formalize this value as the default for projects.
         this.samplesPerSecond = 48000;
@@ -363,6 +365,7 @@ export class SongDocument {
                 pitch: pitch,
             });
         }
+        clearTimeout(this.stopPianoNoteTimeout);
         this.playingPianoNote = true;
         this.onStartedPlayingPianoNote.notifyListeners();
     }
@@ -374,7 +377,9 @@ export class SongDocument {
                 pitch: pitch,
             });
         }
-        this.playingPianoNote = false;
-        this.onStoppedPlayingPianoNote.notifyListeners();
+        this.stopPianoNoteTimeout = setTimeout(() => {
+            this.playingPianoNote = false;
+            this.onStoppedPlayingPianoNote.notifyListeners();
+        }, 200);
     }
 }

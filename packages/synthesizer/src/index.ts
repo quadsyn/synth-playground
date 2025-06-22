@@ -181,6 +181,8 @@ export class Synthesizer {
     public pianoNotePitch: number | null;
     public pianoNotePhase: number;
     public pianoNotePhaseDelta: number;
+    public pianoNoteVolume: number;
+    public pianoNoteVolumeDelta: number;
     public playingPianoNote: boolean;
 
     constructor(samplesPerSecond: number) {
@@ -196,6 +198,8 @@ export class Synthesizer {
         this.pianoNotePitch = null;
         this.pianoNotePhase = 0;
         this.pianoNotePhaseDelta = 0;
+        this.pianoNoteVolume = 0;
+        this.pianoNoteVolumeDelta = 0;
         this.playingPianoNote = false;
     }
 
@@ -383,24 +387,33 @@ export class Synthesizer {
             }
 
             if (this.playingPianoNote) {
-                let phase: number = this.pianoNotePhase;
-                let phaseDelta: number = this.pianoNotePhaseDelta;
-                const volume: number = 1;
+                if (this.pianoNoteVolume <= 0) {
+                    this.playingPianoNote = false;
+                    this.pianoNotePitch = null;
+                } else {
+                    let phase: number = this.pianoNotePhase;
+                    let phaseDelta: number = this.pianoNotePhaseDelta;
+                    let volume: number = this.pianoNoteVolume;
+                    let volumeDelta: number = this.pianoNoteVolumeDelta;
 
-                for (let i: number = 0; i < runLength; i++) {
-                    const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
-                    phase += phaseDelta;
-                    if (phase >= 1) phase -= 1;
+                    for (let i: number = 0; i < runLength; i++) {
+                        const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                        phase += phaseDelta;
+                        if (phase >= 1) phase -= 1;
+                        volume += volumeDelta;
 
-                    const outSampleL: number = outSample;
-                    const outSampleR: number = outSample;
+                        const outSampleL: number = outSample;
+                        const outSampleR: number = outSample;
 
-                    outL[bufferIndex + i] += outSampleL;
-                    outR[bufferIndex + i] += outSampleR;
+                        outL[bufferIndex + i] += outSampleL;
+                        outR[bufferIndex + i] += outSampleR;
+                    }
+
+                    this.pianoNotePhase = phase;
+                    this.pianoNotePhaseDelta = phaseDelta;
+                    this.pianoNoteVolume = volume;
+                    this.pianoNoteVolumeDelta = volumeDelta;
                 }
-
-                this.pianoNotePhase = phase;
-                this.pianoNotePhaseDelta = phaseDelta;
             }
 
             bufferIndex += runLength;
@@ -467,13 +480,16 @@ export class Synthesizer {
         this.pianoNotePitch = pitch;
         this.pianoNotePhase = 0;
         this.pianoNotePhaseDelta = pitchToFrequency(pitch) / this.samplesPerSecond;
+        this.pianoNoteVolume = 1;
+        this.pianoNoteVolumeDelta = 0;
         this.playingPianoNote = true;
     }
 
     public stopPianoNote(pitch: number): void {
-        this.pianoNotePitch = null;
-        this.pianoNotePhase = 0;
-        this.pianoNotePhaseDelta = 0;
-        this.playingPianoNote = false;
+        // this.pianoNotePitch = null;
+        // this.pianoNotePhase = 0;
+        // this.pianoNotePhaseDelta = 0;
+        this.pianoNoteVolumeDelta = (0 - this.pianoNoteVolume) / (0.1 * this.samplesPerSecond);
+        // this.playingPianoNote = false;
     }
 }

@@ -524,7 +524,7 @@ export class Main implements Component {
     }
 
     private _stopAnimating(): void {
-        this._animating--;
+        if (this._animating > 0) this._animating--;
         if (this._animating <= 0) {
             cancelAnimationFrame(this._renderRequest);
             this._ui.scheduleMainRender();
