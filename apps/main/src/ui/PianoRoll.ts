@@ -97,13 +97,17 @@ class TimeRuler implements Component {
 
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        const pixelsPerBeat: number = ppqn * pixelsPerTick;
-        let multiplier: number = 1;
-        while (
-            width > 0
-            && height > 0
-            && pixelsPerBeat * multiplier < 50
-        ) multiplier *= beatsPerBar;
+        // const pixelsPerBeat: number = ppqn * pixelsPerTick;
+        const viewportWidthInBeats: number = Math.floor(viewportWidth / ppqn);
+        // @TODO: Need to measure this based on font size and pattern position+duration
+        const minBeatWidth: number = 50;
+        const minBarWidth: number = minBeatWidth * beatsPerBar;
+        const exponent: number = width > 0 ? Math.max(0, Math.floor(
+            Math.log(viewportWidthInBeats / (width / minBarWidth))
+            / Math.log(beatsPerBar)
+        )) : 1;
+        const ppqnScaled: number = ppqn * Math.pow(beatsPerBar, exponent);
+        const ppqnScaledBar: number = exponent >= 1 ? ppqnScaled : beatsPerBar * ppqnScaled;
 
         const fontSize: number = 12;
         context.font = "12px sans-serif";
@@ -112,8 +116,7 @@ class TimeRuler implements Component {
         context.strokeStyle = "#ffffff";
         {
             context.lineWidth = 2;
-            const ppqnScaled: number = (multiplier > 1 ? 1 : beatsPerBar) * ppqn * multiplier;
-            let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
+            let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaledBar) * ppqnScaledBar);
             while (worldX < this._viewportX1) {
                 const screenX: number = ((worldX - viewportX0) * pixelsPerTick) | 0;
                 let beat: number = Math.floor(worldX / ppqn);
@@ -124,12 +127,11 @@ class TimeRuler implements Component {
                 context.lineTo(screenX, height);
                 context.stroke();
                 context.fillText((bar + 1) + "", screenX + 5, height - fontSize);
-                worldX += ppqnScaled;
+                worldX += ppqnScaledBar;
             }
         }
-        if (multiplier <= 1) {
+        if (exponent <= 0) {
             context.lineWidth = 1;
-            const ppqnScaled: number = ppqn * multiplier;
             let worldX: number = Math.max(0, Math.floor(viewportX0 / ppqnScaled) * ppqnScaled);
             while (worldX < this._viewportX1) {
                 let beat: number = Math.floor(worldX / ppqn);
@@ -763,7 +765,7 @@ export class PianoRoll implements Component {
         const height: number = canvas.height;
         const viewportWidth: number = this._viewportX1 - this._viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        const pixelsPerBeat: number = pixelsPerTick * ppqn;
+        // const pixelsPerBeat: number = pixelsPerTick * ppqn;
         // const ticksPerPixel: number = viewportWidth / width;
         context.fillStyle = "#303030";
         context.fillRect(0, 0, width, height);
@@ -815,13 +817,15 @@ export class PianoRoll implements Component {
         {
             // Time grid.
             // @TODO: Avoid this duplication
-            let multiplier: number = 1;
-            while (
-                width > 0
-                && height > 0
-                && pixelsPerBeat * multiplier < 50
-            ) multiplier *= beatsPerBar;
-            const ppqnScaled: number = ppqn * multiplier;
+            const viewportWidthInBeats: number = Math.floor(viewportWidth / ppqn);
+            // @TODO: Need to measure this based on font size and pattern position+duration
+            const minBeatWidth: number = 50;
+            const minBarWidth: number = minBeatWidth * beatsPerBar;
+            const exponent: number = width > 0 ? Math.max(0, Math.floor(
+                Math.log(viewportWidthInBeats / (width / minBarWidth))
+                / Math.log(beatsPerBar)
+            )) : 1;
+            const ppqnScaled: number = ppqn * Math.pow(beatsPerBar, exponent);
             let worldX: number = Math.max(0, Math.floor(this._viewportX0 / ppqnScaled) * ppqnScaled);
             while (worldX < this._viewportX1) {
                 const screenX: number = ((worldX - this._viewportX0) * pixelsPerTick) | 0;
