@@ -543,8 +543,6 @@ export class PianoRoll implements Component {
             height: this._height + "",
             style: `
                 flex-grow: 1;
-                width: 100%;
-                height: 100%;
                 display: block;
                 box-sizing: border-box;
                 position: absolute;
@@ -558,8 +556,6 @@ export class PianoRoll implements Component {
             height: this._height + "",
             style: `
                 flex-grow: 1;
-                width: 100%;
-                height: 100%;
                 display: block;
                 box-sizing: border-box;
                 position: absolute;
@@ -573,8 +569,6 @@ export class PianoRoll implements Component {
             height: this._height + "",
             style: `
                 flex-grow: 1;
-                width: 100%;
-                height: 100%;
                 display: block;
                 box-sizing: border-box;
                 position: absolute;
@@ -588,8 +582,6 @@ export class PianoRoll implements Component {
             height: this._height + "",
             style: `
                 flex-grow: 1;
-                width: 100%;
-                height: 100%;
                 display: block;
                 box-sizing: border-box;
                 position: absolute;
@@ -600,8 +592,8 @@ export class PianoRoll implements Component {
         this._playheadOverlayContext = this._playheadOverlayCanvas.getContext("2d")!;
         this._canvasesContainer = H("div", {
             style: `
-                width: 100%;
-                height: 100%;
+                width: ${this._width}px;
+                height: ${this._height}px;
                 position: relative;
                 box-sizing: border-box;
             `,
@@ -728,6 +720,8 @@ export class PianoRoll implements Component {
 
         this._width = newNoteAreaWidth;
         this._height = newNoteAreaHeight;
+        this._canvasesContainer.style.width = this._width + "px";
+        this._canvasesContainer.style.height = this._height + "px";
         this._timeScrollBar.resize(newNoteAreaWidth, timeScrollBarSize);
         this._pitchScrollBar.element.style.top = `${topRightGapH}px`;
         this._pitchScrollBar.resize(pitchScrollBarSize, newNoteAreaHeight);
