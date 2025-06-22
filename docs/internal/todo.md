@@ -212,7 +212,7 @@
 ### Stretchy scrollbar
 
 - [ ] Revise the CSS used for this.
-- [ ] `setZoom(centerPan: number, factor: number): void`
+- [-] `setZoom(centerPan: number, factor: number): void`
 - [ ] I added this `deltaDivisor` thing to make scrolling easier in larger
       patterns. It's hardcoded to 128 when holding shift, but maybe I could
       make it different powers of two as you move the mouse along the axis

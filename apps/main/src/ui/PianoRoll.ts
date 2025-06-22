@@ -3,7 +3,7 @@ import { SongDocument } from "../SongDocument.js";
 import { type Component } from "./types.js";
 import { UIContext } from "./UIContext.js";
 import { StretchyScrollBar } from "./StretchyScrollBar.js";
-import { lerp, remap, clamp } from "@synth-playground/common/math.js";
+import { lerp, unlerp, remap, clamp } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import {
     type Note,
@@ -96,6 +96,7 @@ class TimeRuler implements Component {
         context.fillStyle = "#000000";
         context.fillRect(0, 0, width, height);
 
+        // @TODO: Look into some flickering that can happen here when resizing.
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
         // const pixelsPerBeat: number = ppqn * pixelsPerTick;
@@ -650,6 +651,7 @@ export class PianoRoll implements Component {
         window.addEventListener("mousemove", this._onPointerMove);
         window.addEventListener("mouseup", this._onPointerUp);
         this._canvasesContainer.addEventListener("dblclick", this._onDoubleClick);
+        this._canvasesContainer.addEventListener("wheel", this._onWheel);
     }
 
     public dispose(): void {
@@ -661,6 +663,7 @@ export class PianoRoll implements Component {
         window.removeEventListener("mousemove", this._onPointerMove);
         window.removeEventListener("mouseup", this._onPointerUp);
         this._canvasesContainer.removeEventListener("dblclick", this._onDoubleClick);
+        this._canvasesContainer.removeEventListener("wheel", this._onWheel);
     }
 
     public resize(): void {
@@ -1485,6 +1488,54 @@ export class PianoRoll implements Component {
             );
         }
     }
+
+    private _onWheel = (event: WheelEvent): void => {
+        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+        const width: number = bounds.width;
+        // const height: number = bounds.height;
+        const mouseX: number = event.clientX - bounds.left;
+        // const mouseY: number = event.clientY - bounds.top;
+
+        let factor: number = 1.25; // Zoom out
+        if (event.deltaY < 0) factor = 1.0 / factor; // Zoom in
+
+        // @TODO: Detect when no visible change occurs, then skip the associated
+        // unnecessary state change + render.
+        const viewportX0: number = this._viewportX0;
+        const viewportX1: number = this._viewportX1;
+        const minViewportWidth: number = this._minViewportWidth;
+        const maxViewportWidth: number = this._maxViewportWidth;
+        const mousePanX: number = unlerp(mouseX, 0, width);
+        const mouseViewportX: number = lerp(mousePanX, viewportX0, viewportX1);
+        const viewportWidth: number = viewportX1 - viewportX0;
+        let newViewportWidth: number = clamp(viewportWidth * factor, minViewportWidth, maxViewportWidth);
+        let newViewportPositionX: number = mouseViewportX - newViewportWidth * mousePanX;
+        let newViewportX0: number = newViewportPositionX;
+        let newViewportX1: number = newViewportPositionX + newViewportWidth;
+        const newTimeZoom: number = clamp(remap(newViewportWidth, minViewportWidth, maxViewportWidth, 0, 1), 0, 1);
+        const newTimePan: number = clamp((
+            this._maxViewportWidth - newViewportWidth === 0
+            ? 0
+            : remap(newViewportPositionX, 0, maxViewportWidth - newViewportWidth, 0, 1)
+        ), 0, 1);
+        newViewportWidth = lerp(newTimeZoom, minViewportWidth, maxViewportWidth);
+        newViewportPositionX = lerp(newTimePan, 0, maxViewportWidth - newViewportWidth);
+        newViewportX0 = newViewportPositionX;
+        newViewportX1 = newViewportPositionX + newViewportWidth;
+        this._viewportX0 = newViewportX0;
+        this._viewportX1 = newViewportX1;
+        this._timeScrollBar.setZoom(newTimeZoom);
+        this._timeScrollBar.setPan(newTimePan);
+
+        this._renderedNotesDirty = true;
+        this._renderedSelectionOverlayDirty = true;
+        this._renderedViewportX0 = null;
+        this._renderedViewportY0 = null;
+        this._renderedViewportX1 = null;
+        this._renderedViewportY1 = null;
+
+        this._ui.scheduleMainRender();
+    };
 
     private _onPianoKeyDown = (pitch: number): void => {
         this._doc.playPianoNote(pitch);
