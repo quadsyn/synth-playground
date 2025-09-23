@@ -1,64 +1,101 @@
-import { CoordinatedResizeObserver } from "@synth-playground/dom/CoordinatedResizeObserver.js";
+import { CoordinatedResizeObserver } from "@synth-playground/browser/CoordinatedResizeObserver.js";
+import { InputManager } from "./input/InputManager.js";
+import { LocalizationManager } from "../localization/LocalizationManager.js";
+import { StringId } from "../localization/StringId.js";
 
-export type RenderFunction = () => void;
+export type RenderFunction = (timestamp: number) => void;
 
 export class UIContext {
     public resizeObserver: CoordinatedResizeObserver;
-    private _mainRenderFn: RenderFunction;
-    private _independentRenderFns: Set<RenderFunction>;
-    private _renderRequest: number | null;
+    public frame: number;
+    public inputManager: InputManager;
+    public localizationManager: LocalizationManager;
 
-    constructor() {
-        this._mainRenderFn = () => {};
-        this._independentRenderFns = new Set();
-        this._renderRequest = null;
+    private _mainRenderFn: RenderFunction;
+    private _mainRenderRequest: number | null;
+    private _animating: boolean;
+    private _animationRenderRequest: number | null;
+
+    constructor(
+        mainRenderFn: RenderFunction,
+        inputManager: InputManager,
+        localizationManager: LocalizationManager,
+    ) {
+        this.frame = 0;
+        this._mainRenderFn = mainRenderFn;
+        this._mainRenderRequest = null;
+        this._animating = false;
+        this._animationRenderRequest = null;
         this.resizeObserver = new CoordinatedResizeObserver();
+        this.inputManager = inputManager;
+        this.localizationManager = localizationManager;
     }
 
     public dispose(): void {
         this.resizeObserver.disconnect();
-        if (this._renderRequest != null) {
-            cancelAnimationFrame(this._renderRequest);
+        if (this._mainRenderRequest != null) {
+            cancelAnimationFrame(this._mainRenderRequest);
+            this._mainRenderRequest = null;
         }
-        this._independentRenderFns.clear();
+        if (this._animationRenderRequest != null) {
+            cancelAnimationFrame(this._animationRenderRequest);
+            this._animationRenderRequest = null;
+        }
     }
 
-    private _callback = (timestamp: number): void => {
-        // Clear things first before running them, so that if you schedule
+    private _mainCallback = (timestamp: number): void => {
+        // Clear before running the registered function, so that if you schedule
         // another render while one is running, those requests will be retained
         // for the next animation frame.
-        this._renderRequest = null;
-        let independentRenderFns: RenderFunction[] | null = null;
-        if (this._independentRenderFns.size > 0) {
-            independentRenderFns = Array.from(this._independentRenderFns.values());
-            this._independentRenderFns.clear();
-        }
+        this._mainRenderRequest = null;
 
-        this._mainRenderFn();
-        if (independentRenderFns != null) {
-            const count: number = independentRenderFns.length;
-            for (let index: number = 0; index < count; index++) {
-                independentRenderFns[index]();
-            }
-        }
+        this._mainRenderFn(timestamp);
     };
 
-    private _scheduleCallbackIfNeeded(): void {
-        if (this._renderRequest == null) {
-            this._renderRequest = requestAnimationFrame(this._callback);
+    private _scheduleMainCallbackIfNeeded(): void {
+        if (this._animationRenderRequest != null) {
+            return;
         }
-    }
 
-    public registerMainRender(f: RenderFunction): void {
-        this._mainRenderFn = f;
+        if (this._mainRenderRequest == null) {
+            this._mainRenderRequest = requestAnimationFrame(this._mainCallback);
+        }
     }
 
     public scheduleMainRender(): void {
-        this._scheduleCallbackIfNeeded();
+        this._scheduleMainCallbackIfNeeded();
     }
 
-    public scheduleIndependentRender(f: RenderFunction): void {
-        this._independentRenderFns.add(f);
-        this._scheduleCallbackIfNeeded();
+    private _animationCallback = (timestamp: number): void => {
+        if (!this._animating) {
+            return;
+        }
+
+        this.frame++;
+
+        // @TODO: Use a specialized animation render function instead?
+        this._mainRenderFn(timestamp);
+
+        this._animationRenderRequest = requestAnimationFrame(this._animationCallback);
+    };
+
+    public setAnimationStatus(value: boolean): void {
+        this._animating = value;
+
+        if (this._animationRenderRequest != null) {
+            cancelAnimationFrame(this._animationRenderRequest);
+        }
+
+        if (this._animating) {
+            this._animationRenderRequest = requestAnimationFrame(this._animationCallback);
+        } else {
+            this._animationRenderRequest = null;
+            this.scheduleMainRender();
+        }
+    }
+
+    /** Shortcut for LocalizationManager#translate. */
+    public T(id: StringId): string {
+        return this.localizationManager.translate(id);
     }
 }

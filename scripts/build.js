@@ -60,9 +60,12 @@ async function build(
         const name = appDirectory.split("/").at(-1);
         await copyPublicFiles(
             shouldMinify,
-            outputDirectory,
+            path.join(outputDirectory, name),
             appDirectory,
-            name
+        );
+        await copyLanguageFiles(
+            path.join(path.join(outputDirectory, name), "languages"),
+            appDirectory,
         );
         if (!skipTypeChecking) {
             await checkTypes(appDirectory);
@@ -77,12 +80,7 @@ async function build(
     }
 }
 
-async function copyPublicFiles(
-    shouldMinify,
-    outputDirectory,
-    inputDirectory,
-    extraOutputDirectory=null
-) {
+async function copyPublicFiles(shouldMinify, outputDirectory, inputDirectory) {
     try {
         await fs.access(path.join(inputDirectory, "public"));
         await esbuild.build({
@@ -98,11 +96,30 @@ async function copyPublicFiles(
                 ".css": "css",
             },
             minify: shouldMinify,
-            outdir: (
-                extraOutputDirectory != null
-                ? path.join(outputDirectory, extraOutputDirectory)
-                : outputDirectory
-            ),
+            outdir: outputDirectory,
+        });
+    } catch (error) {
+        if (error.code !== "ENOENT") {
+            throw error;
+        }
+    }
+}
+
+async function copyLanguageFiles(outputDirectory, inputDirectory) {
+    // @TODO: Should I care to figure out how to minify these?
+    try {
+        await fs.access(path.join(inputDirectory, "src/localization/strings"));
+        await esbuild.build({
+            logOverride: {
+                "empty-glob": "silent",
+            },
+            entryPoints: [
+                path.join(inputDirectory, "src/localization/strings/*.json"),
+            ],
+            loader: {
+                ".json": "copy",
+            },
+            outdir: outputDirectory,
         });
     } catch (error) {
         if (error.code !== "ENOENT") {
@@ -148,13 +165,10 @@ class FailedTypeChecking extends Error {
 
 async function findTsConfigFor(sourcePath) {
     let currentFolder = path.dirname(sourcePath);
-    while (
-        currentFolder != null
-        && (
-            path.basename(currentFolder) !== "packages"
-            && path.basename(currentFolder) !== "apps"
-        )
-    ) {
+    while (currentFolder != null && (
+        path.basename(currentFolder) !== "packages"
+        && path.basename(currentFolder) !== "apps"
+    )) {
         let hasTsConfig = true;
         try {
             await fs.access(path.join(currentFolder, "tsconfig.json"));

@@ -1,96 +1,66 @@
-import { H } from "@synth-playground/dom/index.js";
-import { type DockablePanel } from "./types.js";
+import { DockablePanel } from "./DockablePanel.js";
 import { SongDocument } from "../../SongDocument.js";
-import { UIContext } from "../UIContext.js";
-import { PianoRoll } from "../PianoRoll.js";
-import {
-    type GroupPanelPartInitParameters,
-    type DockviewIDisposable,
-} from "dockview-core";
+import { type AppContext } from "../../AppContext.js";
+import { PianoRoll } from "../pianoRoll/PianoRoll.js";
+import { AreaKind } from "../input/areas.js";
 
-export class PianoRollPanel implements DockablePanel {
-    private _ui: UIContext;
-    private _element: HTMLDivElement;
-    private _onDidVisibilityChange: DockviewIDisposable | null;
-    private _visible: boolean;
+export class PianoRollPanel extends DockablePanel {
+    private _app: AppContext;
     private _pianoRoll: PianoRoll;
-    private _onDidDimensionsChange: DockviewIDisposable | null;
-    private _onDidMovePanel: DockviewIDisposable | null;
-    private _setActive: (() => void) | null;
 
-    constructor(ui: UIContext, doc: SongDocument) {
-        this._ui = ui;
-
-        this._setActive = null;
-
-        this._visible = false;
-        this._onDidVisibilityChange = null;
-
-        this._pianoRoll = new PianoRoll(this._ui, doc);
-
-        this._onDidDimensionsChange = null;
-        this._onDidMovePanel = null;
-
-        this._element = H("div", {
-            style: `
-                display: flex;
-                width: 100%;
-                height: 100%;
-                box-sizing: border-box;
-                overflow: hidden;
-            `,
-        }, this._pianoRoll.element);
-
-        this._ui.resizeObserver.register(this._element, () => {
-            this._resize();
-        });
-
-        this._element.addEventListener("mousedown", this._handlePointerDown);
+    constructor(app: AppContext, doc: SongDocument) {
+        super();
+        this._app = app;
+        this._pianoRoll = new PianoRoll(this._app.ui, doc);
+        this._element.appendChild(this._pianoRoll.element);
+        this._app.ui.resizeObserver.register(this._element, this._onResizeObserved);
+        doc.onChangedPianoRollPattern.addListener(this._onChangedPianoRollPattern);
     }
 
-    public get element(): HTMLElement {
-        return this._element;
+    private _onChangedPianoRollPattern = (): void => {
+        this._api?.setActive();
+    };
+
+    protected override _init(): void {
+        this._app.ui.resizeObserver.observe(this._element);
+        if (this._api != null) {
+            this._app.ui.inputManager.registerPanel(
+                this._api.id,
+                this._pianoRoll.element,
+                AreaKind.PianoRoll,
+                this._pianoRoll.onAction,
+            );
+        }
     }
 
-    public init(parameters: GroupPanelPartInitParameters): void {
-        // @TODO: Only use these to detect moves instead of resizing.
-        // this._onDidDimensionsChange = parameters.api.onDidDimensionsChange(() => {
-        //     this._resize();
-        // });
-        // this._onDidMovePanel = parameters.containerApi.onDidMovePanel(() => {
-        //     this._resize();
-        // });
-        this._setActive = () => { parameters.api.setActive(); };
-        this._onDidVisibilityChange = parameters.api.onDidVisibilityChange(
-            (event) => { this._visible = event.isVisible; }
-        );
-        this._visible = parameters.api.isVisible;
-        this._ui.resizeObserver.observe(this._element);
-        // this._resize();
-    }
-
-    public dispose(): void {
-        this._onDidVisibilityChange?.dispose();
-        this._element.removeEventListener("mousedown", this._handlePointerDown);
-        this._setActive = null;
-        this._ui.resizeObserver.unobserve(this._element);
-        this._onDidDimensionsChange?.dispose();
-        this._onDidMovePanel?.dispose();
+    protected override _dispose(): void {
+        if (this._api != null) {
+            this._app.ui.inputManager.unregisterPanel(
+                this._api.id,
+                this._pianoRoll.element,
+                AreaKind.PianoRoll,
+                this._pianoRoll.onAction,
+            );
+        }
+        this._app.ui.resizeObserver.unobserve(this._element);
+        this._app.ui.resizeObserver.unregister(this._element, this._onResizeObserved);
         this._pianoRoll.dispose();
     }
 
-    public render(): void {
-        if (!this._visible) return;
+    protected override _render(): void {
         this._pianoRoll.render();
     }
 
-    private _resize(): void {
-        if (!this._visible) return;
-        this._pianoRoll.resize();
-        this._ui.scheduleMainRender();
-    }
-
-    private _handlePointerDown = (event: MouseEvent): void => {
-        this._setActive?.();
+    private _onResizeObserved = (entry: ResizeObserverEntry): void => {
+        this._resize();
     };
+
+    private _resize(): void {
+        if (!this._api?.isVisible) {
+            return;
+        }
+
+        this._pianoRoll.resize();
+        this._app.ui.scheduleMainRender();
+    }
 }

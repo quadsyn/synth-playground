@@ -3,11 +3,11 @@
 
 // Code is pulled apart a bit so we can avoid the closure whenever we want.
 
-export function splitmix32AdvanceState(state: number): number {
+export function advanceState(state: number): number {
     return ((state | 0) + 0x9e3779b9) | 0;
 }
 
-export function splitmix32ProduceValue(state: number): number {
+export function produceValue(state: number): number {
     let x: number = state ^ state >>> 16;
     x = Math.imul(x, 0x21f0aaad);
     x = x ^ x >>> 15;
@@ -16,14 +16,14 @@ export function splitmix32ProduceValue(state: number): number {
     return x >>> 0;
 }
 
-export function splitmix32ValueToF64(value: number): number {
+export function valueToF64(value: number): number {
     return value / 4294967296.0;
 }
 
-export function splitmix32(seed: number): (() => number) {
+export function make(seed: number): (() => number) {
     let state: number = seed;
     return function (): number {
-        state = splitmix32AdvanceState(state);
-        return splitmix32ValueToF64(splitmix32ProduceValue(state));
+        state = advanceState(state);
+        return valueToF64(produceValue(state));
     };
 }

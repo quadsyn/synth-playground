@@ -1,0 +1,95 @@
+{
+    "actionCategories": {
+        "global": "",
+        "pianoRoll": "Piano roll",
+        "timeline": "Timeline"
+    },
+    "actions": {
+        "global": {
+            "togglePlay": "Play/pause",
+            "play": "Play",
+            "pause": "Pause",
+            "stop": "Stop",
+            "seekToStart": "Seek to start",
+            "seekToEnd": "Seek to end",
+            "openCommandPalette": "Open command palette",
+            "about": "About",
+            "showTransportPanel": "Show transport panel",
+            "showDebugInfoPanel": "Show debug info panel",
+            "showPianoRollPanel": "Show piano roll panel",
+            "showTimelinePanel": "Show timeline panel",
+            "showOscilloscopePanel": "Show oscilloscope panel",
+            "showSpectrogramPanel": "Show spectrogram panel",
+            "showSpectrumAnalyzerPanel": "Show spectrum analyzer panel"
+        },
+        "pianoRoll": {
+            "createNote": "Create note",
+            "paintFlatNote": "Paint flat note",
+            "removeNote": "Remove note",
+            "leftStretchNote": "Stretch note from the left",
+            "rightStretchNote": "Stretch note from the right",
+            "moveNotes": "Move notes",
+            "selectBox": "Start box selection",
+            "selectAll": "Select all notes",
+            "zoomInAroundMouse": "Zoom in around mouse",
+            "zoomOutAroundMouse": "Zoom out around mouse",
+            "quantize": "Quantize"
+        },
+        "timeline": {
+            "quantize": "Quantize"
+        }
+    },
+    "panelTitles": {
+        "timeline": "Timeline",
+        "pianoRoll": "Piano Roll",
+        "transport": "Transport",
+        "oscilloscope": "Oscilloscope",
+        "spectrumAnalyzer": "Spectrum Analyzer",
+        "spectrogram": "Spectrogram",
+        "debugInfo": "Debug Info"
+    },
+    "panels": {
+        "transport": {
+            "play": "Play",
+            "stop": "Stop"
+        }
+    },
+    "dialogTitles": {
+        "about": "About"
+    },
+    "menus": {
+        "view": {
+            "label": "View",
+            "commandPalette": {
+                "label": "Command Palette"
+            },
+            "timeline": {
+                "label": "Timeline"
+            },
+            "pianoRoll": {
+                "label": "Piano Roll"
+            },
+            "transport": {
+                "label": "Transport"
+            },
+            "oscilloscope": {
+                "label": "Oscilloscope"
+            },
+            "spectrumAnalyzer": {
+                "label": "Spectrum Analyzer"
+            },
+            "spectrogram": {
+                "label": "Spectrogram"
+            },
+            "debugInfo": {
+                "label": "Debug Info"
+            }
+        },
+        "help": {
+            "label": "Help",
+            "about": {
+                "label": "About"
+            }
+        }
+    }
+}

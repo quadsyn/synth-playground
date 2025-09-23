@@ -1,25 +1,28 @@
-import { H } from "@synth-playground/dom/index.js";
-import { type DockablePanel } from "./types.js";
-import { VirtualizedList } from "../VirtualizedList.js";
+import { H } from "@synth-playground/browser/dom.js";
+import { DockablePanel } from "./DockablePanel.js";
+import { VirtualizedList, ListItem } from "../basic/VirtualizedList.js";
 import { UIContext } from "../UIContext.js";
-import {
-    type GroupPanelPartInitParameters,
-} from "dockview-core";
 
-export class VirtualizedListTestPanel implements DockablePanel {
+export class VirtualizedListTestPanel extends DockablePanel {
     private _ui: UIContext;
-    private _element: HTMLDivElement;
-    private _list: VirtualizedList;
+    private _list: VirtualizedList<string>;
+    private _listContainer: HTMLDivElement;
 
     constructor(ui: UIContext) {
+        super();
         this._ui = ui;
-
         this._list = new VirtualizedList(
             this._ui,
             /* height */ "100%",
             /* rowHeight */ 25,
+            /* itemMaker */ height => new ListItem(height),
         );
-        this._element = H("div", {
+        const data: string[] = [];
+        for (let i: number = 0; i < 1_000_000; i++) {
+            data.push(`index ${i}`);
+        }
+        this._list.setData(data);
+        this._listContainer = H("div", {
             style: `
                 width: 100%;
                 height: 100%;
@@ -46,19 +49,16 @@ export class VirtualizedListTestPanel implements DockablePanel {
                 ),
             ),
         );
+        this._element.appendChild(this._listContainer);
     }
 
-    public get element(): HTMLElement {
-        return this._element;
-    }
+    protected override _init(): void {}
 
-    public init(parameters: GroupPanelPartInitParameters): void {}
-
-    public dispose(): void {
+    protected override _dispose(): void {
         this._list.dispose();
     }
 
-    public render(): void {
+    protected override _render(): void {
         this._list.render();
     }
 }

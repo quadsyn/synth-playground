@@ -1,0 +1,95 @@
+{
+    "actionCategories": {
+        "global": "",
+        "pianoRoll": "Rolo de piano",
+        "timeline": "Linha do tempo"
+    },
+    "actions": {
+        "global": {
+            "togglePlay": "Reproduzir/pausar",
+            "play": "Reproduzir",
+            "pause": "Pausar",
+            "stop": "Parar",
+            "seekToStart": "Ir ao início",
+            "seekToEnd": "Ir ao fim",
+            "openCommandPalette": "Abrir paleta de comandos",
+            "about": "Sobre",
+            "showTransportPanel": "Mostrar painel de transporte",
+            "showDebugInfoPanel": "Mostrar painel de informação para depuração",
+            "showPianoRollPanel": "Mostrar painel do rolo de piano",
+            "showTimelinePanel": "Mostrar painel da linha do tempo",
+            "showOscilloscopePanel": "Mostrar painel do osciloscópio",
+            "showSpectrogramPanel": "Mostrar painel do espectrograma",
+            "showSpectrumAnalyzerPanel": "Mostrar painel do analisador de espectro"
+        },
+        "pianoRoll": {
+            "createNote": "Create note",
+            "paintFlatNote": "Paint flat note",
+            "removeNote": "Remove note",
+            "leftStretchNote": "Stretch note from the left",
+            "rightStretchNote": "Stretch note from the right",
+            "moveNotes": "Move notes",
+            "selectBox": "Start box selection",
+            "selectAll": "Select all notes",
+            "zoomInAroundMouse": "Zoom in around mouse",
+            "zoomOutAroundMouse": "Zoom out around mouse",
+            "quantize": "Quantizar"
+        },
+        "timeline": {
+            "quantize": "Quantizar"
+        }
+    },
+    "panelTitles": {
+        "timeline": "Linha do Tempo",
+        "pianoRoll": "Rolo de Piano",
+        "transport": "Transporte",
+        "oscilloscope": "Osciloscópio",
+        "spectrumAnalyzer": "Analisador de Espectro",
+        "spectrogram": "Espectrograma",
+        "debugInfo": "Informação para Depuração"
+    },
+    "panels": {
+        "transport": {
+            "play": "Reproduzir",
+            "stop": "Parar"
+        }
+    },
+    "dialogTitles": {
+        "about": "Sobre"
+    },
+    "menus": {
+        "view": {
+            "label": "Exibir",
+            "commandPalette": {
+                "label": "Paleta de Comandos"
+            },
+            "timeline": {
+                "label": "Linha do Tempo"
+            },
+            "pianoRoll": {
+                "label": "Rolo de Piano"
+            },
+            "transport": {
+                "label": "Transporte"
+            },
+            "oscilloscope": {
+                "label": "Osciloscópio"
+            },
+            "spectrumAnalyzer": {
+                "label": "Analisador de Espectro"
+            },
+            "spectrogram": {
+                "label": "Espectrograma"
+            },
+            "debugInfo": {
+                "label": "Informação para Depuração"
+            }
+        },
+        "help": {
+            "label": "Ajuda",
+            "about": {
+                "label": "Sobre"
+            }
+        }
+    }
+}

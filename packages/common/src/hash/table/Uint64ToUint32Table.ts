@@ -78,8 +78,10 @@ export function get(table: Type, keyLo: number, keyHi: number): number | undefin
 }
 
 export function set(table: Type, keyLo: number, keyHi: number, value: number): void {
-    const loadFactor: number = table.size / table.capacity;
-    if (loadFactor > C.MAXIMUM_LOAD_FACTOR) expand(table);
+    // Avoiding the load factor division here, we have:
+    //     if (table.size > table.capacity * C.MAXIMUM_LOAD_FACTOR) expand(table);
+    // but since the maximum load factor is 0.5, we can do even better:
+    if (table.size > (table.capacity >> 1)) expand(table);
     const capacity: number = table.capacity;
     const mask: number = capacity - 1;
     const buckets: Uint32Array = table.buckets;
@@ -175,10 +177,10 @@ export function getIndexFromKey(table: Type, keyLo: number, keyHi: number): numb
     let existingKeyHi: number = buckets[newIndex * 3 + 1];
     if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
     while (existingKeyLo !== C.EMPTY_SENTINEL_LO || existingKeyHi !== C.EMPTY_SENTINEL_HI) {
-        if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
         newIndex = (newIndex + 1) & mask;
         existingKeyLo = buckets[newIndex * 3];
         existingKeyHi = buckets[newIndex * 3 + 1];
+        if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
     }
     return -1;
 }

@@ -1,24 +1,28 @@
-- Monomorphism vs polymorphism in JavaScript engines
-  - <https://mrale.ph/blog/2015/01/11/whats-up-with-monomorphism.html>
-  - <https://stackoverflow.com/questions/76167593/js-v8-compiler-optimization-monomorph-polymorph-sealed-object-and-classes-o>
-  - <https://stackoverflow.com/questions/75061784/avoiding-polymorphism-when-re-using-code-as-optimization>
-  - <https://stackoverflow.com/questions/64427232/retrieve-some-meta-information-from-the-arbitrary-javascript-object-monomorphica>
-  - <https://stackoverflow.com/questions/74619246/polymorphism-overwhelming-inline-caches>
-  - SpiderMonkey (used in Firefox) and JavaScriptCore (used in Safari) probably
-    behave similarly, but it would be nice to have that confirmed in detail.
+Mostly links that aren't part of something of the todo list, and smaller notes.
+Larger notes go into their own file here.
+
+--------------------------------------------------------------------------------
+
+- Undo
+  - <https://maxliani.wordpress.com/2021/09/01/undo-the-art-of-part-1/>
+  - <https://developer.blender.org/docs/features/core/undo/>
+  - <https://doc.qt.io/qt-6/qundo.html>
+    - <https://stackoverflow.com/questions/17474986/qt-qundocommand-realtime-editing>
+
+- JavaScript engines
+  - Monomorphism vs polymorphism
+    - <https://mrale.ph/blog/2015/01/11/whats-up-with-monomorphism.html>
+    - <https://stackoverflow.com/questions/76167593/js-v8-compiler-optimization-monomorph-polymorph-sealed-object-and-classes-o>
+    - <https://stackoverflow.com/questions/75061784/avoiding-polymorphism-when-re-using-code-as-optimization>
+    - <https://stackoverflow.com/questions/64427232/retrieve-some-meta-information-from-the-arbitrary-javascript-object-monomorphica>
+    - <https://stackoverflow.com/questions/74619246/polymorphism-overwhelming-inline-caches>
+    - SpiderMonkey (used in Firefox) and JavaScriptCore (used in Safari)
+      probably behave similarly, but it would be nice to have that confirmed in
+      detail.
+  - [V8 design docs](https://github.com/two-heart/v8-design-docs)
 
 - DOM reflows
   - <https://firefox-source-docs.mozilla.org/performance/bestpractices.html>
-
-- Undo/redo
-  - <https://doc.qt.io/qt-6/qundo.html>
-
-- Actions
-  - <https://doc.qt.io/qt-6/qaction.html>
-
-- Menu
-  - <https://www.electronjs.org/docs/latest/api/menu>
-  - <https://www.electronjs.org/docs/latest/api/menu-item>
 
 - Monorepo maintenance
   - <https://nx.dev/blog/managing-ts-packages-in-monorepos>

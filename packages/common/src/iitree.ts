@@ -37,16 +37,16 @@
 // After sorting the intervals by their start position, an "indexing" operation
 // must be performed to set the correct maximum end point for all intervals.
 // Then queries can be performed. Every edit to the interval array must be
-// followed by sorting and indexing, which unfortunately gets slower for large
-// numbers of intervals.
+// followed by sorting and indexing, which of course gets slower for larger
+// amounts of intervals.
 // Queries should remain fast, though.
 //
-// Note that this should not be used as-is. Actual use should be inlined
-// wherever you need it, since we want things to be fast, but reusing the same
-// code for several different types that match the Interval interface is
-// slower, compared to sticking with one type only. Read up on "monomorphism"
-// vs "polymorphism" in JavaScript engines for why (there's some links about
-// this in the internal documentation here).
+// Note that this should not be used as-is, if you can avoid it. Ideally, actual
+// use should be inlined wherever you need it, since we want things to be fast,
+// but reusing the same code for several different types that match the Interval
+// interface is slower, compared to sticking with one type only. Read up on
+// "monomorphism" vs "polymorphism" in JavaScript engines for why (there's some
+// links about this in the internal documentation here).
 
 export interface Interval {
     // These should be part of the source data already. They're interpreted as
@@ -119,6 +119,14 @@ export function performIndexing(intervals: Interval[]): number {
     return maxLevel;
 }
 
+// @TODO:
+// - Look at what's cheaper: this onFound callback, or pushing the results into
+//   a list. Both admit preallocation at least.
+// - For inlining, dropping the level <= 3 case might be worth it to save on
+//   code size a bit. Though I think the duplication of the code that would
+//   replace the onFound call could be avoided, which helps.
+//   - I'm not sure how much the level <= 3 case is helping anyway. Should
+//     measure it.
 export function findOverlapping<T extends Interval>(
     intervals: T[],
     maxLevel: number,

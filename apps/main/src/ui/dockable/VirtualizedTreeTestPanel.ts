@@ -1,21 +1,19 @@
-import { H } from "@synth-playground/dom/index.js";
-import { type DockablePanel } from "./types.js";
-import { VirtualizedTree } from "../VirtualizedTree.js";
-import { Button } from "../Button.js";
-import { TextInput } from "../TextInput.js";
+import { H } from "@synth-playground/browser/dom.js";
+import { DockablePanel } from "./DockablePanel.js";
+import { VirtualizedTree } from "../basic/VirtualizedTree.js";
+import { Button } from "../basic/Button.js";
+import { TextInput } from "../basic/TextInput.js";
 import { UIContext } from "../UIContext.js";
-import { type GroupPanelPartInitParameters } from "dockview-core";
 
-export class VirtualizedTreeTestPanel implements DockablePanel {
+export class VirtualizedTreeTestPanel extends DockablePanel {
     private _ui: UIContext;
-    private _element: HTMLDivElement;
     private _tree: VirtualizedTree;
     private _filterInput: TextInput;
     private _expandAllButton: Button;
 
     constructor(ui: UIContext) {
+        super();
         this._ui = ui;
-
         this._tree = new VirtualizedTree(
             this._ui,
             /* height */ "100%",
@@ -35,7 +33,7 @@ export class VirtualizedTreeTestPanel implements DockablePanel {
             this._tree.expandAll();
             this._ui.scheduleMainRender();
         });
-        this._element = H("div", {
+        this._element.appendChild(H("div", {
             style: `
                 width: 100%;
                 height: 100%;
@@ -67,22 +65,18 @@ export class VirtualizedTreeTestPanel implements DockablePanel {
                     ),
                 ),
             ),
-        );
+        ));
     }
 
-    public get element(): HTMLElement {
-        return this._element;
-    }
+    protected override _init(): void {}
 
-    public init(parameters: GroupPanelPartInitParameters): void {}
-
-    public dispose(): void {
+    protected override _dispose(): void {
         this._filterInput.dispose();
         this._tree.dispose();
         this._expandAllButton.dispose();
     }
 
-    public render(): void {
+    protected override _render(): void {
         this._filterInput.render();
         this._tree.render();
         this._expandAllButton.setDisabled(!this._filterInput.isEmpty());

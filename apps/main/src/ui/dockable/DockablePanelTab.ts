@@ -1,4 +1,4 @@
-import { H } from "@synth-playground/dom/index.js";
+import { H } from "@synth-playground/browser/dom.js";
 import {
     type GroupPanelPartInitParameters,
     type ITabRenderer,

@@ -1,80 +1,60 @@
-import { H } from "@synth-playground/dom/index.js";
-import { type DockablePanel } from "./types.js";
+import { DockablePanel } from "./DockablePanel.js";
+import { SongDocument } from "../../SongDocument.js";
 import { UIContext } from "../UIContext.js";
-import { Timeline } from "../Timeline.js";
-import {
-    type GroupPanelPartInitParameters,
-    type DockviewIDisposable,
-} from "dockview-core";
+import { Timeline } from "../timeline/Timeline.js";
+import { AreaKind } from "../input/areas.js";
 
-export class TimelinePanel implements DockablePanel {
+export class TimelinePanel extends DockablePanel {
     private _ui: UIContext;
-    private _element: HTMLDivElement;
-    private _onDidVisibilityChange: DockviewIDisposable | null;
-    private _visible: boolean;
     private _timeline: Timeline;
-    private _onDidDimensionsChange: DockviewIDisposable | null;
-    private _onDidMovePanel: DockviewIDisposable | null;
 
-    constructor(ui: UIContext) {
+    constructor(ui: UIContext, doc: SongDocument) {
+        super();
         this._ui = ui;
-
-        this._visible = false;
-        this._onDidVisibilityChange = null;
-
-        this._timeline = new Timeline(this._ui);
-
-        this._onDidDimensionsChange = null;
-        this._onDidMovePanel = null;
-
-        this._element = H("div", {
-            style: `
-                width: 100%;
-                height: 100%;
-                box-sizing: border-box;
-                overflow: hidden;
-            `,
-        }, this._timeline.element);
-
-        this._ui.resizeObserver.register(this._element, () => {
-            this._resize();
-        });
+        this._timeline = new Timeline(this._ui, doc);
+        this._element.appendChild(this._timeline.element);
+        this._ui.resizeObserver.register(this._element, this._onResizeObserved);
     }
 
-    public get element(): HTMLElement {
-        return this._element;
-    }
-
-    public init(parameters: GroupPanelPartInitParameters): void {
-        // @TODO: Only use these to detect moves instead of resizing.
-        // this._onDidDimensionsChange = parameters.api.onDidDimensionsChange(() => {
-        //     this._resize();
-        // });
-        // this._onDidMovePanel = parameters.containerApi.onDidMovePanel(() => {
-        //     this._resize();
-        // });
-        this._onDidVisibilityChange = parameters.api.onDidVisibilityChange(
-            (event) => { this._visible = event.isVisible; }
-        );
-        this._visible = parameters.api.isVisible;
+    protected override _init(): void {
         this._ui.resizeObserver.observe(this._element);
+        if (this._api != null) {
+            this._ui.inputManager.registerPanel(
+                this._api.id,
+                this._element,
+                AreaKind.Timeline,
+                this._timeline.onAction,
+            );
+        }
     }
 
-    public dispose(): void {
-        this._onDidVisibilityChange?.dispose();
+    protected override _dispose(): void {
+        if (this._api != null) {
+            this._ui.inputManager.unregisterPanel(
+                this._api.id,
+                this._element,
+                AreaKind.Timeline,
+                this._timeline.onAction,
+            );
+        }
         this._ui.resizeObserver.unobserve(this._element);
-        this._onDidDimensionsChange?.dispose();
-        this._onDidMovePanel?.dispose();
+        this._ui.resizeObserver.unregister(this._element, this._onResizeObserved);
         this._timeline.dispose();
     }
 
-    public render(): void {
-        if (!this._visible) return;
+    protected override _render(): void {
         this._timeline.render();
     }
 
+    private _onResizeObserved = (entry: ResizeObserverEntry): void => {
+        this._resize();
+    };
+
     private _resize(): void {
-        if (!this._visible) return;
+        if (!this._api?.isVisible) {
+            return;
+        }
+
         this._timeline.resize();
         this._ui.scheduleMainRender();
     }

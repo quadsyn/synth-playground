@@ -1,0 +1,830 @@
+import { lerp, unlerp, remap, clamp } from "@synth-playground/common/math.js";
+import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
+import * as Viewport from "../common/Viewport.js";
+import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
+import * as BentNoteIterator from "./BentNoteIterator.js";
+import { tickToX, pitchToY } from "./common.js";
+
+/** The return value indicates whether the background was drawn or not. */
+export function drawNoteBackgroundPath(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+    force: boolean,
+): boolean {
+    if (end <= start) {
+        // Don't draw zero-length notes.
+        return false;
+    }
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return false;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return false;
+        }
+
+        if (force) {
+            // We have this here for outlines and note flashing at least.
+            context.beginPath();
+            context.rect(x, y, w, h);
+            return true;
+        }
+
+        return false;
+    } else if (style === NoteDrawingStyle.Bent) {
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        context.beginPath();
+        {
+            // Top left -> top right
+            let firstLine: boolean = true;
+            let prevSegmentX1: number = 0;
+            let prevSegmentY1: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (firstLine) {
+                        firstLine = false;
+                        context.moveTo(it.segmentX0, it.segmentY0);
+                    } else if (it.segmentX0 !== prevSegmentX1 || it.segmentY0 !== prevSegmentY1) {
+                        context.lineTo(it.segmentX0, it.segmentY0);
+                    }
+                    context.lineTo(it.segmentX1, it.segmentY1);
+                    prevSegmentX1 = it.segmentX1;
+                    prevSegmentY1 = it.segmentY1;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        {
+            // Bottom right -> bottom left
+            let prevSegmentX0: number = 0;
+            let prevSegmentY0: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {
+                        context.lineTo(it.segmentX1, it.segmentY1 + pixelsPerPitch);
+                    }
+                    context.lineTo(it.segmentX0, it.segmentY0 + pixelsPerPitch);
+                    prevSegmentX0 = it.segmentX0;
+                    prevSegmentY0 = it.segmentY0;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        BentNoteIterator.teardown(it);
+        context.closePath();
+
+        return true;
+    }
+
+    return false;
+}
+
+/** The return value indicates whether the foreground was drawn or not. */
+export function drawNoteForegroundPath(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): boolean {
+    if (end <= start) {
+        // Don't draw zero-length notes.
+        return false;
+    }
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return false;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const volumeEnvelopeLength: number = volumeEnvelope != null ? volumeEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+    const hasVolumeEnvelope: boolean = volumeEnvelopeLength > 0;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope && !hasVolumeEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return false;
+        }
+
+        // @TODO: if volumeEnvelopeLength >= 1: draw two rectangles, take first
+        // value as the foreground height?
+
+        // @TODO: Add rect fast path if volumeEnvelopeLength === 1
+
+        context.beginPath();
+        context.rect(x, y, w, h);
+
+        return true;
+    } else if (style === NoteDrawingStyle.Bent) {
+        if (!hasPitchEnvelope) {
+            if ((y + h) < 0 || y > canvasHeight) {
+                // Quit early if note is vertically out of bounds.
+                return false;
+            }
+        }
+
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        const defaultVolume: number = 1; // @TODO: Constant
+
+        context.beginPath();
+        {
+            // Top left -> top right
+            let firstLine: boolean = true;
+            let prevSegmentX1: number = 0;
+            let prevSegmentY1: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
+                    const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
+                    const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 0.5 + startVolume * 0.5);
+                    if (firstLine) {
+                        firstLine = false;
+                        context.moveTo(it.segmentX0, segmentY0);
+                    } else if (it.segmentX0 !== prevSegmentX1 || segmentY0 !== prevSegmentY1) {
+                        context.lineTo(it.segmentX0, segmentY0);
+                    }
+                    if (volumeStartIndex > -1 && it.adjustedPitchTime0 !== it.adjustedPitchTime1) {
+                        for (let volumeIndex: number = volumeStartIndex; volumeIndex < volumeEnvelopeLength; volumeIndex++) {
+                            const volumePoint: Breakpoint.Type = volumeEnvelope![volumeIndex];
+                            const volumeTime: number = volumePoint.time;
+                            if (volumeTime < it.adjustedPitchTime0) {
+                                continue;
+                            }
+                            if (volumeTime > it.adjustedPitchTime1) {
+                                break;
+                            }
+                            const t: number = clamp(unlerp(volumeTime, it.adjustedPitchTime0, it.adjustedPitchTime1), 0, 1);
+                            const middlePitch: number = lerp(t, it.adjustedPitch0, it.adjustedPitch1);
+                            const segmentX: number = tickToX(viewport, pixelsPerTick, start + volumeTime);
+                            const segmentY: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + middlePitch - 0.5 + volumePoint.value * 0.5);
+                            if (segmentX !== prevSegmentX1 || segmentY !== prevSegmentY1) {
+                                context.lineTo(segmentX, segmentY);
+                                prevSegmentX1 = segmentX;
+                                prevSegmentY1 = segmentY;
+                            }
+                        }
+                    }
+                    const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
+                    const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
+                    const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 0.5 + endVolume * 0.5);
+                    if (it.segmentX1 !== prevSegmentX1 || segmentY1 !== prevSegmentY1) {
+                        context.lineTo(it.segmentX1, segmentY1);
+                        prevSegmentX1 = it.segmentX1;
+                        prevSegmentY1 = segmentY1;
+                    }
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        {
+            // Bottom right -> bottom left
+            let prevSegmentX0: number = 0;
+            let prevSegmentY0: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
+                    const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
+                    const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 1 + 0.5 - endVolume * 0.5);
+                    if (it.segmentX1 !== prevSegmentX0 || segmentY1 !== prevSegmentY0) context.lineTo(it.segmentX1, segmentY1);
+                    if (volumeEndIndex > -1 && it.adjustedPitchTime0 !== it.adjustedPitchTime1) {
+                        for (let volumeIndex: number = volumeEndIndex - 1; volumeIndex >= 0; volumeIndex--) {
+                            const volumePoint: Breakpoint.Type = volumeEnvelope![volumeIndex];
+                            const volumeTime: number = volumePoint.time;
+                            if (volumeTime < it.adjustedPitchTime0) {
+                                break;
+                            }
+                            if (volumeTime > it.adjustedPitchTime1) {
+                                continue;
+                            }
+                            const t: number = clamp(unlerp(volumeTime, it.adjustedPitchTime0, it.adjustedPitchTime1), 0, 1);
+                            const middlePitch: number = lerp(t, it.adjustedPitch0, it.adjustedPitch1);
+                            const segmentX: number = tickToX(viewport, pixelsPerTick, start + volumeTime);
+                            const segmentY: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + middlePitch - 1 + 0.5 - volumePoint.value * 0.5);
+                            if (segmentX !== prevSegmentX0 || segmentY !== prevSegmentY0) {
+                                context.lineTo(segmentX, segmentY);
+                                prevSegmentX0 = segmentX;
+                                prevSegmentY0 = segmentY;
+                            }
+                        }
+                    }
+                    const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
+                    const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
+                    const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 1 + 0.5 - startVolume * 0.5);
+                    if (it.segmentX0 !== prevSegmentX0 || segmentY0 !== prevSegmentY0) {
+                        context.lineTo(it.segmentX0, segmentY0);
+                        prevSegmentX0 = it.segmentX0;
+                        prevSegmentY0 = segmentY0;
+                    }
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        BentNoteIterator.teardown(it);
+        context.closePath();
+
+        return true;
+    }
+
+    return false;
+}
+
+export function drawNoteBackground(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (drawNoteBackgroundPath(
+        it,
+        style,
+        context,
+        canvasWidth,
+        canvasHeight,
+        viewport,
+        pixelsPerTick,
+        pixelsPerPitch,
+        start,
+        end,
+        pitch,
+        pitchEnvelope,
+        volumeEnvelope,
+        /* force */ false,
+    )) {
+        context.fill();
+    }
+}
+
+/** The return value indicates whether the foreground was drawn or not. */
+export function drawNoteForeground(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): boolean {
+    const hasPath: boolean = drawNoteForegroundPath(
+        it,
+        style,
+        context,
+        canvasWidth,
+        canvasHeight,
+        viewport,
+        pixelsPerTick,
+        pixelsPerPitch,
+        start,
+        end,
+        pitch,
+        pitchEnvelope,
+        volumeEnvelope,
+    );
+    if (hasPath) {
+        context.fill();
+    }
+    return hasPath;
+}
+
+export function drawNoteOutline(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (drawNoteBackgroundPath(
+        it,
+        style,
+        context,
+        canvasWidth,
+        canvasHeight,
+        viewport,
+        pixelsPerTick,
+        pixelsPerPitch,
+        start,
+        end,
+        pitch,
+        pitchEnvelope,
+        volumeEnvelope,
+        /* force */ true,
+    )) {
+        context.stroke();
+    }
+}
+
+export function drawNoteFlash(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    playhead: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    const progress: number = clamp(unlerp(playhead, start, end), 0, 1);
+    const alpha: number = 1.0 - progress;
+
+    if (drawNoteForegroundPath(
+        it,
+        style,
+        context,
+        canvasWidth,
+        canvasHeight,
+        viewport,
+        pixelsPerTick,
+        pixelsPerPitch,
+        start,
+        end,
+        pitch,
+        pitchEnvelope,
+        volumeEnvelope,
+    )) {
+        // @TODO: Cache these colors. Although this is rather
+        // slow regardless.
+        context.fillStyle = "rgba(255, 255, 255, " + alpha + ")";
+        context.fill();
+    }
+}
+
+export function drawNoteLeftHandle(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    handleSize: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (end <= start) {
+        // Don't draw for zero-length notes.
+        return;
+    }
+
+    // @TODO: Binary search for the segment we care about.
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return;
+        }
+
+        context.beginPath();
+        context.rect(x, y, Math.min(w, handleSize), h);
+        context.fill();
+    } else if (style === NoteDrawingStyle.Bent) {
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        let handleX0: number = 0;
+        let handleX1: number = 0;
+        let handleY0: number = 0;
+        let handleY1: number = 0;
+
+        context.beginPath();
+
+        // Top left -> top right (for the handle shape!)
+        BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
+        while (!BentNoteIterator.isDone(it)) {
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+            if (adjustedDuration > 0) {
+                handleX0 = it.segmentX0;
+                handleX1 = clamp(handleX0 + handleSize, it.segmentX0, it.segmentX1);
+                handleY0 = it.segmentY0;
+                handleY1 = remap(handleX1, it.segmentX0, it.segmentX1, it.segmentY0, it.segmentY1);
+
+                context.moveTo(handleX0, handleY0);
+                context.lineTo(handleX1, handleY1);
+
+                // We only care about the first visible segment.
+                break;
+            }
+            BentNoteIterator.advance(it);
+        }
+        BentNoteIterator.teardown(it);
+        
+        // Bottom right -> bottom left (for the handle shape!)
+        context.lineTo(handleX1, handleY1 + pixelsPerPitch);
+        context.lineTo(handleX0, handleY0 + pixelsPerPitch);
+
+        context.closePath();
+        context.fill();
+    }
+}
+
+export function drawNoteRightHandle(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    handleSize: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (end <= start) {
+        // Don't draw for zero-length notes.
+        return;
+    }
+
+    // @TODO: Binary search for the segment we care about.
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return;
+        }
+
+        context.beginPath();
+        context.rect(Math.max(x, x1 - handleSize), y, Math.min(w, handleSize), h);
+        context.fill();
+    } else if (style === NoteDrawingStyle.Bent) {
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        let handleX0: number = 0;
+        let handleX1: number = 0;
+        let handleY0: number = 0;
+        let handleY1: number = 0;
+
+        context.beginPath();
+
+        // Top left -> top right (for the handle shape!)
+        BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
+        while (!BentNoteIterator.isDone(it)) {
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+            if (adjustedDuration > 0) {
+                handleX0 = clamp(it.segmentX1 - handleSize, it.segmentX0, it.segmentX1);
+                handleX1 = it.segmentX1;
+                handleY0 = remap(handleX0, it.segmentX0, it.segmentX1, it.segmentY0, it.segmentY1);
+                handleY1 = it.segmentY1;
+
+                context.moveTo(handleX0, handleY0);
+                context.lineTo(handleX1, handleY1);
+
+                // We only care about the last visible segment.
+                break;
+            }
+            BentNoteIterator.advance(it);
+        }
+        BentNoteIterator.teardown(it);
+        
+        // Bottom right -> bottom left (for the handle shape!)
+        context.lineTo(handleX1, handleY1 + pixelsPerPitch);
+        context.lineTo(handleX0, handleY0 + pixelsPerPitch);
+
+        context.closePath();
+        context.fill();
+    }
+}
+
+export function drawNoteTopHandle(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    handleSizeFactor: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (end <= start) {
+        // Don't draw for zero-length notes.
+        return;
+    }
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+
+    const handleSize: number = pixelsPerPitch / handleSizeFactor;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return;
+        }
+
+        context.beginPath();
+        context.rect(x, y, w, Math.min(h, handleSize));
+        context.fill();
+    } else if (style === NoteDrawingStyle.Bent) {
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        context.beginPath();
+        {
+            // Top left -> top right
+            let firstLine: boolean = true;
+            let prevSegmentX1: number = 0;
+            let prevSegmentY1: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (firstLine) {
+                        firstLine = false;
+                        context.moveTo(it.segmentX0, it.segmentY0);
+                    } else if (it.segmentX0 !== prevSegmentX1 || it.segmentY0 !== prevSegmentY1) {
+                        context.lineTo(it.segmentX0, it.segmentY0);
+                    }
+                    context.lineTo(it.segmentX1, it.segmentY1);
+                    prevSegmentX1 = it.segmentX1;
+                    prevSegmentY1 = it.segmentY1;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        {
+            // Bottom right -> bottom left
+            let prevSegmentX0: number = 0;
+            let prevSegmentY0: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {
+                        context.lineTo(it.segmentX1, it.segmentY1 + handleSize);
+                    }
+                    context.lineTo(it.segmentX0, it.segmentY0 + handleSize);
+                    prevSegmentX0 = it.segmentX0;
+                    prevSegmentY0 = it.segmentY0;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        BentNoteIterator.teardown(it);
+        context.closePath();
+        context.fill();
+    }
+}
+
+export function drawNoteBottomHandle(
+    it: BentNoteIterator.Type,
+    style: NoteDrawingStyle,
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    handleSizeFactor: number,
+    start: number,
+    end: number,
+    pitch: number,
+    pitchEnvelope: Breakpoint.Type[] | null,
+    volumeEnvelope: Breakpoint.Type[] | null,
+): void {
+    if (end <= start) {
+        // Don't draw for zero-length notes.
+        return;
+    }
+
+    const x0: number = tickToX(viewport, pixelsPerTick, start);
+    const x1: number = tickToX(viewport, pixelsPerTick, end);
+    const w: number = Math.max(1, x1 - x0);
+    const x: number = x0;
+    if ((x + w) < 0 || x > canvasWidth) {
+        // Quit early if note is horizontally out of bounds.
+        return;
+    }
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const h: number = pixelsPerPitch;
+    const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+
+    const handleSize: number = pixelsPerPitch / handleSizeFactor;
+
+    if (
+        style === NoteDrawingStyle.Flat
+        || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
+    ) {
+        if ((y + h) < 0 || y > canvasHeight) {
+            // Quit early if note is vertically out of bounds.
+            return;
+        }
+
+        context.beginPath();
+        context.rect(x, Math.max(y, y + h - handleSize), w, Math.min(h, handleSize));
+        context.fill();
+    } else if (style === NoteDrawingStyle.Bent) {
+        // @TODO: Use first value for culling if pitchEnvelopeLength === 1
+
+        // @TODO: Figure out bounding box, and use that for culling? Maybe not
+        // worth it.
+
+        context.beginPath();
+        {
+            // Top left -> top right
+            let firstLine: boolean = true;
+            let prevSegmentX1: number = 0;
+            let prevSegmentY1: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (firstLine) {
+                        firstLine = false;
+                        context.moveTo(it.segmentX0, it.segmentY0 + pixelsPerPitch - handleSize);
+                    } else if (it.segmentX0 !== prevSegmentX1 || it.segmentY0 !== prevSegmentY1) {
+                        context.lineTo(it.segmentX0, it.segmentY0 + pixelsPerPitch - handleSize);
+                    }
+                    context.lineTo(it.segmentX1, it.segmentY1 + pixelsPerPitch - handleSize);
+                    prevSegmentX1 = it.segmentX1;
+                    prevSegmentY1 = it.segmentY1;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        {
+            // Bottom right -> bottom left
+            let prevSegmentX0: number = 0;
+            let prevSegmentY0: number = 0;
+            BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
+            while (!BentNoteIterator.isDone(it)) {
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
+                if (adjustedDuration > 0) {
+                    if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {
+                        context.lineTo(it.segmentX1, it.segmentY1 + pixelsPerPitch);
+                    }
+                    context.lineTo(it.segmentX0, it.segmentY0 + pixelsPerPitch);
+                    prevSegmentX0 = it.segmentX0;
+                    prevSegmentY0 = it.segmentY0;
+                }
+                BentNoteIterator.advance(it);
+            }
+        }
+        BentNoteIterator.teardown(it);
+        context.closePath();
+        context.fill();
+    }
+}
+

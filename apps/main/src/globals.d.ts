@@ -5,3 +5,9 @@ declare module "inlineworker!*" {
     const value: string;
     export = value;
 }
+
+// For CSS modules.
+declare module "*.module.css";
+
+// For localization.
+declare module "*.json";

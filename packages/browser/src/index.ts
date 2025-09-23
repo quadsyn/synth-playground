@@ -15,5 +15,5 @@ export function promptToDownloadUrl(url: string, filename: string): void {
 
 export function promptToDownloadBlob(blob: Blob, filename: string): void {
     const url: string = URL.createObjectURL(blob);
-    downloadUrl(url, filename);
+    promptToDownloadUrl(url, filename);
 }

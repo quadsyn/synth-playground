@@ -1,9 +1,21 @@
-import { H } from "@synth-playground/dom/index.js";
+import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../SongDocument.js";
 import { type Component } from "./types.js";
-import { type DockablePanel } from "./dockable/types.js";
+import { DockablePanel } from "./dockable/DockablePanel.js";
 import { UIContext } from "./UIContext.js";
-import { MenuBar } from "./MenuBar.js";
+import {
+    LocalizationManager,
+    computeLanguageIdForPreferredLanguage,
+} from "../localization/LocalizationManager.js";
+import { LanguageId } from "../localization/LanguageId.js";
+import { StringId } from "../localization/StringId.js";
+import { ActionKind, ActionResponse } from "./input/actions.js";
+import { type OperationContext } from "./input/operations.js";
+import { gestureToString } from "./input/gestures.js";
+import { InputManager } from "./input/InputManager.js";
+import { type AppContext } from "../AppContext.js";
+import { MenuBar } from "./basic/MenuBar.js";
+import { CommandPalette } from "./commandPalette/CommandPalette.js";
 import { DockablePanelTab } from "./dockable/DockablePanelTab.js";
 import { PopupTab } from "./dockable/PopupTab.js";
 import { EmptyPanel } from "./dockable/EmptyPanel.js";
@@ -25,14 +37,22 @@ import {
     type SerializedDockview,
     type GroupPanelViewState,
     type SerializedGridObject,
+    // type IDockviewPanel,
 } from "dockview-core";
 
 // For now, bump this once changes are made, to effectively clear the saved
 // dockable panel layout.
-const SERIALIZED_DOCKVIEW_VERSION = 2;
+const SERIALIZED_DOCKVIEW_VERSION = 3;
 
-// @TODO: Generalize this properly. Probably by storing something in the panel
-// objects.
+// @TODO: Generalize this properly.
+// Current idea is to have a "panel registry", which will be stored inside the
+// Main component. Each entry will have the relevant info, plus a factory
+// function (the reason it will be defined inside the Main component is because
+// some components need access to the UI context, and the constructor arguments
+// can vary, so we can't just always pass the same arguments for everything).
+// A thing I'm unsure about right now is what to do with IDs: I don't have any
+// case where a panel can have multiple instances, but I may need that in the
+// future. That will need to be defined a bit differently.
 const DOCKABLE_PANEL_IDS: Record<string, boolean> = {
     "pianoRollPanel": true,
     "timelinePanel": true,
@@ -44,33 +64,224 @@ const DOCKABLE_PANEL_IDS: Record<string, boolean> = {
 };
 
 export class Main implements Component {
-    private _doc: SongDocument;
-
     public element: HTMLDivElement;
+
+    private _doc: SongDocument;
     private _ui: UIContext;
+    private _app: AppContext;
     private _mounted: boolean;
     private _menuContainer: HTMLDivElement;
     private _menuBar: MenuBar;
     private _dockviewContainer: HTMLDivElement;
     private _dockview: DockviewApi;
+    // @TODO: Store something here so we can update the titles when the language
+    // changes. Probably the ID is enough, then we can just use a switch.
+    // Ideally, the panel tab thing would be hooked up with the localization
+    // manager so we could move this logic there.
     private _renderablePanels: IContentRenderer[];
-    private _renderRequest: number;
-    private _animating: number;
+    private _commandPaletteContainer: HTMLDivElement;
+    private _commandPalette: CommandPalette;
 
-    constructor(ui: UIContext, doc: SongDocument) {
-        this._doc = doc;
+    constructor() {
+        this.element = H("div", {
+            style: `
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            `,
+        });
 
-        this._doc.onSongChanged.addListener(this._onSongChanged);
+        this._dockviewContainer = H("div", {
+            style: `
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                /* Isolate dockview into its own stacking context. */
+                position: relative;
+                z-index: 1;
+            `,
+        });
+
+        this._ui = new UIContext(
+            (timestamp: number): void => { this.render(); },
+            new InputManager(
+                this._dockviewContainer,
+                this._onGlobalAction,
+                this._shouldBlockActions,
+            ),
+            new LocalizationManager(),
+        );
+
+        this._ui.localizationManager.setLanguage(computeLanguageIdForPreferredLanguage());
+        this._ui.localizationManager.populateStringTable();
+
+        this._doc = new SongDocument();
+
+        this._doc.onProjectChanged.addListener(this._onProjectChanged);
         this._doc.onStartedPlaying.addListener(this._onStartedPlaying);
         this._doc.onStoppedPlaying.addListener(this._onStoppedPlaying);
         this._doc.onStartedPlayingPianoNote.addListener(this._onStartedPlayingPianoNote);
         this._doc.onStoppedPlayingPianoNote.addListener(this._onStoppedPlayingPianoNote);
 
-        this._ui = ui;
         this._mounted = false;
         this._renderablePanels = [];
-        this._renderRequest = -1;
-        this._animating = 0;
+
+        this._app = {
+            doc: this._doc,
+            ui: this._ui,
+            showTimelinePanel: () => {
+                const existing = this._dockview.getPanel("timelinePanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "timelinePanel",
+                        component: "TimelinePanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.TimelinePanelTitle),
+                    });
+                }
+            },
+            showPianoRollPanel: () => {
+                const existing = this._dockview.getPanel("pianoRollPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "pianoRollPanel",
+                        component: "PianoRollPanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.PianoRollPanelTitle),
+                    });
+                }
+            },
+            showTransportPanel: () => {
+                const existing = this._dockview.getPanel("transportPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "transportPanel",
+                        component: "TransportPanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.TransportPanelTitle),
+                    });
+                }
+            },
+            showOscilloscopePanel: () => {
+                const existing = this._dockview.getPanel("oscilloscopePanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "oscilloscopePanel",
+                        component: "OscilloscopePanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.OscilloscopePanelTitle),
+                    });
+                }
+            },
+            showSpectrumAnalyzerPanel: () => {
+                const existing = this._dockview.getPanel("spectrumAnalyzerPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "spectrumAnalyzerPanel",
+                        component: "SpectrumAnalyzerPanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.SpectrumAnalyzerPanelTitle),
+                    });
+                }
+            },
+            showSpectrogramPanel: () => {
+                const existing = this._dockview.getPanel("spectrogramPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "spectrogramPanel",
+                        component: "SpectrogramPanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.SpectrogramPanelTitle),
+                    });
+                }
+            },
+            showAboutPanel: () => {
+                const windowWidth: number = window.innerWidth;
+                const windowHeight: number = window.innerHeight;
+                const panelWidth: number = 500;
+                const panelHeight: number = 200;
+                const panelX: number = windowWidth / 2 - panelWidth / 2;
+                const panelY: number = windowHeight / 2 - panelHeight / 2;
+                const existing = this._dockview.getPanel("aboutPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "aboutPanel",
+                        component: "AboutPanel",
+                        tabComponent: "PopupTab",
+                        renderer: "always",
+                        title: this._ui.T(StringId.AboutDialogTitle),
+                        floating: {
+                            position: { left: panelX, top: panelY },
+                            width: panelWidth,
+                            height: panelHeight,
+                        },
+                    });
+                }
+            },
+            showDebugInfoPanel: () => {
+                const existing = this._dockview.getPanel("debugInfoPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "debugInfoPanel",
+                        component: "DebugInfoPanel",
+                        renderer: "always",
+                        title: this._ui.T(StringId.DebugInfoPanelTitle),
+                    });
+                }
+            },
+            showVirtualizedTreeTestPanel: () => {
+                const windowWidth: number = window.innerWidth;
+                const windowHeight: number = window.innerHeight;
+                const panelWidth: number = 500;
+                const panelHeight: number = 400;
+                const panelX: number = windowWidth / 2 - panelWidth / 2;
+                const panelY: number = windowHeight / 2 - panelHeight / 2;
+                const existing = this._dockview.getPanel("virtualizedTreeTestPanel");
+                if (existing != null) {
+                    existing.api.setActive();
+                } else {
+                    this._dockview.addPanel({
+                        id: "virtualizedTreeTestPanel",
+                        component: "VirtualizedTreeTestPanel",
+                        renderer: "always",
+                        title: "Virtualized Tree Test",
+                        floating: {
+                            position: { left: panelX, top: panelY },
+                            width: panelWidth,
+                            height: panelHeight,
+                        },
+                    });
+                }
+            },
+            showCommandPalette: () => {
+                this._commandPalette.show();
+            },
+            changeLanguage: async (language: LanguageId): Promise<void> => {
+                this._ui.localizationManager.setLanguage(language);
+                const changed: boolean = await this._ui.localizationManager.populateStringTable();
+                if (changed) {
+                    this._ui.scheduleMainRender();
+                }
+            },
+        };
 
         this._menuContainer = H("div", {
             style: `
@@ -83,239 +294,102 @@ export class Main implements Component {
                 z-index: 1;
             `,
         });
-        this._menuBar = new MenuBar(
-            this._ui,
-            this._menuContainer,
-            [
-                {
-                    label: "View",
-                    children: [
-                        {
-                            label: "Timeline",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("timelinePanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("timelinePanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "timelinePanel",
-                                    component: "TimelinePanel",
-                                    renderer: "always",
-                                    title: "Timeline",
-                                    floating: true,
-                                });
-                            },
-                        },
-                        {
-                            label: "Piano Roll",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("pianoRollPanel") != null;
-                            },
-                            onClick: () => {
-                                const existing = this._dockview.getPanel("pianoRollPanel");
-                                if (existing != null) {
-                                    existing.api.close();
-                                } else {
-                                    this._dockview.addPanel({
-                                        id: "pianoRollPanel",
-                                        component: "PianoRollPanel",
-                                        renderer: "always",
-                                        title: "Piano Roll",
-                                        floating: true,
-                                    });
-                                }
-                            },
-                        },
-                        {
-                            label: "Transport",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("transportPanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("transportPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "transportPanel",
-                                    component: "TransportPanel",
-                                    renderer: "always",
-                                    title: "Transport",
-                                    floating: true,
-                                });
-                            },
-                        },
-                        { separator: true },
-                        {
-                            label: "Oscilloscope",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("oscilloscopePanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("oscilloscopePanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "oscilloscopePanel",
-                                    component: "OscilloscopePanel",
-                                    renderer: "always",
-                                    title: "Oscilloscope",
-                                    floating: true,
-                                });
-                            },
-                        },
-                        {
-                            label: "Spectrum Analyzer",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("spectrumAnalyzerPanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("spectrumAnalyzerPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "spectrumAnalyzerPanel",
-                                    component: "SpectrumAnalyzerPanel",
-                                    renderer: "always",
-                                    title: "Spectrum Analyzer",
-                                    floating: true,
-                                });
-                            },
-                        },
-                        {
-                            label: "Spectrogram",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("spectrogramPanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("spectrogramPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "spectrogramPanel",
-                                    component: "SpectrogramPanel",
-                                    renderer: "always",
-                                    title: "Spectrogram",
-                                    floating: true,
-                                });
-                            },
-                        },
-                        { separator: true },
-                        {
-                            label: "Debug Info",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("debugInfoPanel") != null;
-                            },
-                            onClick: () => {
-                                this._dockview.getPanel("debugInfoPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "debugInfoPanel",
-                                    component: "DebugInfoPanel",
-                                    renderer: "always",
-                                    title: "Debug Info",
-                                    floating: true,
-                                });
-                            },
-                        },
-                    ],
-                },
-                {
-                    label: "Tests",
-                    children: [
-                        {
-                            label: "Virtualized List",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("virtualizedListTestPanel") != null;
-                            },
-                            onClick: () => {
-                                const windowWidth: number = window.innerWidth;
-                                const windowHeight: number = window.innerHeight;
-                                const panelWidth: number = 500;
-                                const panelHeight: number = 600;
-                                const panelX: number = windowWidth / 2 - panelWidth / 2;
-                                const panelY: number = windowHeight / 2 - panelHeight / 2;
-                                this._dockview.getPanel("virtualizedListTestPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "virtualizedListTestPanel",
-                                    component: "VirtualizedListTestPanel",
-                                    renderer: "always",
-                                    title: "Virtualized List Test",
-                                    floating: {
-                                        position: { left: panelX, top: panelY },
-                                        width: panelWidth,
-                                        height: panelHeight,
-                                    },
-                                });
-                            },
-                        },
-                        {
-                            label: "Virtualized Tree",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("virtualizedTreeTestPanel") != null;
-                            },
-                            onClick: () => {
-                                const windowWidth: number = window.innerWidth;
-                                const windowHeight: number = window.innerHeight;
-                                const panelWidth: number = 500;
-                                const panelHeight: number = 600;
-                                const panelX: number = windowWidth / 2 - panelWidth / 2;
-                                const panelY: number = windowHeight / 2 - panelHeight / 2;
-                                this._dockview.getPanel("virtualizedTreeTestPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "virtualizedTreeTestPanel",
-                                    component: "VirtualizedTreeTestPanel",
-                                    renderer: "always",
-                                    title: "Virtualized Tree Test",
-                                    floating: {
-                                        position: { left: panelX, top: panelY },
-                                        width: panelWidth,
-                                        height: panelHeight,
-                                    },
-                                });
-                            },
-                        },
-                    ],
-                },
-                {
-                    label: "Help",
-                    children: [
-                        {
-                            label: "About",
-                            getCheckedStatus: () => {
-                                return this._dockview.getPanel("aboutPanel") != null;
-                            },
-                            onClick: () => {
-                                const windowWidth: number = window.innerWidth;
-                                const windowHeight: number = window.innerHeight;
-                                const panelWidth: number = 500;
-                                const panelHeight: number = 200;
-                                const panelX: number = windowWidth / 2 - panelWidth / 2;
-                                const panelY: number = windowHeight / 2 - panelHeight / 2;
-                                this._dockview.getPanel("aboutPanel")?.api.setActive() ?? this._dockview.addPanel({
-                                    id: "aboutPanel",
-                                    component: "AboutPanel",
-                                    renderer: "always",
-                                    title: "About",
-                                    floating: {
-                                        position: { left: panelX, top: panelY },
-                                        width: panelWidth,
-                                        height: panelHeight,
-                                    },
-                                });
-                            },
-                        },
-                    ],
-                },
-            ],
-        );
-        this._dockviewContainer = H("div", {
+        this._commandPaletteContainer = H("div", {
             style: `
+                position: absolute;
+                top: 0;
+                left: 0;
                 width: 100%;
                 height: 100%;
-                overflow: hidden;
-                /* Isolate dockview into its own stacking context. */
-                position: relative;
+                pointer-events: none;
                 z-index: 1;
             `,
         });
-        this.element = H("div", {
-            style: `
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
-                display: flex;
-                flex-direction: column;
-            `,
-        },
-            this._menuBar.element,
-            this._dockviewContainer,
-            this._menuContainer,
-        );
+        this._commandPalette = new CommandPalette(this._app, this._commandPaletteContainer);
+        this._menuBar = new MenuBar(this._ui, this._menuContainer, [
+            {
+                label: StringId.ViewMenu,
+                children: [
+                    {
+                        label: StringId.ViewMenuCommandPalette,
+                        // @TODO: Run gestureToString as late as possible.
+                        shortcut: gestureToString(this._ui.inputManager.getPrimaryShortcutByAction(
+                            ActionKind.OpenCommandPalette
+                        )),
+                        onClick: () => { this._app.showCommandPalette(); },
+                    },
+                    { separator: true },
+                    {
+                        label: StringId.ViewMenuTimeline,
+                        getCheckedStatus: () => this._dockview.getPanel("timelinePanel") != null,
+                        onClick: () => { this._app.showTimelinePanel(); },
+                    },
+                    {
+                        label: StringId.ViewMenuPianoRoll,
+                        getCheckedStatus: () => this._dockview.getPanel("pianoRollPanel") != null,
+                        onClick: () => { this._app.showPianoRollPanel(); },
+                    },
+                    {
+                        label: StringId.ViewMenuTransport,
+                        getCheckedStatus: () => this._dockview.getPanel("transportPanel") != null,
+                        onClick: () => { this._app.showTransportPanel(); },
+                    },
+                    { separator: true },
+                    {
+                        label: StringId.ViewMenuOscilloscope,
+                        getCheckedStatus: () => this._dockview.getPanel("oscilloscopePanel") != null,
+                        onClick: () => { this._app.showOscilloscopePanel(); },
+                    },
+                    {
+                        label: StringId.ViewMenuSpectrumAnalyzer,
+                        getCheckedStatus: () => this._dockview.getPanel("spectrumAnalyzerPanel") != null,
+                        onClick: () => { this._app.showSpectrumAnalyzerPanel(); },
+                    },
+                    {
+                        label: StringId.ViewMenuSpectrogram,
+                        getCheckedStatus: () => this._dockview.getPanel("spectrogramPanel") != null,
+                        onClick: () => { this._app.showSpectrogramPanel(); },
+                    },
+                    { separator: true },
+                    {
+                        label: StringId.ViewMenuDebugInfo,
+                        getCheckedStatus: () => this._dockview.getPanel("debugInfoPanel") != null,
+                        onClick: () => { this._app.showDebugInfoPanel(); },
+                    },
+                ],
+            },
+            {
+                label: "Tests" as StringId,
+                children: [
+                    {
+                        label: "Virtualized tree test" as StringId,
+                        getCheckedStatus: () => this._dockview.getPanel("virtualizedTreeTestPanel") != null,
+                        onClick: () => { this._app.showVirtualizedTreeTestPanel(); },
+                    },
+                ],
+            },
+            {
+                label: StringId.HelpMenu,
+                children: [
+                    {
+                        label: StringId.HelpMenuAbout,
+                        getCheckedStatus: () => this._dockview.getPanel("aboutPanel") != null,
+                        onClick: () => { this._app.showAboutPanel(); },
+                    },
+                ],
+            },
+        ]);
+        this.element.appendChild(this._menuBar.element);
+        this.element.appendChild(this._dockviewContainer);
+        this.element.appendChild(this._commandPaletteContainer);
+        this.element.appendChild(this._menuContainer);
+
         this._dockview = createDockview(this._dockviewContainer, {
             disableTabsOverflowList: true,
+            // @TODO: Re-enable after the corner resizing bug is fixed.
+            // floatingGroupBounds: "boundedWithinViewport",
+
+            disableFloatingGroups: true,
 
             theme: themeVisualStudio,
             defaultTabComponent: "DockablePanelTab",
@@ -330,59 +404,17 @@ export class Main implements Component {
                 let panel: IContentRenderer | null = null;
 
                 switch (options.name) {
-                    case "AboutPanel": {
-                        panel = new AboutPanel();
-                    } break;
-                    case "VirtualizedListTestPanel": {
-                        panel = new VirtualizedListTestPanel(this._ui);
-                    } break;
-                    case "VirtualizedTreeTestPanel": {
-                        panel = new VirtualizedTreeTestPanel(this._ui);
-                    } break;
-                    case "TimelinePanel": {
-                        panel = new TimelinePanel(
-                            this._ui,
-                        );
-                    } break;
-                    case "PianoRollPanel": {
-                        panel = new PianoRollPanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    case "TransportPanel": {
-                        panel = new TransportPanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    case "OscilloscopePanel": {
-                        panel = new OscilloscopePanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    case "SpectrumAnalyzerPanel": {
-                        panel = new SpectrumAnalyzerPanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    case "SpectrogramPanel": {
-                        panel = new SpectrogramPanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    case "DebugInfoPanel": {
-                        panel = new DebugInfoPanel(
-                            this._ui,
-                            this._doc,
-                        );
-                    } break;
-                    default: {
-                        panel = new EmptyPanel();
-                    } break;
+                    case "AboutPanel": { panel = new AboutPanel(); } break;
+                    case "VirtualizedListTestPanel": { panel = new VirtualizedListTestPanel(this._ui); } break;
+                    case "VirtualizedTreeTestPanel": { panel = new VirtualizedTreeTestPanel(this._ui); } break;
+                    case "TimelinePanel": { panel = new TimelinePanel(this._ui, this._doc); } break;
+                    case "PianoRollPanel": { panel = new PianoRollPanel(this._app, this._doc); } break;
+                    case "TransportPanel": { panel = new TransportPanel(this._ui, this._doc); } break;
+                    case "OscilloscopePanel": { panel = new OscilloscopePanel(this._ui, this._doc); } break;
+                    case "SpectrumAnalyzerPanel": { panel = new SpectrumAnalyzerPanel(this._ui, this._doc); } break;
+                    case "SpectrogramPanel": { panel = new SpectrogramPanel(this._ui, this._doc); } break;
+                    case "DebugInfoPanel": { panel = new DebugInfoPanel(this._ui, this._doc); } break;
+                    default: { panel = new EmptyPanel(); } break;
                 }
 
                 return panel;
@@ -401,13 +433,19 @@ export class Main implements Component {
                             outputData.push(filtered);
                         }
                     }
-                    if (outputData.length <= 0) return null;
+                    if (outputData.length <= 0) {
+                        return null;
+                    }
                     const output: SerializedGridObject<GroupPanelViewState> = {
                         type: "branch",
                         data: outputData,
                     };
-                    if (data.size != null) output.size = data.size;
-                    if (data.visible != null) output.visible = data.visible;
+                    if (data.size != null) {
+                        output.size = data.size;
+                    }
+                    if (data.visible != null) {
+                        output.visible = data.visible;
+                    }
                     return output;
                 } else if (data.type === "leaf") {
                     const item: GroupPanelViewState = data.data as GroupPanelViewState;
@@ -415,13 +453,19 @@ export class Main implements Component {
                         id: item.id,
                         views: item.views.filter(x => DOCKABLE_PANEL_IDS[x] != null),
                     };
-                    if (outputData.views.length <= 0) return null;
+                    if (outputData.views.length <= 0) {
+                        return null;
+                    }
                     const output: SerializedGridObject<GroupPanelViewState> = {
                         type: "leaf",
                         data: outputData,
                     };
-                    if (data.size != null) output.size = data.size;
-                    if (data.visible != null) output.visible = data.visible;
+                    if (data.size != null) {
+                        output.size = data.size;
+                    }
+                    if (data.visible != null) {
+                        output.visible = data.visible;
+                    }
                     return output;
                 } else {
                     throw new Error(`Unknown type ${data.type}`);
@@ -451,15 +495,10 @@ export class Main implements Component {
                 const floatingGroups = [];
                 for (const group of input.floatingGroups) {
                     const data: GroupPanelViewState = {
-                        views: group.data.views.filter(
-                            x => DOCKABLE_PANEL_IDS[x] != null
-                        ),
+                        views: group.data.views.filter(x => DOCKABLE_PANEL_IDS[x] != null),
                         id: group.data.id,
                     };
-                    if (
-                        group.data.activeView != null
-                        && DOCKABLE_PANEL_IDS[group.data.activeView] != null
-                    ) {
+                    if (group.data.activeView != null && DOCKABLE_PANEL_IDS[group.data.activeView] != null) {
                         data.activeView = group.data.activeView;
                     }
                     if (data.views.length > 0) {
@@ -476,6 +515,9 @@ export class Main implements Component {
         }
 
         this._dockview.onDidLayoutChange(() => {
+            this._ui.scheduleMainRender();
+
+            // @TODO: Throttle this more?
             const payload = {
                 "version": SERIALIZED_DOCKVIEW_VERSION,
                 "data": filterSerializedDockview(this._dockview.toJSON()),
@@ -485,12 +527,19 @@ export class Main implements Component {
 
         this._dockview.onDidAddPanel((panel) => {
             this._renderablePanels.push(panel.view.content);
-            if (this._mounted) this._ui.scheduleMainRender();
+
+            if (this._mounted) {
+                this._ui.scheduleMainRender();
+            }
         })
         this._dockview.onDidRemovePanel((panel) => {
             const index: number = this._renderablePanels.indexOf(panel.view.content);
             if (index !== -1) {
                 this._renderablePanels.splice(index, 1);
+            }
+
+            if (this._mounted) {
+                this._ui.scheduleMainRender();
             }
         });
         this._dockview.onWillDragGroup((event) => {
@@ -499,6 +548,7 @@ export class Main implements Component {
                 event.nativeEvent.preventDefault();
                 return;
             }
+
             // @TODO: Do I need to handle more cases here?
         });
         this._dockview.onWillDragPanel((event) => {
@@ -513,40 +563,30 @@ export class Main implements Component {
                 return;
             }
         });
-    }
+        this._dockview.onDidActivePanelChange((newPanel) => {
+            if (newPanel != null) {
+                this._ui.inputManager.setActivePanel(newPanel.id);
+            } else {
+                this._ui.inputManager.setActivePanel(undefined);
+            }
+        });
 
-    private _startAnimating(): void {
-        this._animating++;
-        if (this._animating <= 1) {
-            cancelAnimationFrame(this._renderRequest);
-            this._renderRequest = requestAnimationFrame(this._animate);
-        }
+        window.addEventListener("resize", this._onWindowResize);
     }
-
-    private _stopAnimating(): void {
-        if (this._animating > 0) this._animating--;
-        if (this._animating <= 0) {
-            cancelAnimationFrame(this._renderRequest);
-            this._ui.scheduleMainRender();
-        }
-    }
-
-    private _animate = (timestamp: number): void => {
-        if (this._animating <= 0) return;
-        // If everything is "memoized", this should not increase the CPU usage
-        // by much. Otherwise, we'll need a more specialized setup here, though
-        // in the long run we should eventually add that anyway.
-        this._doc.advanceVisualizationsByOneFrame();
-        this.render();
-        this._renderRequest = requestAnimationFrame(this._animate);
-    };
 
     public dispose(): void {
+        if (this._mounted) {
+            this._mounted = false;
+            this._ui.inputManager.unregisterListeners();
+        }
         this._doc.destroyAudioContext();
+        this._commandPalette.dispose();
         this._menuBar.dispose();
     }
 
     public onDidMount(): void {
+        this._mounted = true;
+
         this._dockview.layout(this._dockviewContainer.clientWidth, this._dockviewContainer.clientHeight, true);
 
         // This has to be done after calling .layout to work properly.
@@ -558,44 +598,110 @@ export class Main implements Component {
             }
         }
 
-        this._mounted = true;
+        this._ui.inputManager.registerListeners();
     }
 
     public render(): void {
-        if (!this._mounted) this.onDidMount();
+        if (!this._mounted) {
+            this.onDidMount();
+        }
 
         this._menuBar.render();
 
-        {
-            // Render all the panels we know about.
-            const count: number = this._renderablePanels.length;
-            for (let index: number = 0; index < count; index++) {
-                const contentRenderer: IContentRenderer = this._renderablePanels[index];
-                if ((contentRenderer as DockablePanel).render != null) {
-                    const panel: DockablePanel = contentRenderer as DockablePanel;
-                    panel.render();
-                }
+        const panelCount: number = this._renderablePanels.length;
+        for (let panelIndex: number = 0; panelIndex < panelCount; panelIndex++) {
+            const panel: IContentRenderer = this._renderablePanels[panelIndex];
+            if (panel instanceof DockablePanel) {
+                panel.render();
             }
         }
+
+        this._commandPalette.render();
     }
 
-    private _onSongChanged = (): void => {
+    private _shouldBlockActions = (): boolean => {
+        // @TODO: true if any dialog is open
+        return false;
+    };
+
+    private _onGlobalAction = (kind: ActionKind, operationContext: OperationContext): ActionResponse => {
+        switch (kind) {
+            case ActionKind.TogglePlay: {
+                this._doc.togglePlaying();
+                return ActionResponse.Done;
+            };
+            case ActionKind.Play: {
+                this._doc.startPlaying();
+                return ActionResponse.Done;
+            };
+            case ActionKind.Stop: {
+                this._doc.stopPlaying();
+                return ActionResponse.Done;
+            };
+            case ActionKind.OpenCommandPalette: {
+                this._app.showCommandPalette();
+                return ActionResponse.Done;
+            };
+            case ActionKind.About: {
+                this._app.showAboutPanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowDebugInfoPanel: {
+                this._app.showDebugInfoPanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowOscilloscopePanel: {
+                this._app.showOscilloscopePanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowPianoRollPanel: {
+                this._app.showPianoRollPanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowSpectrogramPanel: {
+                this._app.showSpectrogramPanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowSpectrumAnalyzerPanel: {
+                this._app.showSpectrumAnalyzerPanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowTimelinePanel: {
+                this._app.showTimelinePanel();
+                return ActionResponse.Done;
+            };
+            case ActionKind.ShowTransportPanel: {
+                this._app.showTransportPanel();
+                return ActionResponse.Done;
+            };
+        }
+
+        return ActionResponse.NotApplicable;
+    };
+
+    private _isAnimating(): boolean {
+        return this._doc.playing || this._doc.playingPianoNote;
+    }
+
+    private _onWindowResize = (): void => {};
+
+    private _onProjectChanged = (): void => {
         this._ui.scheduleMainRender();
     };
 
     private _onStartedPlaying = (): void => {
-        this._startAnimating();
+        this._ui.setAnimationStatus(this._isAnimating());
     };
 
     private _onStoppedPlaying = (): void => {
-        this._stopAnimating();
+        this._ui.setAnimationStatus(this._isAnimating());
     };
 
     private _onStartedPlayingPianoNote = (): void => {
-        this._startAnimating();
+        this._ui.setAnimationStatus(this._isAnimating());
     };
 
     private _onStoppedPlayingPianoNote = (): void => {
-        this._stopAnimating();
+        this._ui.setAnimationStatus(this._isAnimating());
     };
 }

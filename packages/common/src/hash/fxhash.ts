@@ -39,3 +39,11 @@ export function fxhash64le(lo: number, hi: number): number {
     let hash: number = Math.imul(lo, C.SEED32);
     return Math.imul(((hash << 5) | (hash >>> 27)) ^ hi, C.SEED32) >>> 0;
 }
+
+export function fxhash128le(k0: number, k1: number, k2: number, k3: number): number {
+    // return fxhashStep(fxhashStep(fxhashStep(fxhashStep(0, k0), k1), k2), k3);
+    let hash: number = Math.imul(k0, C.SEED32);
+    hash = Math.imul(((hash << 5) | (hash >>> 27)) ^ k1, C.SEED32);
+    hash = Math.imul(((hash << 5) | (hash >>> 27)) ^ k2, C.SEED32);
+    return Math.imul(((hash << 5) | (hash >>> 27)) ^ k3, C.SEED32) >>> 0;
+}

@@ -1,8 +1,13 @@
 import * as IITree from "@synth-playground/common/iitree.js";
-import { splitmix32 } from "@synth-playground/common/splitmix32.js";
-import { lerp } from "@synth-playground/common/math.js";
-import { LongId } from "@synth-playground/common/LongId.js";
+// import { splitmix32 } from "@synth-playground/common/splitmix32.js";
+// import { clamp, unlerp } from "@synth-playground/common/math.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
+import * as Breakpoint from "./data/Breakpoint.js";
+import * as Note from "./data/Note.js";
+import * as Pattern from "./data/Pattern.js";
+import * as Clip from "./data/Clip.js";
+import * as Track from "./data/Track.js";
+import * as Song from "./data/Song.js";
 
 // Rule of thumb: keep strings and the like outside of here. The synthesizer
 // should mostly operate on numbers and lists of numbers. Code that deals with
@@ -30,134 +35,51 @@ import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64
 // functions, to keep object shapes consistent (from the perspective of the JS
 // engines).
 
-export interface Note {
-    // In pulses per quarter note.
-    start: number;
-    end: number;
-
-    // Not necessarily in semitones, depends on the song tuning.
-    pitch: number;
-
-    // For the "implicit interval tree" acceleration structure.
-    maxEnd: number;
-
-    // Internal ID. Don't serialize this.
-    idLo: number;
-    idHi: number;
+function computeSamplesPerTick(
+    samplesPerSecond: number,
+    tick: number,
+    ppqn: number,
+    tempo: number,
+    tempoEnvelope: Breakpoint.Type[] | null,
+): number {
+    const tempoEnvelopeIndex: number = Breakpoint.findIndex(tempoEnvelope, tick);
+    const beatsPerMinute: number = Breakpoint.evaluateTempoEnvelope(tempoEnvelope!, tick, tempoEnvelopeIndex, tempo);
+    const secondsPerBeat: number = 60 / beatsPerMinute;
+    const ticksPerBeat: number = ppqn;
+    const secondsPerTick: number = secondsPerBeat / ticksPerBeat;
+    const samplesPerTick: number = samplesPerSecond * secondsPerTick;
+    return samplesPerTick;
 }
 
-export function makeNote(
-    start: number,
-    end: number,
-    pitch: number,
-    idLo: number,
-    idHi: number,
-): Note {
-    return {
-        start: start,
-        end: end,
-        pitch: pitch,
-        maxEnd: end,
-        idLo: idLo,
-        idHi: idHi,
-    };
-}
-
-export interface Song {
-    ppqn: number;
-
-    // In pulses per quarter note.
-    patternDuration: number;
-
-    beatsPerBar: number;
-
-    // The minimum is 0, of course. This is an inclusive range.
-    // May be turned into a constant.
-    maxPitch: number;
-
-    // Should remain sorted and indexed for playback.
-    notes: Note[];
-
-    // For the "implicit interval tree" acceleration structure.
-    notesMaxLevel: number;
-}
-
-export function makeSong(): Song {
-    const ppqn: number = 24;
-    const beatsPerBar: number = 4;
-    const barCount: number = 2;
-    const pitchesPerOctave: number = 12;
-    const octaves: number = 9;
-    return {
-        ppqn: ppqn,
-        patternDuration: barCount * beatsPerBar * ppqn,
-        beatsPerBar: beatsPerBar,
-        maxPitch: pitchesPerOctave * octaves,
-        notes: [],
-        notesMaxLevel: -1,
-    };
-}
-
-export function addRandomNotesToSong(
-    song: Song,
-    seed: number,
-    idGenerator: LongId,
-): void {
-    song.patternDuration = (song.beatsPerBar * 2048) * song.ppqn;
-
-    const noteRng: () => number = splitmix32(seed);
-    const noteMinStart: number = 0;
-    const noteMaxStart: number = song.patternDuration;
-    const noteMinDuration: number = 1;
-    const noteMaxDuration: number = song.ppqn;
-
-    for (let i: number = 0; i < 100_000; i++) {
-        const duration: number = lerp(noteRng(), noteMinDuration, noteMaxDuration) | 0;
-        const start: number = lerp(noteRng(), noteMinStart, noteMaxStart - duration) | 0;
-        const end: number = start + duration;
-        const pitch: number = lerp(noteRng(), 40, song.maxPitch - 1) | 0;
-        song.notes.push(makeNote(start, end, pitch, idGenerator.lo, idGenerator.hi));
-        idGenerator.increment();
-    }
-
-    reindexNotesInSong(song);
-}
-
-export function addExampleNotesToSong(song: Song, idGenerator: LongId): void {
-    for (let i: number = 0; i < song.ppqn; i++) {
-        const duration: number = i + 1;
-        const start: number = i;
-        const end: number = start + duration;
-        const pitch: number = 12 * 4 + i;
-        song.notes.push(makeNote(start, end, pitch, idGenerator.lo, idGenerator.hi));
-        idGenerator.increment();
-    }
-
-    reindexNotesInSong(song);
-}
-
-export function reindexNotesInSong(song: Song): void {
-    // console.time("note sort");
-    song.notes.sort(IITree.byStartAscending);
-    // console.timeEnd("note sort");
-    // console.time("note indexing");
-    song.notesMaxLevel = IITree.performIndexing(song.notes);
-    // console.timeEnd("note indexing");
-}
-
+// @TODO: Rename to Voice? VoiceState? NoteState?
 class Tone {
-    public note: Note;
+    public note: Note.Type;
     public phase: number;
     public phaseDelta: number;
+    public phaseDeltaScale: number;
     public volume: number;
     public volumeDelta: number;
 
-    constructor(note: Note, phaseDelta: number) {
+    // If true, the corresponding note was found in the interval tree search in
+    // determineActiveTones. This should be set to false once the control rate
+    // calculations for the tone execute.
+    // If we're running the control rate calculations and this is false, then
+    // the tone is terminated. This means that the note was changed under us
+    // (i.e. it was playing, but now it does not overlap the playhead, or it was
+    // deleted).
+    public seenInToneSearch: boolean;
+
+    public isOnLastTick: boolean;
+
+    constructor(note: Note.Type, phaseDelta: number) {
         this.note = note;
         this.phase = 0;
         this.phaseDelta = phaseDelta;
+        this.phaseDeltaScale = 1.0;
         this.volume = 1;
         this.volumeDelta = 0;
+        this.seenInToneSearch = false;
+        this.isOnLastTick = false;
     }
 }
 
@@ -167,44 +89,164 @@ export function pitchToFrequency(pitch: number): number {
     return referenceFrequency * Math.pow(2.0, (pitch - referencePitch) / 12.0);
 }
 
+class ClipState {
+    public clip: Clip.Type;
+
+    // If true, the corresponding clip was found in the interval tree search in
+    // determineActiveClips. This should be set to false once the control rate
+    // calculations for the clip execute.
+    // If we're running the control rate calculations and this is false, then
+    // the clip is terminated. This means that the clip was changed under us
+    // (i.e. it was playing, but now it does not overlap the playhead, or it was
+    // deleted).
+    public seenInClipSearch: boolean;
+
+    public isOnLastTick: boolean;
+    // @TODO: Use a deque-backed pool of `Tone`s.
+    public activeTones: (Tone | null)[];
+    public activeTonesLength: number;
+    public activeTonesByNoteId: Uint64ToUint32Table.Type;
+
+    constructor(clip: Clip.Type) {
+        this.clip = clip;
+        this.seenInClipSearch = false;
+        this.isOnLastTick = false;
+        this.activeTones = [];
+        this.activeTonesLength = 0;
+        this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
+    }
+
+    public pushActiveTone(tone: Tone): void {
+        if (this.activeTonesLength === this.activeTones.length) {
+            this.activeTones.push(tone);
+        } else {
+            this.activeTones[this.activeTonesLength] = tone;
+        }
+        this.activeTonesLength++;
+    }
+
+    public popActiveTone(): void {
+        if (this.activeTonesLength <= 0) return;
+        this.activeTones[this.activeTonesLength - 1] = null;
+        this.activeTonesLength--;
+    }
+}
+
+class TrackState {
+    // @TODO: Use a deque-backed pool of `ClipStates`s.
+    public activeClips: (ClipState | null)[];
+    public activeClipsLength: number;
+    public activeClipsByClipId: Uint64ToUint32Table.Type;
+    public muted: boolean;
+
+    constructor() {
+        this.activeClips = [];
+        this.activeClipsLength = 0;
+        this.activeClipsByClipId = Uint64ToUint32Table.make(4);
+        this.muted = false;
+    }
+
+    public pushActiveClip(clip: ClipState): void {
+        if (this.activeClipsLength === this.activeClips.length) {
+            this.activeClips.push(clip);
+        } else {
+            this.activeClips[this.activeClipsLength] = clip;
+        }
+        this.activeClipsLength++;
+    }
+
+    public popActiveClip(): void {
+        if (this.activeClipsLength <= 0) {
+            return;
+        }
+        // this.activeClips[this.activeClipsLength - 1] = null;
+        this.activeClipsLength--;
+    }
+}
+
+const WAVEFORM_TABLE_SIZE: number = 512;
+const WAVEFORM_TABLE_MASK: number = WAVEFORM_TABLE_SIZE - 1;
+const WAVEFORM_TABLE: Float64Array = new Float64Array(WAVEFORM_TABLE_SIZE);
+for (let i: number = 0; i < WAVEFORM_TABLE_SIZE; i++) {
+    const phase = i / WAVEFORM_TABLE_SIZE;
+    WAVEFORM_TABLE[i] = Math.tanh(Math.sin(phase * Math.PI * 2) * 2);
+}
+
+function evaluateWaveform(phase: number): number {
+    const scaled: number = phase * (+WAVEFORM_TABLE_SIZE);
+    const i0: number = scaled & WAVEFORM_TABLE_MASK;
+    const i1: number = (scaled + 1.0) & WAVEFORM_TABLE_MASK;
+    const a: number = WAVEFORM_TABLE[i0];
+    const b: number = WAVEFORM_TABLE[i1];
+    const t: number = scaled - i0;
+    return a * (1.0 - t) + b * t;
+}
+
 export class Synthesizer {
     public samplesPerSecond: number;
-    public song: Song;
+    public song: Song.Type;
     public playing: boolean;
     public tick: number;
     public isAtStartOfTick: boolean;
     public tickSampleCountdown: number;
     public samplesPerTick: number;
-    // @TODO: Use a deque-backed pool of `Tone`s.
-    public activeTones: Tone[];
-    public activeTonesByNoteId: Uint64ToUint32Table.Type;
+    public trackStates: TrackState[];
     public pianoNotePitch: number | null;
     public pianoNotePhase: number;
     public pianoNotePhaseDelta: number;
     public pianoNoteVolume: number;
     public pianoNoteVolumeDelta: number;
     public playingPianoNote: boolean;
+    public assumptionsAreInvalid: boolean;
 
     constructor(samplesPerSecond: number) {
         this.samplesPerSecond = samplesPerSecond;
-        this.song = makeSong();
+        this.song = Song.make();
         this.playing = false;
         this.tick = 0;
         this.isAtStartOfTick = false;
-        this.samplesPerTick = Math.ceil(this.getSamplesPerTick()); // @TODO: Not sure if this should always be rounded.
+        this.samplesPerTick = computeSamplesPerTick(
+            this.samplesPerSecond,
+            this.tick,
+            this.song.ppqn,
+            this.song.tempo,
+            this.song.tempoEnvelope,
+        );
         this.tickSampleCountdown = 0;
-        this.activeTones = [];
-        this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
+        this.trackStates = [];
         this.pianoNotePitch = null;
         this.pianoNotePhase = 0;
         this.pianoNotePhaseDelta = 0;
         this.pianoNoteVolume = 0;
         this.pianoNoteVolumeDelta = 0;
         this.playingPianoNote = false;
+        this.assumptionsAreInvalid = false;
     }
 
-    public loadSong(song: Song): void {
+    public loadSong(song: Song.Type): void {
         this.song = song;
+        this.assumptionsAreInvalid = true;
+    }
+
+    public syncTrackStates(): void {
+        const trackCount: number = this.song.tracks.length;
+        while (trackCount > this.trackStates.length) {
+            this.trackStates.push(new TrackState());
+        }
+        this.trackStates.length = trackCount;
+        for (let i: number = 0; i < trackCount; i++) {
+            const track: Track.Type = this.song.tracks[i];
+            const trackState: TrackState = this.trackStates[i];
+            if (trackState.muted !== track.muted) {
+                trackState.muted = track.muted;
+            }
+        }
+    }
+
+    public goToStart(): void {
+        this.tick = 0;
+        this.tickSampleCountdown = 0;
+        this.isAtStartOfTick = true;
     }
 
     public play(): void {
@@ -220,34 +262,109 @@ export class Synthesizer {
         this.tick = 0;
         this.isAtStartOfTick = false;
         this.tickSampleCountdown = 0;
-        this.activeTones = [];
-        Uint64ToUint32Table.clear(this.activeTonesByNoteId);
+        const trackCount: number = this.trackStates.length;
+        for (let i: number = 0; i < trackCount; i++) {
+            const trackState: TrackState = this.trackStates[i];
+            trackState.activeClips = [];
+            trackState.activeClipsLength = 0;
+            Uint64ToUint32Table.clear(trackState.activeClipsByClipId);
+        }
     }
 
-    public getSamplesPerTick(): number {
-        const beatsPerMinute: number = 120; // This is really quarter notes per minute, but whatever.
-        const secondsPerBeat: number = 60 / beatsPerMinute;
-        const ticksPerBeat: number = this.song.ppqn;
-        const secondsPerTick: number = secondsPerBeat / ticksPerBeat;
-        const samplesPerTick: number = this.samplesPerSecond * secondsPerTick;
-        return samplesPerTick;
-    }
-
-    private _determineActiveTones(): void {
+    private _determineActiveClips(trackIndex: number): void {
         // @TODO: Inline findOverlapping manually.
-        const activeTones: Tone[] = this.activeTones;
-        const activeTonesByNoteId: Uint64ToUint32Table.Type = this.activeTonesByNoteId;
-        const song: Song = this.song;
+        const song: Song.Type = this.song;
+        const track: Track.Type = song.tracks[trackIndex];
+        const trackState: TrackState = this.trackStates[trackIndex];
+        const activeClips: (ClipState | null)[] = trackState.activeClips;
+        const activeClipsByClipId: Uint64ToUint32Table.Type = trackState.activeClipsByClipId;
         const tick: number = this.tick;
+        // const samplesPerTick: number = this.samplesPerTick;
+        // const samplesPerSecond: number = this.samplesPerSecond;
+        // const secondsPerSample: number = 1 / samplesPerSecond;
+        IITree.findOverlapping(
+            track.clips,
+            track.clipsMaxLevel,
+            tick,
+            tick + 1,
+            (clip: Clip.Type, index: number) => {
+                const activeClipTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+                    activeClipsByClipId,
+                    clip.idLo,
+                    clip.idHi,
+                );
+                if (activeClipTableIndex === -1) {
+                    if (tick >= clip.start && tick < clip.end) {
+                        // Clip is supposed to be playing, but there's no active
+                        // clip state associated with it (like note on).
+                        const clipState: ClipState = new ClipState(clip);
+                        Uint64ToUint32Table.set(
+                            activeClipsByClipId,
+                            clip.idLo,
+                            clip.idHi,
+                            trackState.activeClipsLength,
+                        );
+                        clipState.seenInClipSearch = true;
+                        if (tick === clip.end - 1) clipState.isOnLastTick = true;
+                        trackState.pushActiveClip(clipState);
+                    }
+                } else {
+                    const activeClipIndex: number = Uint64ToUint32Table.getValueFromIndex(
+                        activeClipsByClipId,
+                        activeClipTableIndex,
+                    );
+                    const existing: ClipState = activeClips[activeClipIndex]!;
+                    const existingClip: Clip.Type = existing.clip;
+                    if (tick >= existingClip.end - 1) {
+                        // Clip is done.
+                        existing.isOnLastTick = true;
+                    } else {
+                        const oldStart: number = existingClip.start;
+                        const oldEnd: number = existingClip.end;
+                        const newStart: number = clip.start;
+                        const newEnd: number = clip.end;
+                        if (newStart !== oldStart || newEnd !== oldEnd) {
+                            // Stop clip if it's longer, shorter, or it moved around.
+                            existing.isOnLastTick = true;
+                        }
+                    }
+                    existing.seenInClipSearch = true;
+                    // Update reference.
+                    existing.clip = clip;
+                }
+            },
+        );
+    }
+
+    private _determineActiveTones(
+        trackIndex: number,
+        clipIndex: number,
+        patternIndex: number,
+    ): void {
+        // @TODO: Inline findOverlapping manually.
+        const song: Song.Type = this.song;
+        // const track: Track = song.tracks[trackIndex];
+        const trackState: TrackState = this.trackStates[trackIndex];
+        const activeClips: (ClipState | null)[] = trackState.activeClips;
+        const clipState: ClipState = activeClips[clipIndex]!;
+        const clip: Clip.Type = clipState.clip;
+        const clipStart: number = clip.start;
+        // const clipEnd: number = clip.end;
+        const pattern: Pattern.Type = song.patterns[patternIndex];
+        const activeTones: (Tone | null)[] = clipState.activeTones;
+        const activeTonesByNoteId: Uint64ToUint32Table.Type = clipState.activeTonesByNoteId;
+        const tick: number = (this.tick - clipStart) % pattern.duration;
+        // @TODO: Use startOffset
         const samplesPerTick: number = this.samplesPerTick;
+        const ticksPerSample: number = 1 / samplesPerTick;
         const samplesPerSecond: number = this.samplesPerSecond;
         const secondsPerSample: number = 1 / samplesPerSecond;
         IITree.findOverlapping(
-            song.notes,
-            song.notesMaxLevel,
+            pattern.notes,
+            pattern.notesMaxLevel,
             tick,
             tick + 1,
-            (note: Note, index: number) => {
+            (note: Note.Type, index: number) => {
                 const activeToneTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
                     activeTonesByNoteId,
                     note.idLo,
@@ -256,69 +373,95 @@ export class Synthesizer {
                 if (activeToneTableIndex === -1) {
                     if (tick >= note.start && tick < note.end) {
                         // Note is supposed to be playing, but there's no active
-                        // tones associated with it (note on).
+                        // tone associated with it (note on).
                         const phaseDelta: number = pitchToFrequency(note.pitch) * secondsPerSample;
                         const tone: Tone = new Tone(note, phaseDelta);
-                        const duration: number = note.end - note.start;
-                        tone.volumeDelta = (0 - 1) / (duration * samplesPerTick);
+                        const progress0: number = tick - note.start;
+                        const progress1: number = progress0 + 1;
+                        const volumeEnvelope: Breakpoint.Type[] | null = note.volumeEnvelope;
+                        const pitchEnvelope: Breakpoint.Type[] | null = note.pitchEnvelope;
+                        if (volumeEnvelope != null) {
+                            const volumeI: number = Breakpoint.findIndex(volumeEnvelope, progress0);
+                            const volume0: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope, progress0, volumeI, 1.0);
+                            const volume1: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope, progress1, volumeI, 1.0);
+                            tone.volume = volume0;
+                            tone.volumeDelta = (volume1 - volume0) * ticksPerSample;
+                        } else {
+                            tone.volume = 1;
+                            tone.volumeDelta = 0;
+                        }
+                        if (pitchEnvelope != null) {
+                            const pitch: number = note.pitch;
+                            const pitchI: number = Breakpoint.findIndex(pitchEnvelope, progress0);
+                            const pitch0: number = Breakpoint.evaluateNoteEnvelope(pitchEnvelope, progress0, pitchI, 0.0);
+                            const pitch1: number = Breakpoint.evaluateNoteEnvelope(pitchEnvelope, progress1, pitchI, 0.0);
+                            const phaseDelta0: number = pitchToFrequency(pitch + pitch0);
+                            const phaseDelta1: number = pitchToFrequency(pitch + pitch1);
+                            tone.phaseDelta = phaseDelta0 * secondsPerSample;
+                            tone.phaseDeltaScale = Math.pow(phaseDelta1 / phaseDelta0, ticksPerSample);
+                        }
                         Uint64ToUint32Table.set(
                             activeTonesByNoteId,
                             note.idLo,
                             note.idHi,
-                            activeTones.length,
+                            clipState.activeTonesLength,
                         );
-                        activeTones.push(tone);
+                        tone.seenInToneSearch = true;
+                        if (tick === note.end - 1) tone.isOnLastTick = true;
+                        clipState.pushActiveTone(tone);
                     }
                 } else {
                     const activeToneIndex: number = Uint64ToUint32Table.getValueFromIndex(
                         activeTonesByNoteId,
                         activeToneTableIndex,
                     );
-                    const existing: Tone = activeTones[activeToneIndex];
-                    if (tick >= note.end) {
+                    const existing: Tone = activeTones[activeToneIndex]!;
+                    const existingNote: Note.Type = existing.note;
+                    if (tick >= existingNote.end - 1 || clipState.isOnLastTick) {
                         // Note is done.
-                        existing.phaseDelta = 0;
-                        existing.volumeDelta = 0;
-                        existing.volume = 0;
+                        // existing.volumeDelta = (0 - existing.volume) / (1 * samplesPerTick);
+                        existing.isOnLastTick = true;
                     } else {
-                        const existingNote: Note = existing.note;
-                        const oldDuration: number = existingNote.end - existingNote.start;
-                        const newDuration: number = note.end - note.start;
-                        if (newDuration > oldDuration || newDuration < oldDuration) {
-                            // @TODO: This isn't correct but will do for now.
-                            // Restart playing note if it's longer or shorter.
-                            const newRemainingDuration: number = note.end - tick;
-                            const phaseDelta: number = pitchToFrequency(note.pitch) * secondsPerSample;
-                            existing.phaseDelta = phaseDelta;
-                            existing.volumeDelta = (0 - 1) / (newRemainingDuration * samplesPerTick);
-                            existing.volume = 1;
+                        const oldStart: number = existingNote.start;
+                        const oldEnd: number = existingNote.end;
+                        const newStart: number = note.start;
+                        const newEnd: number = note.end;
+                        if (newStart !== oldStart || newEnd !== oldEnd || clipState.isOnLastTick) {
+                            // Stop note if it's longer, shorter, or it moved around.
+                            // const newRemainingDuration: number = Math.max(1, (newEnd - newStart) - (tick - newStart));
+                            const newRemainingDuration: number = 1;
+                            existing.volumeDelta = (0 - existing.volume) / (newRemainingDuration * samplesPerTick);
+                            existing.isOnLastTick = true;
+                        } else {
+                            const progress0: number = tick - existingNote.start;
+                            const progress1: number = progress0 + 1;
+                            const volumeEnvelope: Breakpoint.Type[] | null = existingNote.volumeEnvelope;
+                            const pitchEnvelope: Breakpoint.Type[] | null = existingNote.pitchEnvelope;
+                            if (volumeEnvelope != null) {
+                                const volumeI: number = Breakpoint.findIndex(volumeEnvelope, progress0);
+                                const volume0: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope, progress0, volumeI, 1.0);
+                                const volume1: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope, progress1, volumeI, 1.0);
+                                existing.volume = volume0;
+                                existing.volumeDelta = (volume1 - volume0) * ticksPerSample;
+                            }
+                            if (pitchEnvelope != null) {
+                                const pitch: number = existingNote.pitch;
+                                const pitchI: number = Breakpoint.findIndex(pitchEnvelope, progress0);
+                                const pitch0: number = Breakpoint.evaluateNoteEnvelope(pitchEnvelope, progress0, pitchI, 0.0);
+                                const pitch1: number = Breakpoint.evaluateNoteEnvelope(pitchEnvelope, progress1, pitchI, 0.0);
+                                const phaseDelta0: number = pitchToFrequency(pitch + pitch0);
+                                const phaseDelta1: number = pitchToFrequency(pitch + pitch1);
+                                existing.phaseDelta = phaseDelta0 * secondsPerSample;
+                                existing.phaseDeltaScale = Math.pow(phaseDelta1 / phaseDelta0, ticksPerSample);
+                            }
                         }
                     }
+                    existing.seenInToneSearch = true;
                     // Update reference.
                     existing.note = note;
                 }
             },
         );
-        for (let i: number = activeTones.length - 1; i >= 0; i--) {
-            const tone: Tone = activeTones[i];
-            if (tick >= tone.note.end) {
-                const other: Tone = activeTones[activeTones.length - 1];
-                Uint64ToUint32Table.set(
-                    activeTonesByNoteId,
-                    other.note.idLo,
-                    other.note.idHi,
-                    i,
-                );
-                Uint64ToUint32Table.remove(
-                    activeTonesByNoteId,
-                    tone.note.idLo,
-                    tone.note.idHi,
-                );
-                activeTones[activeTones.length - 1] = tone;
-                activeTones[i] = other;
-                activeTones.pop();
-            }
-        }
     }
 
     public processBlock(
@@ -335,55 +478,129 @@ export class Synthesizer {
         // https://github.com/WebAudio/web-audio-api/issues/2413
         const timeTakenStart: number = Date.now();
 
-        const songDurationInTicks: number = this.song.patternDuration;
+        const songDurationInTicks: number = this.song.duration;
 
-        let samplesRemaining: number = size;
+        this.syncTrackStates();
+
         let bufferIndex: number = 0;
 
-        if (this.playing)
         if (this.tickSampleCountdown <= 0) {
             this.isAtStartOfTick = true;
+            this.samplesPerTick = computeSamplesPerTick(
+                this.samplesPerSecond,
+                this.tick,
+                this.song.ppqn,
+                this.song.tempo,
+                this.song.tempoEnvelope,
+            );
             this.tickSampleCountdown = this.samplesPerTick;
         }
 
         const previousTick: number = this.tick;
         const previousTickSampleCountdown: number = this.tickSampleCountdown;
 
-        while (samplesRemaining > 0) {
-            const runLength: number = Math.min(samplesRemaining, this.samplesPerTick);
+        const song: Song.Type = this.song;
+        // const patterns: Pattern[] = song.patterns;
+        const patternsById: Uint64ToUint32Table.Type = song.patternsById;
+        const tracks: Track.Type[] = song.tracks;
+        const trackCount: number = tracks.length;
+        const trackStates: TrackState[] = this.trackStates;
+
+        while (bufferIndex < size) {
+            const samplesLeftInBuffer: number = size - bufferIndex;
+            const samplesLeftInTick: number = Math.ceil(this.tickSampleCountdown);
+            const runLength: number = Math.min(samplesLeftInBuffer, samplesLeftInTick);
 
             if (this.playing)
-            if (this.isAtStartOfTick) {
-                this._determineActiveTones();
-            }
+            for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+                // const track: Track = tracks[trackIndex];
+                const trackState: TrackState = trackStates[trackIndex];
 
-            const activeTones: Tone[] = this.activeTones;
-            const activeToneCount: number = activeTones.length;
-            for (let toneIndex: number = 0; toneIndex < activeToneCount; toneIndex++) {
-                const tone: Tone = activeTones[toneIndex];
+                if (this.isAtStartOfTick) {
+                    this._determineActiveClips(trackIndex);
 
-                let phase: number = tone.phase;
-                let phaseDelta: number = tone.phaseDelta;
-                let volume: number = tone.volume;
-                let volumeDelta: number = tone.volumeDelta;
-
-                for (let i: number = 0; i < runLength; i++) {
-                    const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
-                    phase += phaseDelta;
-                    if (phase >= 1) phase -= 1;
-                    volume += volumeDelta;
-
-                    const outSampleL: number = outSample;
-                    const outSampleR: number = outSample;
-
-                    outL[bufferIndex + i] += outSampleL;
-                    outR[bufferIndex + i] += outSampleR;
+                    const activeClips: (ClipState | null)[] = trackState.activeClips;
+                    const activeClipCount: number = trackState.activeClipsLength;
+                    for (let clipIndex: number = 0; clipIndex < activeClipCount; clipIndex++) {
+                        const activeClip: ClipState = activeClips[clipIndex]!;
+                        const clip: Clip.Type = activeClip.clip;
+                        const patternIdLo: number = clip.patternIdLo;
+                        const patternIdHi: number = clip.patternIdHi;
+                        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+                            patternsById,
+                            patternIdLo,
+                            patternIdHi,
+                        );
+                        if (patternTableIndex !== -1) {
+                            const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
+                            this._determineActiveTones(trackIndex, clipIndex, patternIndex);
+                        }
+                    }
                 }
 
-                tone.phase = phase;
-                tone.phaseDelta = phaseDelta;
-                tone.volume = volume;
-                tone.volumeDelta = volumeDelta;
+                const activeClips: (ClipState | null)[] = trackState.activeClips;
+                const activeClipCount: number = trackState.activeClipsLength;
+                for (let clipIndex: number = 0; clipIndex < activeClipCount; clipIndex++) {
+                    const activeClip: ClipState = activeClips[clipIndex]!;
+
+                    if (this.isAtStartOfTick) {
+                        if (activeClip.seenInClipSearch) {
+                            activeClip.seenInClipSearch = false;
+                        } else {
+                            // Clip changed under us, and we couldn't find it
+                            // with the playhead, so stop it.
+                            activeClip.isOnLastTick = true;
+                        }
+                    }
+
+                    const activeTones: (Tone | null)[] = activeClip.activeTones;
+                    const activeToneCount: number = activeClip.activeTonesLength;
+                    for (let toneIndex: number = 0; toneIndex < activeToneCount; toneIndex++) {
+                        const tone: Tone = activeTones[toneIndex]!;
+
+                        if (this.isAtStartOfTick) {
+                            if (tone.seenInToneSearch) {
+                                tone.seenInToneSearch = false;
+                                if (activeClip.isOnLastTick) {
+                                    // Clip is done, so stop here.
+                                    tone.volumeDelta = (0 - tone.volume) / (1 * this.samplesPerTick);
+                                    tone.isOnLastTick = true;
+                                }
+                            } else {
+                                // Note changed under us, and we couldn't find
+                                // it with the playhead, so stop it.
+                                tone.volumeDelta = (0 - tone.volume) / (1 * this.samplesPerTick);
+                                tone.isOnLastTick = true;
+                            }
+                        }
+
+                        let phase: number = tone.phase;
+                        let phaseDelta: number = tone.phaseDelta;
+                        let phaseDeltaScale: number = tone.phaseDeltaScale;
+                        let volume: number = tone.volume;
+                        let volumeDelta: number = tone.volumeDelta;
+
+                        for (let i: number = 0; i < runLength; i++) {
+                            // const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                            const outSample: number = evaluateWaveform(phase) * 0.05 * volume;
+                            phase += phaseDelta;
+                            if (phase >= 1) phase -= 1;
+                            phaseDelta *= phaseDeltaScale;
+                            volume += volumeDelta;
+
+                            const outSampleL: number = outSample;
+                            const outSampleR: number = outSample;
+
+                            outL[bufferIndex + i] += outSampleL;
+                            outR[bufferIndex + i] += outSampleR;
+                        }
+
+                        tone.phase = phase;
+                        tone.phaseDelta = phaseDelta;
+                        tone.volume = volume;
+                        tone.volumeDelta = volumeDelta;
+                    }
+                }
             }
 
             if (this.playingPianoNote) {
@@ -397,7 +614,8 @@ export class Synthesizer {
                     let volumeDelta: number = this.pianoNoteVolumeDelta;
 
                     for (let i: number = 0; i < runLength; i++) {
-                        const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                        // const outSample: number = Math.tanh(Math.sin(phase * Math.PI * 2) * 2) * 0.05 * volume;
+                        const outSample: number = evaluateWaveform(phase) * 0.05 * volume;
                         phase += phaseDelta;
                         if (phase >= 1) phase -= 1;
                         volume += volumeDelta;
@@ -417,44 +635,71 @@ export class Synthesizer {
             }
 
             bufferIndex += runLength;
-            if (this.playing) this.tickSampleCountdown -= runLength;
-            samplesRemaining -= runLength;
-            if (this.playing) this.isAtStartOfTick = false;
+            this.tickSampleCountdown -= runLength;
+            this.isAtStartOfTick = false;
 
-            if (this.playing)
             if (this.tickSampleCountdown <= 0) {
                 this.isAtStartOfTick = true;
                 this.tick++;
+                this.samplesPerTick = computeSamplesPerTick(
+                    this.samplesPerSecond,
+                    this.tick,
+                    this.song.ppqn,
+                    this.song.tempo,
+                    this.song.tempoEnvelope,
+                );
                 this.tickSampleCountdown += this.samplesPerTick;
 
-                // @TODO: I really need to look at voice allocation carefully.
-                // This does seem less hacky than trying to figure out when wrap
-                // around happens and use that in determineActiveTones (what I
-                // initially did here just to get things going), but having to
-                // defer wrapping around to after this seems fragile. It seems
-                // that BeepBox doesn't defer this, but rather, if a note is on
-                // its last tick, that's detected earlier, in the control-rate
-                // code (i.e. computeTone).
-                const activeTones: Tone[] = this.activeTones;
-                const activeTonesByNoteId: Uint64ToUint32Table.Type = this.activeTonesByNoteId;
-                for (let i: number = activeTones.length - 1; i >= 0; i--) {
-                    const tone: Tone = activeTones[i];
-                    if (this.tick >= tone.note.end) {
-                        const other: Tone = activeTones[activeTones.length - 1];
-                        Uint64ToUint32Table.set(
-                            activeTonesByNoteId,
-                            other.note.idLo,
-                            other.note.idHi,
-                            i,
-                        );
-                        Uint64ToUint32Table.remove(
-                            activeTonesByNoteId,
-                            tone.note.idLo,
-                            tone.note.idHi,
-                        );
-                        activeTones[activeTones.length - 1] = tone;
-                        activeTones[i] = other;
-                        activeTones.pop();
+                for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+                    // const track: Track = tracks[trackIndex];
+                    const trackState: TrackState = trackStates[trackIndex];
+                    const activeClips: (ClipState | null)[] = trackState.activeClips;
+                    const activeClipsByClipId: Uint64ToUint32Table.Type = trackState.activeClipsByClipId;
+                    for (let clipIndex: number = trackState.activeClipsLength - 1; clipIndex >= 0; clipIndex--) {
+                        const clipState: ClipState = activeClips[clipIndex]!;
+                        const clip: Clip.Type = clipState.clip;
+                        // const clipStart: number = clip.start;
+                        // const clipEnd: number = clip.end;
+                        const activeTones: (Tone | null)[] = clipState.activeTones;
+                        const activeTonesByNoteId: Uint64ToUint32Table.Type = clipState.activeTonesByNoteId;
+                        // const tick: number = this.tick - clipStart;
+                        for (let toneIndex: number = clipState.activeTonesLength - 1; toneIndex >= 0; toneIndex--) {
+                            const tone: Tone = activeTones[toneIndex]!;
+                            if (tone.isOnLastTick || clipState.isOnLastTick) {
+                                const other: Tone = activeTones[clipState.activeTonesLength - 1]!;
+                                Uint64ToUint32Table.set(
+                                    activeTonesByNoteId,
+                                    other.note.idLo,
+                                    other.note.idHi,
+                                    toneIndex,
+                                );
+                                Uint64ToUint32Table.remove(
+                                    activeTonesByNoteId,
+                                    tone.note.idLo,
+                                    tone.note.idHi,
+                                );
+                                activeTones[clipState.activeTonesLength - 1] = tone;
+                                activeTones[toneIndex] = other;
+                                clipState.popActiveTone();
+                            }
+                        }
+                        if (clipState.isOnLastTick) {
+                            const other: ClipState = activeClips[trackState.activeClipsLength - 1]!;
+                            Uint64ToUint32Table.set(
+                                activeClipsByClipId,
+                                other.clip.idLo,
+                                other.clip.idHi,
+                                clipIndex,
+                            );
+                            Uint64ToUint32Table.remove(
+                                activeClipsByClipId,
+                                clip.idLo,
+                                clip.idHi,
+                            );
+                            activeClips[trackState.activeClipsLength - 1] = clipState;
+                            activeClips[clipIndex] = other;
+                            trackState.popActiveClip();
+                        }
                     }
                 }
 
@@ -464,15 +709,21 @@ export class Synthesizer {
             }
         }
 
+        this.assumptionsAreInvalid = false;
+
         if (this.playing)
         if (playheadBuffer != null) {
             const samplesPerTick: number = this.samplesPerTick;
             const invSamplesPerTick: number = 1 / samplesPerTick;
             const fraction: number = ((samplesPerTick - previousTickSampleCountdown) + (size - 1)) * invSamplesPerTick;
+            // @TODO: Only set the latest value here, and rely on the main thread
+            // doing a search for non-zero values instead (add 1 to disambiguate).
             playheadBuffer.fill(previousTick + fraction);
         }
 
         const timeTakenEnd: number = Date.now();
+        // @TODO: Only set the latest value here, and rely on the main thread
+        // doing a search for non-zero values instead (add 1 to disambiguate).
         if (timeTakenBuffer != null) timeTakenBuffer.fill(timeTakenEnd - timeTakenStart);
     }
 
@@ -489,6 +740,9 @@ export class Synthesizer {
         // this.pianoNotePitch = null;
         // this.pianoNotePhase = 0;
         // this.pianoNotePhaseDelta = 0;
+        // @TODO: This is sloppy. I should at the very least make this based on
+        // the tick size in samples, that way there won't be issues with the
+        // volume going negative.
         this.pianoNoteVolumeDelta = (0 - this.pianoNoteVolume) / (0.1 * this.samplesPerSecond);
         // this.playingPianoNote = false;
     }

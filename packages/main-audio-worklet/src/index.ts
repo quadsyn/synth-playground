@@ -1,7 +1,9 @@
 import { Synthesizer } from "@synth-playground/synthesizer/index.js";
+import { MessageKind } from "./MessageKind.js";
 
 class SynthesizerAudioWorklet extends AudioWorkletProcessor {
     public synthesizer: Synthesizer;
+
     private _quit: boolean;
 
     constructor() {
@@ -15,26 +17,27 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
     }
 
     private _onMessageReceived = (event: MessageEvent): void => {
-        switch (event.data["type"]) {
-            case "loadSong": {
+        switch (event.data["kind"] as MessageKind) {
+            case MessageKind.LoadSong: {
                 this.synthesizer.loadSong(event.data["song"]);
             } break;
-            case "play": {
+            case MessageKind.Play: {
+                this.synthesizer.goToStart();
                 this.synthesizer.play();
             } break;
-            case "pause": {
+            case MessageKind.Pause: {
                 this.synthesizer.pause();
             } break;
-            case "stop": {
+            case MessageKind.Stop: {
                 this.synthesizer.stop();
             } break;
-            case "quit": {
+            case MessageKind.Quit: {
                 this._quit = true;
             } break;
-            case "playPianoNote": {
+            case MessageKind.PlayPianoNote: {
                 this.synthesizer.playPianoNote(event.data["pitch"]);
             } break;
-            case "stopPianoNote": {
+            case MessageKind.StopPianoNote: {
                 this.synthesizer.stopPianoNote(event.data["pitch"]);
             } break;
         }

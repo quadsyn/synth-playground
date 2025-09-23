@@ -1,4 +1,4 @@
-import { H } from "@synth-playground/dom/index.js";
+import { H } from "@synth-playground/browser/dom.js";
 import {
     type GroupPanelPartInitParameters,
     type ITabRenderer,
@@ -6,8 +6,6 @@ import {
 } from "dockview-core";
 import { addDisposableListener } from "dockview-core/dist/esm/events.js";
 
-// @TODO: Make this full width, and somehow enable dragging to move over the
-// entire title+gap area.
 export class PopupTab extends CompositeDisposable implements ITabRenderer {
     private _element: HTMLDivElement;
     private _content: HTMLDivElement;
@@ -18,7 +16,10 @@ export class PopupTab extends CompositeDisposable implements ITabRenderer {
         super();
 
         this._title = "";
-        this._content = H("div", { class: "dv-default-content" });
+        this._content = H("div", {
+            class: "dv-default-content",
+            style: "flex-grow: 1;",
+        });
         this._action = H("div", {
             class: "dv-default-tab-action",
             style: `
@@ -29,6 +30,7 @@ export class PopupTab extends CompositeDisposable implements ITabRenderer {
             class: "dv-default-tab",
             style: `
                 user-select: none;
+                padding: 0 .5rem;
             `,
         }, this._content, this._action);
 
@@ -57,7 +59,15 @@ export class PopupTab extends CompositeDisposable implements ITabRenderer {
                 event.preventDefault();
                 parameters.api.close();
             }),
+            addDisposableListener(this._element, "pointerdown", (event: PointerEvent) => {
+                // Hacky. Ideally there would be an "official" way to do this.
+                // Though this won't be necessary as I will roll my own dialogs.
+                parameters.api.group.element.querySelector(".dv-void-container")?.dispatchEvent(new Event("pointerdown"));
+            }),
         );
+
+        // Hacky.
+        parameters.api.group.element.querySelector(".dv-tabs-and-actions-container")?.classList.add("dv-full-width-single-tab");
 
         this.render();
     }

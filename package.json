@@ -16,6 +16,6 @@
     "typescript": "5.8.3"
   },
   "dependencies": {
-    "dockview-core": "4.2.5"
+    "dockview-core": "4.4.0"
   }
 }

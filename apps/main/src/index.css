@@ -69,28 +69,17 @@ button:disabled {
     color: #404040;
 }
 
-.stretchy-scrollbar {
-    background-color: #000000;
+kbd {
+    background-color: #373737;
+    padding: 0px 6px;
+    font-family: sans-serif !important;
+    white-space: pre-wrap;
+    border-bottom: 2px solid #595959;
+    box-sizing: border-box;
+    border-radius: 4px;
 }
 
-.stretchy-scrollbar-thumb {
-    background-color: #444444;
-    border: 1px solid #000000;
-}
-
-.stretchy-scrollbar-thumb:hover:not(.active) {
-    border: 1px solid #ffffff;
-}
-
-.stretchy-scrollbar-thumb .active {
-    border: 1px solid #ff0000;
-}
-
-.stretchy-scrollbar-thumb-handle:hover {
-    background-color: #999999;
-}
-
-.menu-button, .menubar-button {
+.menu-button, .menu-button:hover:not(:disabled), .menubar-button {
     appearance: none;
     border: none;
     background: none;
@@ -105,8 +94,20 @@ button:disabled {
     color: #777777;
 }
 
-.menu-button:hover:not(:disabled), .menubar-button:hover {
+.menu-button.selected:not(:disabled), .menubar-button:hover {
     background: #555555;
+}
+
+.list-item {
+    cursor: pointer;
+}
+
+.list-item:hover {
+    background: #3e3e3e;
+}
+
+.tree-view {
+    background: #333333;
 }
 
 .tree-view-item {

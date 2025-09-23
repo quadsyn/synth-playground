@@ -17,6 +17,11 @@ function H(elementType, attributes, ...children) {
 It's actually so similar that you could hook this up with TypeScript's JSX
 support, but I haven't bothered because it doesn't save on much.
 
+There's a similar function for SVG elements if you want that. Why a separate
+function? Because some element names are ambiguous and exist in both contexts.
+People try to disambiguate in various ways, but it's simpler to separate those
+out.
+
 After that, we could write programs like this:
 
 ```javascript
@@ -123,6 +128,35 @@ source with multiple readers, each with their own cached version number. The
 readers don't need to clear the equivalent of the dirty flag in this case, which
 makes it easier to run them in any order.
 
+If your state is immutable, these equality checks will work even for composite
+data structures (e.g. objects), but that's pointer equality, not value equality.
+If you always forge new pointers for value changes, then this doesn't matter
+(and this is, as far as I know, best practice if you use immutable state), but
+this is JavaScript, so you always have to pay attention to this. Generally, the
+state here is mutable (similarly to BeepBox), so the above value comparisons are
+what you'll often see instead.
+
+Keep in mind that if some external update to the DOM node happens, we can't tell
+if that happened, and we will erroneously skip updates. Why not just compare
+against the actual DOM value? Generally, those can be a bit more expensive to
+read as well (plus some values cause reflows if queried after a DOM write), so
+it's better to not do that. This should not really happen unless you're using
+something like a browser extension that messes with the DOM, so it should be
+okay. Besides, any state update after that will result in a DOM write, unless
+the reference to the DOM node has been lost (at which point you have other
+problems anyway).
+
+One might say this is all very tedious, enough that it's not worth doing. That
+may be true. It shouldn't be terribly difficult to replace this with a more
+generic JS UI library. The main obstacle is mutable state (most such libraries
+assume state is immutable, and their main way of integrating external mutable
+state involves taking immutable snapshots). Note, though, that these libraries
+often make the render process quite a bit more expensive, often due to the more
+ergonomic API, which typically will (or appears to) fuse creation and updates,
+and makes use of object allocation everywhere. This slowness can be a problem
+if one wants to "animate" by re-rendering: typically, whenever this is slow,
+there will be mechanisms to do animations by bypassing the DOM<->state sync.
+
 ## Components
 
 Usually, when building up some UI, we'll end up with some distinct "widgets"
@@ -140,13 +174,21 @@ Components here are classes. Besides a constructor, the required parts are:
   (or program). Ideally, this should be the only place where DOM manipulation
   happens.
 
-There is a TypeScript `interface` that components can implement, though that is
-just a formality (as of this writing, I have not used the interface in a generic
-way at runtime, i.e. polymorphism).
+There is a TypeScript `interface` that components should implement.
 
-If you need to do something only when a component is mounted, you can keep track
-of how many times `render` has been called. The first call should mean the
-component was mounted. Something like this:
+The singular `element` field means that we can't support components that have
+multiple "top-level" DOM nodes (relative to the component), aka fragments. This
+is a limitation of this style, but I haven't really needed it anywhere so far.
+YMMV.
+
+Another reason to introduce components is to cut down on some of the manual
+"memoization" stuff: once you have a component that does that memoization
+internally, you can (in basic cases) forget about that in the parent component.
+
+### Mounting
+
+You can keep track of how many times `render` has been called. The first call
+should mean the component was mounted. Something like this:
 
 ```javascript
 class Button {
@@ -155,6 +197,10 @@ class Button {
     render() { if (!this._mounted) this.onDidMount(); }
 }
 ```
+
+The closest equivalent for unmounting is `dispose`.
+
+### Props
 
 If you need something akin to React's "props", you can follow this pattern:
 
@@ -185,6 +231,9 @@ function render() {
     button.render();
 }
 ```
+
+The setter is not actually necessary (and maybe it's just an annoying Java-ism),
+but you may want to e.g. set some internal state as dirty there too.
 
 # Counter example
 
@@ -230,4 +279,6 @@ counter.render();
   - Helper functions for list reconciliation
   - System for animating things when the song is playing
   - A consistent way to use Dockview (and potentially something else for mobile)
-  - Some consistent patterns for canvas-backed components
+  - Patterns for canvas-backed components
+  - Patterns for avoiding reflows
+  - Patterns for dealing with external state properly

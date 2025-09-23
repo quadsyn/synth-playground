@@ -1,0 +1,45 @@
+.scrollBar, .thumb, .thumbHandle {
+    box-sizing: border-box;
+}
+
+.scrollBar {
+    flex-shrink: 0;
+}
+
+.scrollBar, .thumb {
+    position: relative;
+}
+
+.thumbHandle {
+    position: absolute;
+}
+
+/* .scrollBar {
+    background-color: #000000;
+} */
+
+.thumb {
+    background-color: #444444;
+    border: 1px solid #000000;
+}
+
+.thumb:hover:not(.active) {
+    border: 1px solid #ffffff;
+}
+
+.thumb .active {
+    border: 1px solid #ff0000;
+}
+
+.thumbHandle:hover {
+    background-color: #999999;
+}
+
+.overlay {
+    display: block;
+    box-sizing: border-box;
+    pointer-events: none;
+    left: 0;
+    top: 0;
+    position: absolute;
+}
