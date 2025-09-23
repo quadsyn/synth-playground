@@ -86,24 +86,8 @@ export class TrackOutliner implements Component {
         const laneCount: number = lanes.length;
         // const lanesVersion: number = this._laneManager.getLanesVersion();
 
-        let visibleLaneCount: number = 0;
-        let firstLaneIndex: number = -1;
-        {
-            // @TODO: Use binary search to find first visible lane.
-            for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
-                const laneLayout: LaneLayout = laneLayouts[laneIndex];
-                const y0: number = laneLayout.y0 - viewportY0;
-                const y1: number = laneLayout.y1 - viewportY0;
-                if (y1 < 0 || y0 > height) {
-                    // Out of bounds.
-                } else {
-                    if (firstLaneIndex === -1) {
-                        firstLaneIndex = laneIndex;
-                    }
-                    visibleLaneCount++;
-                }
-            }
-        }
+        const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+        const visibleLaneCount: number = this._laneManager.computeVisibleLaneCount(firstLaneIndex, viewportY0, height);
 
         const dirty: boolean = (
             Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Y)

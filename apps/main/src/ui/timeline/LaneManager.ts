@@ -58,6 +58,58 @@ export class LaneManager {
         return this._lanesVersion;
     }
 
+    public findFirstVisibleLaneIndex(viewportY0: number): number {
+        if (this._lanesAreDirty) {
+            this._determineVisibleLanes();
+        }
+
+        const laneCount: number = this._lanes.length;
+        const laneLayouts: LaneLayout[] = this._laneLayouts;
+
+        // https://en.wikipedia.org/wiki/Binary_search#Procedure_for_finding_the_rightmost_element
+        let left: number = 0;
+        let right: number = laneCount;
+        while (left < right) {
+            const middle: number = Math.floor(left + (right - left) / 2);
+            if ((laneLayouts[middle].y1 - viewportY0) > 0) {
+                // Consider the lower half.
+                right = middle;
+            } else {
+                // Consider the upper half.
+                left = middle + 1;
+            }
+        }
+        // This is a more useful return value here, instead of right - 1. It also
+        // matches C++'s std::upper_bound.
+        return left;
+    }
+
+    public computeVisibleLaneCount(firstVisibleLaneIndex: number, viewportY0: number, canvasHeight: number): number {
+        if (this._lanesAreDirty) {
+            // @TODO: Since you're supposed to call findFirstVisibleLaneIndex
+            // before calling this, maybe I should leave this out.
+            this._determineVisibleLanes();
+        }
+
+        const laneCount: number = this._lanes.length;
+        const laneLayouts: LaneLayout[] = this._laneLayouts;
+
+        let visibleLaneCount: number = 0;
+
+        for (let laneIndex: number = firstVisibleLaneIndex; laneIndex < laneCount; laneIndex++) {
+            const laneLayout: LaneLayout = laneLayouts[laneIndex];
+            const y0: number = laneLayout.y0 - viewportY0;
+            if (y0 > canvasHeight) {
+                // Out of bounds.
+                break;
+            } else {
+                visibleLaneCount++;
+            }
+        }
+
+        return visibleLaneCount;
+    }
+
     // private _markLanesAsDirty(): void {
     //     this._lanesAreDirty = true;
     // }

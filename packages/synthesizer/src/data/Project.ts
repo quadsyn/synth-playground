@@ -34,7 +34,7 @@ export function make(): Type {
         tracksMetadata: song.tracks.map((_, i) => TrackMetadata.make(
             /* name */ `Track ${i + 1}`, // @TODO: Localization
             /* height */ TrackMetadata.DefaultHeight,
-            /* collapsed */ false, // i > 0,
+            /* collapsed */ false,
         )),
         patternIdGenerator: makeIdGenerator(),
         clipIdGenerator: makeIdGenerator(),

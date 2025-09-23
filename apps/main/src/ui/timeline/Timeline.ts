@@ -19,6 +19,7 @@ import { ActionKind, ActionResponse } from "../input/actions.js";
 import { type OperationContext } from "../input/operations.js";
 import * as Viewport from "../common/Viewport.js";
 import * as Lane from "./Lane.js";
+import { type LaneLayout } from "./LaneLayout.js";
 import { TimeRuler } from "./TimeRuler.js";
 import { TrackOutliner } from "./TrackOutliner.js";
 import { LaneManager } from "./LaneManager.js";
@@ -384,6 +385,7 @@ export class Timeline implements Component {
         const ppqn: number = song.ppqn;
         const beatsPerBar: number = song.beatsPerBar;
         const lanes: Lane.Type[] = this._laneManager.getLanes();
+        const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
         // const lanesVersion: number = this._laneManager.getLanesVersion();
         // const canvas: HTMLCanvasElement = this._gridCanvas;
@@ -395,24 +397,20 @@ export class Timeline implements Component {
         const viewportY0: number = this._viewport.y0;
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
+        const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
         context.fillStyle = "#303030";
         context.fillRect(0, 0, width, height);
         context.strokeStyle = "#191919";
         {
             // Lane grid.
-            // @TODO: Use binary search to find first visible lane.
-            let accumulatedTotalHeight: number = 0;
-            for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
+            for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
                 const lane: Lane.Type = lanes[laneIndex];
+                const laneLayout: LaneLayout = laneLayouts[laneIndex];
                 const laneHeight: number = lane.height;
-                const top: number = accumulatedTotalHeight - viewportY0;
+                const top: number = laneLayout.y0 - viewportY0;
                 const bottom: number = top + laneHeight;
-                accumulatedTotalHeight += laneHeight;
 
-                if (bottom < 0) {
-                    continue;
-                }
                 if (bottom > height) {
                     break;
                 }
@@ -463,6 +461,7 @@ export class Timeline implements Component {
         const song: Song.Type = this._doc.project.song;
         const tracks: Track.Type[] = song.tracks;
         const lanes: Lane.Type[] = this._laneManager.getLanes();
+        const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
         // const canvas: HTMLCanvasElement = this._clipsCanvas;
         const context: CanvasRenderingContext2D = this._clipsContext;
@@ -475,23 +474,18 @@ export class Timeline implements Component {
         const viewportY0: number = this._viewport.y0;
         const selectedClipIndex: number = this._selectedClipIndex;
         const selectedClipTrackIndex: number = this._selectedClipTrackIndex;
+        const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
         context.clearRect(0, 0, width, height);
 
-        // @TODO: Use binary search to find first visible lane.
-
-        let accumulatedTotalHeight: number = 0;
-        for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
+        for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
             const lane: Lane.Type = lanes[laneIndex];
+            const laneLayout: LaneLayout = laneLayouts[laneIndex];
             const laneHeight: number = lane.height;
             const kind: Lane.Kind = lane.kind;
-            const top: number = accumulatedTotalHeight - viewportY0 + 2;
-            const bottom: number = top + laneHeight - 2;
-            accumulatedTotalHeight += laneHeight;
+            const top: number = laneLayout.y0 - viewportY0 + 2;
+            // const bottom: number = top + laneHeight - 2;
 
-            if (bottom < 0) {
-                continue;
-            }
             if (top > height) {
                 break;
             }
@@ -660,6 +654,7 @@ export class Timeline implements Component {
         const minTempo: number = 1; // @TODO: Constant
         const maxTempo: number = 1000; // @TODO: Constant
         const lanes: Lane.Type[] = this._laneManager.getLanes();
+        const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
         // const lanesVersion: number = this._laneManager.getLanesVersion();
         // const canvas: HTMLCanvasElement = this._envelopesCanvas;
@@ -671,6 +666,7 @@ export class Timeline implements Component {
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
         const viewportY0: number = this._viewport.y0;
+        const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
         context.clearRect(0, 0, width, height);
 
@@ -678,20 +674,14 @@ export class Timeline implements Component {
         context.strokeStyle = "#17d15b";
         context.lineWidth = 2;
 
-        // @TODO: Use binary search to find first visible lane.
-
-        let accumulatedTotalHeight: number = 0;
-        for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
+        for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
             const lane: Lane.Type = lanes[laneIndex];
+            const laneLayout: LaneLayout = laneLayouts[laneIndex];
             const laneHeight: number = lane.height;
             const kind: Lane.Kind = lane.kind;
-            const top: number = accumulatedTotalHeight - viewportY0 + 2;
+            const top: number = laneLayout.y0 - viewportY0 + 2;
             const bottom: number = top + laneHeight - 4;
-            accumulatedTotalHeight += laneHeight;
 
-            if (bottom < 0) {
-                continue;
-            }
             if (top > height) {
                 break;
             }
