@@ -37,9 +37,6 @@ export class TrackOutliner implements Component {
         this._doc = doc;
         this._laneManager = laneManager;
 
-        // const project: Project = this._doc.project;
-        // const song: Song = project.song;
-
         this.size = size;
         this._width = this.size;
         this._height = initialHeight;

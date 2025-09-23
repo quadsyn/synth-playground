@@ -4,7 +4,7 @@ import { type PatternInfo } from "../../data/PatternInfo.js";
 import { NotePitchBoundsTracker } from "../../data/NotePitchBoundsTracker.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
-import { unlerp, remap, clamp } from "@synth-playground/common/math.js";
+import { unlerp, remap, clamp, insideRange } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
@@ -333,9 +333,9 @@ export class Timeline implements Component {
                 }
             }
 
-            this._playheadIsVisible = this._playhead != null && (
-                this._playhead >= this._viewport.x0
-                && this._playhead <= this._viewport.x1
+            this._playheadIsVisible = (
+                this._playhead != null
+                && insideRange(this._playhead, this._viewport.x0, this._viewport.x1)
             );
         } else {
             this._playhead = 0;
@@ -562,7 +562,6 @@ export class Timeline implements Component {
 
         // Draw clip title.
         context.fillStyle = "#ffffff";
-        // @TODO: Clipping.
         context.font = "8pt sans-serif";
         context.textBaseline = "top";
         const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
@@ -1059,12 +1058,7 @@ export class Timeline implements Component {
         const height: number = bounds.height;
         const mouseX: number = event.clientX - bounds.left;
         const mouseY: number = event.clientY - bounds.top;
-        // const insideCanvas: boolean = (
-        //     mouseX >= 0
-        //     && mouseX < width
-        //     && mouseY >= 0
-        //     && mouseY < height
-        // );
+        // const insideCanvas: boolean = insideRange(mouseX, 0, width) && insideRange(mouseY, 0, height);
 
         if (this._pointerIsDown) {
             if (this._selectedClipIndex !== -1) {
@@ -1129,37 +1123,6 @@ export class Timeline implements Component {
 
     private _onDoubleClick = (event: MouseEvent): void => {
         if (this._selectedClipIndex === -1 && this._hoveredClipIndex === -1) {
-            // Double clicked in an empty spot, add a clip.
-            // const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
-            // const width: number = bounds.width;
-            // const height: number = bounds.height;
-            // const mouseX: number = event.clientX - bounds.left;
-            // const mouseY: number = event.clientY - bounds.top;
-            // const viewportWidth: number = this._viewportX1 - this._viewportX0;
-            // const cursorPpqn: number = (
-            //     this._viewportX0 + remap(mouseX, 0, width, 0, viewportWidth)
-            // ) | 0;
-            // const song: Song = this._doc.project.song;
-            // const duration: number = this._lastCommittedSize;
-            // const start: number = clamp(cursorPpqn, 0, this._pattern.duration - 1);
-            // const end: number = clamp(cursorPpqn + duration, 0, this._pattern.duration);
-            // const actualDuration: number = end - start;
-            // const pitch: number = clamp(cursorPitch, 0, song.maxPitch);
-            // if (Math.abs(actualDuration) > 0) {
-            //     const patternsById: Uint64ToUint32Table.Type = song.patternsById;
-            //     const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-            //         patternsById,
-            //         this._pattern.idLo,
-            //         this._pattern.idHi,
-            //     );
-            //     if (patternTableIndex === -1) {
-            //         throw new Error("Couldn't find pattern index");
-            //     }
-            //     const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-            //     this._doc.insertNote(patternIndex, start, end, pitch);
-            //     this._renderedNotesDirty = true;
-            //     this._renderedSelectionOverlayDirty = true;
-            // }
         } else if (this._hoveredClipIndex !== -1) {
             // Double clicked while hovering over a clip, remove it.
             // this._doc.removeClip(this._hoveredClipTrackIndex, this._hoveredClipIndex);
@@ -1202,10 +1165,7 @@ export class Timeline implements Component {
         this._hoveringOverEndOfClip = false;
 
         const outsideCanvas: boolean = canvasIsOccluded || (
-            mouseX < 0
-            || mouseX > width
-            || mouseY < 0
-            || mouseY > height
+            !insideRange(mouseX, 0, width) || !insideRange(mouseY, 0, height)
         );
         if (!outsideCanvas) {
             const viewportX0: number = this._viewport.x0;
@@ -1223,21 +1183,19 @@ export class Timeline implements Component {
             const tracks: Track.Type[] = song.tracks;
             // const trackCount: number = tracks.length;
             const lanes: Lane.Type[] = this._laneManager.getLanes();
+            const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
             const laneCount: number = lanes.length;
+            const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
             let found: boolean = false;
-            let accumulatedTotalHeight: number = 0;
-            for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
+            for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
                 const lane: Lane.Type = lanes[laneIndex];
+                const laneLayout: LaneLayout = laneLayouts[laneIndex];
                 const laneHeight: number = lane.height;
                 const kind: Lane.Kind = lane.kind;
-                const top: number = accumulatedTotalHeight - viewportY0 + 2;
+                const top: number = laneLayout.y0 - viewportY0 + 2;
                 const bottom: number = top + laneHeight - 2;
-                accumulatedTotalHeight += laneHeight;
 
-                if (bottom < 0) {
-                    continue;
-                }
                 if (top > height) {
                     break;
                 }
@@ -1248,8 +1206,7 @@ export class Timeline implements Component {
                         throw new Error("Expected track index");
                     }
                     const track: Track.Type = tracks[trackIndex];
-                    if (mouseY >= top && mouseY <= bottom)
-                    IITree.findOverlapping(
+                    if (insideRange(mouseY, top, bottom)) IITree.findOverlapping(
                         track.clips,
                         track.clipsMaxLevel,
                         searchWindowStart,
@@ -1264,21 +1221,17 @@ export class Timeline implements Component {
                             const clipY0: number = top - 1;
                             const clipY1: number = clipY0 + laneHeight;
                             const clipStartStretchHandleX0: number = clipX0;
-                            const clipStartStretchHandleX1: number = clipX0 + this._clipStretchHandleSize;
-                            const clipEndStretchHandleX0: number = clipX1 - this._clipStretchHandleSize;
+                            const clipStartStretchHandleX1: number = clamp(clipX0 + this._clipStretchHandleSize, clipX0, clipX1);
+                            const clipEndStretchHandleX0: number = clamp(clipX1 - this._clipStretchHandleSize, clipX0, clipX1);
                             const clipEndStretchHandleX1: number = clipX1;
 
                             this._hoveringOverStartOfClip = (
-                                mouseX >= clipStartStretchHandleX0
-                                && mouseX <= clipStartStretchHandleX1
-                                && mouseY >= clipY0
-                                && mouseY <= clipY1
+                                insideRange(mouseX, clipStartStretchHandleX0, clipStartStretchHandleX1)
+                                && insideRange(mouseY, clipY0, clipY1)
                             );
                             this._hoveringOverEndOfClip = (
-                                mouseX >= clipEndStretchHandleX0
-                                && mouseX <= clipEndStretchHandleX1
-                                && mouseY >= clipY0
-                                && mouseY <= clipY1
+                                insideRange(mouseX, clipEndStretchHandleX0, clipEndStretchHandleX1)
+                                && insideRange(mouseY, clipY0, clipY1)
                             );
                         },
                     );
@@ -1323,6 +1276,7 @@ export class Timeline implements Component {
     };
 
     private _onProjectChanged = (): void => {
+        // @TODO: Invalidate precisely.
         this._renderedClipsDirty = true;
         this._renderedSelectionOverlayDirty = true;
         this._renderedEnvelopesDirty = true;

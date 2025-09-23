@@ -3,7 +3,7 @@ import { SongDocument } from "../../SongDocument.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
-import { lerp, unlerp, remap, clamp } from "@synth-playground/common/math.js";
+import { lerp, unlerp, remap, clamp, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
@@ -43,7 +43,7 @@ import {
     drawNoteTopHandle,
     drawNoteBottomHandle,
 } from "./notePainting.js";
-import { tickToX } from "./common.js";
+import { tickToX, noteIsFlat } from "./common.js";
 import { type PatternInfo } from "../../data/PatternInfo.js";
 
 export class PianoRoll implements Component {
@@ -566,10 +566,10 @@ export class PianoRoll implements Component {
                     const clipEnd: number = clip.end;
                     const patternDuration: number = this._pattern!.duration;
 
-                    if (targetPlayhead >= clipStart && targetPlayhead < clipEnd) {
+                    if (insideRange(targetPlayhead, clipStart, clipEnd)) {
                         targetPlayhead = (targetPlayhead - clipStart) % patternDuration;
                         this._playheadIsVisible = true;
-                    } else if (targetPlayhead < clipStart || targetPlayhead > clipEnd) {
+                    } else {
                         this._playheadIsVisible = false;
                         targetPlayhead = 0;
                     }
@@ -591,8 +591,7 @@ export class PianoRoll implements Component {
             // notes that intersect the playhead, which can't be very large or
             // we'll have other issues anyway. So it's probably fine already.
             // this._playheadIsVisible = this._playhead != null && (
-            //     this._playhead >= this._viewportX0
-            //     && this._playhead <= this._viewportX1
+            //     insideRange(this._playhead, this._viewportX0, this._viewportX1)
             // );
         } else {
             this._playhead = 0;
@@ -605,9 +604,21 @@ export class PianoRoll implements Component {
         const hoveringOverBottomOfNote: boolean = (this._hoveringNoteHit & NoteHit.Bottom) !== 0;
 
         if (hoveringOverTopOfNote) {
-            this._cursor = "n-resize";
+            const hoveringOverVolumePoint: boolean = false;
+            if (hoveringOverVolumePoint) {
+                this._cursor = "n-resize";
+            } else {
+                // @TODO: cursor=copy?
+                this._cursor = "copy";
+            }
         } else if (hoveringOverBottomOfNote) {
-            this._cursor = "s-resize";
+            const hoveringOverPitchPoint: boolean = false;
+            if (hoveringOverPitchPoint) {
+                this._cursor = "s-resize";
+            } else {
+                // @TODO: cursor=copy?
+                this._cursor = "default";
+            }
         } else if (hoveringOverStartOfNote || this._activeOperation instanceof LeftStretchNote) {
             this._cursor = "w-resize";
         } else if (hoveringOverEndOfNote || this._activeOperation instanceof RightStretchNote) {
@@ -824,7 +835,7 @@ export class PianoRoll implements Component {
                 }
 
                 context.fillStyle = "#0c6735";
-                drawNoteBackground(
+                const backgroundIsVisible: boolean = drawNoteBackground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
                     context,
@@ -840,7 +851,7 @@ export class PianoRoll implements Component {
                     note.volumeEnvelope,
                 );
                 context.fillStyle = "#17d15b";
-                const noteIsVisible: boolean = drawNoteForeground(
+                drawNoteForeground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
                     context,
@@ -854,6 +865,12 @@ export class PianoRoll implements Component {
                     note.pitch,
                     note.pitchEnvelope,
                     note.volumeEnvelope,
+                );
+
+                const noteIsVisible: boolean = (
+                    noteIsFlat(this._state.noteDrawingStyle, note)
+                    ? insideRange(note.pitch, viewportY0, viewportY1)
+                    : backgroundIsVisible
                 );
 
                 if (!noteIsVisible) {
@@ -951,7 +968,7 @@ export class PianoRoll implements Component {
         if (selectedNoteCount > 0) {
             for (let i: number = 0; i < selectedNoteCount; i++) {
                 const note: Note.Type = this._state.selectedNotes[i];
-                if (note.start > viewportX1 || note.end < viewportX0) {
+                if (!rangesOverlap(note.start, note.end, viewportX0, viewportX1)) {
                     continue;
                 }
 
@@ -964,6 +981,8 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    // @NOTE: We're not using NoteTransform here as that's only
+                    // really relevant when we have an active operation.
                     note.start,
                     note.end,
                     note.pitch,
@@ -1225,12 +1244,7 @@ export class PianoRoll implements Component {
             return;
         }
 
-        const outsideCanvas: boolean = (
-            mouseX < 0
-            || mouseX > canvasWidth
-            || mouseY < 0
-            || mouseY > canvasHeight
-        );
+        const outsideCanvas: boolean = !insideRange(mouseX, 0, canvasWidth) || !insideRange(mouseY, 0, canvasHeight);
         if (!outsideCanvas) {
             const viewportX0: number = this._state.viewport.x0;
             const viewportX1: number = this._state.viewport.x1;
@@ -1455,7 +1469,7 @@ export class PianoRoll implements Component {
         const mouseX: number = event.clientX - bounds.left;
         const mouseY: number = event.clientY - bounds.top;
 
-        if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) {
+        if (!insideRange(mouseX, 0, width) || !insideRange(mouseY, 0, height)) {
             return;
         }
 

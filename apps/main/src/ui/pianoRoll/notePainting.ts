@@ -1,4 +1,4 @@
-import { lerp, unlerp, remap, clamp } from "@synth-playground/common/math.js";
+import { lerp, unlerp, remap, clamp, rangesOverlap } from "@synth-playground/common/math.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
 import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
@@ -31,7 +31,7 @@ export function drawNoteBackgroundPath(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return false;
     }
@@ -44,7 +44,7 @@ export function drawNoteBackgroundPath(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return false;
         }
@@ -61,7 +61,14 @@ export function drawNoteBackgroundPath(
         // @TODO: Use first value for culling if pitchEnvelopeLength === 1
 
         // @TODO: Figure out bounding box, and use that for culling? Maybe not
-        // worth it.
+        // worth it. Actually hmm, I need this for the overlay that shows the
+        // out of bounds notes. Right now I'm just going with recording the min
+        // and max y values, and drawing anyway (since the browser will clip the
+        // path). But maybe this is in fact worth it, despite being another pass
+        // over the pitch envelope.
+
+        let minY: number = Infinity;
+        let maxY: number = -Infinity;
 
         context.beginPath();
         {
@@ -74,15 +81,31 @@ export function drawNoteBackgroundPath(
                 BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
+                    const segmentX0: number = it.segmentX0;
+                    const segmentX1: number = it.segmentX1;
+                    const segmentY0: number = it.segmentY0;
+                    const segmentY1: number = it.segmentY1;
                     if (firstLine) {
                         firstLine = false;
-                        context.moveTo(it.segmentX0, it.segmentY0);
-                    } else if (it.segmentX0 !== prevSegmentX1 || it.segmentY0 !== prevSegmentY1) {
-                        context.lineTo(it.segmentX0, it.segmentY0);
+                        context.moveTo(segmentX0, segmentY0);
+                    } else if (segmentX0 !== prevSegmentX1 || segmentY0 !== prevSegmentY1) {
+                        context.lineTo(segmentX0, segmentY0);
                     }
-                    context.lineTo(it.segmentX1, it.segmentY1);
-                    prevSegmentX1 = it.segmentX1;
-                    prevSegmentY1 = it.segmentY1;
+                    context.lineTo(segmentX1, segmentY1);
+                    prevSegmentX1 = segmentX1;
+                    prevSegmentY1 = segmentY1;
+                    if (segmentY0 < minY) {
+                        minY = segmentY0;
+                    }
+                    if (segmentY0 > maxY) {
+                        maxY = segmentY0;
+                    }
+                    if (segmentY1 < minY) {
+                        minY = segmentY1;
+                    }
+                    if (segmentY1 > maxY) {
+                        maxY = segmentY1;
+                    }
                 }
                 BentNoteIterator.advance(it);
             }
@@ -96,12 +119,28 @@ export function drawNoteBackgroundPath(
                 BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
-                    if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {
-                        context.lineTo(it.segmentX1, it.segmentY1 + pixelsPerPitch);
+                    const segmentX0: number = it.segmentX0;
+                    const segmentX1: number = it.segmentX1;
+                    const segmentY0: number = it.segmentY0 + pixelsPerPitch;
+                    const segmentY1: number = it.segmentY1 + pixelsPerPitch;
+                    if (segmentX1 !== prevSegmentX0 || segmentY1 !== prevSegmentY0) {
+                        context.lineTo(segmentX1, segmentY1);
                     }
-                    context.lineTo(it.segmentX0, it.segmentY0 + pixelsPerPitch);
-                    prevSegmentX0 = it.segmentX0;
-                    prevSegmentY0 = it.segmentY0;
+                    context.lineTo(segmentX0, segmentY0);
+                    prevSegmentX0 = segmentX0;
+                    prevSegmentY0 = segmentY0;
+                    if (segmentY0 < minY) {
+                        minY = segmentY0;
+                    }
+                    if (segmentY0 > maxY) {
+                        maxY = segmentY0;
+                    }
+                    if (segmentY1 < minY) {
+                        minY = segmentY1;
+                    }
+                    if (segmentY1 > maxY) {
+                        maxY = segmentY1;
+                    }
                 }
                 BentNoteIterator.advance(it);
             }
@@ -109,7 +148,8 @@ export function drawNoteBackgroundPath(
         BentNoteIterator.teardown(it);
         context.closePath();
 
-        return true;
+        // See the bounding box note above.
+        return rangesOverlap(minY, maxY, 0, canvasHeight);
     }
 
     return false;
@@ -140,7 +180,7 @@ export function drawNoteForegroundPath(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return false;
     }
@@ -155,7 +195,7 @@ export function drawNoteForegroundPath(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope && !hasVolumeEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return false;
         }
@@ -171,7 +211,7 @@ export function drawNoteForegroundPath(
         return true;
     } else if (style === NoteDrawingStyle.Bent) {
         if (!hasPitchEnvelope) {
-            if ((y + h) < 0 || y > canvasHeight) {
+            if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
                 // Quit early if note is vertically out of bounds.
                 return false;
             }
@@ -180,7 +220,14 @@ export function drawNoteForegroundPath(
         // @TODO: Use first value for culling if pitchEnvelopeLength === 1
 
         // @TODO: Figure out bounding box, and use that for culling? Maybe not
-        // worth it.
+        // worth it. Actually hmm, I need this for the overlay that shows the
+        // out of bounds notes. Right now I'm just going with recording the min
+        // and max y values, and drawing anyway (since the browser will clip the
+        // path). But maybe this is in fact worth it, despite being another pass
+        // over the pitch envelope.
+
+        let minY: number = Infinity;
+        let maxY: number = -Infinity;
 
         const defaultVolume: number = 1; // @TODO: Constant
 
@@ -197,12 +244,13 @@ export function drawNoteForegroundPath(
                 if (adjustedDuration > 0) {
                     const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
                     const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
+                    const segmentX0: number = it.segmentX0;
                     const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 0.5 + startVolume * 0.5);
                     if (firstLine) {
                         firstLine = false;
-                        context.moveTo(it.segmentX0, segmentY0);
-                    } else if (it.segmentX0 !== prevSegmentX1 || segmentY0 !== prevSegmentY1) {
-                        context.lineTo(it.segmentX0, segmentY0);
+                        context.moveTo(segmentX0, segmentY0);
+                    } else if (segmentX0 !== prevSegmentX1 || segmentY0 !== prevSegmentY1) {
+                        context.lineTo(segmentX0, segmentY0);
                     }
                     if (volumeStartIndex > -1 && it.adjustedPitchTime0 !== it.adjustedPitchTime1) {
                         for (let volumeIndex: number = volumeStartIndex; volumeIndex < volumeEnvelopeLength; volumeIndex++) {
@@ -227,11 +275,24 @@ export function drawNoteForegroundPath(
                     }
                     const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
                     const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
+                    const segmentX1: number = it.segmentX1;
                     const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 0.5 + endVolume * 0.5);
-                    if (it.segmentX1 !== prevSegmentX1 || segmentY1 !== prevSegmentY1) {
-                        context.lineTo(it.segmentX1, segmentY1);
-                        prevSegmentX1 = it.segmentX1;
+                    if (segmentX1 !== prevSegmentX1 || segmentY1 !== prevSegmentY1) {
+                        context.lineTo(segmentX1, segmentY1);
+                        prevSegmentX1 = segmentX1;
                         prevSegmentY1 = segmentY1;
+                    }
+                    if (segmentY0 < minY) {
+                        minY = segmentY0;
+                    }
+                    if (segmentY0 > maxY) {
+                        maxY = segmentY0;
+                    }
+                    if (segmentY1 < minY) {
+                        minY = segmentY1;
+                    }
+                    if (segmentY1 > maxY) {
+                        maxY = segmentY1;
                     }
                 }
                 BentNoteIterator.advance(it);
@@ -248,8 +309,11 @@ export function drawNoteForegroundPath(
                 if (adjustedDuration > 0) {
                     const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
                     const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
+                    const segmentX1: number = it.segmentX1;
                     const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 1 + 0.5 - endVolume * 0.5);
-                    if (it.segmentX1 !== prevSegmentX0 || segmentY1 !== prevSegmentY0) context.lineTo(it.segmentX1, segmentY1);
+                    if (segmentX1 !== prevSegmentX0 || segmentY1 !== prevSegmentY0) {
+                        context.lineTo(segmentX1, segmentY1);
+                    }
                     if (volumeEndIndex > -1 && it.adjustedPitchTime0 !== it.adjustedPitchTime1) {
                         for (let volumeIndex: number = volumeEndIndex - 1; volumeIndex >= 0; volumeIndex--) {
                             const volumePoint: Breakpoint.Type = volumeEnvelope![volumeIndex];
@@ -273,11 +337,24 @@ export function drawNoteForegroundPath(
                     }
                     const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
                     const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
+                    const segmentX0: number = it.segmentX0;
                     const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 1 + 0.5 - startVolume * 0.5);
-                    if (it.segmentX0 !== prevSegmentX0 || segmentY0 !== prevSegmentY0) {
-                        context.lineTo(it.segmentX0, segmentY0);
-                        prevSegmentX0 = it.segmentX0;
+                    if (segmentX0 !== prevSegmentX0 || segmentY0 !== prevSegmentY0) {
+                        context.lineTo(segmentX0, segmentY0);
+                        prevSegmentX0 = segmentX0;
                         prevSegmentY0 = segmentY0;
+                    }
+                    if (segmentY0 < minY) {
+                        minY = segmentY0;
+                    }
+                    if (segmentY0 > maxY) {
+                        maxY = segmentY0;
+                    }
+                    if (segmentY1 < minY) {
+                        minY = segmentY1;
+                    }
+                    if (segmentY1 > maxY) {
+                        maxY = segmentY1;
                     }
                 }
                 BentNoteIterator.advance(it);
@@ -286,7 +363,8 @@ export function drawNoteForegroundPath(
         BentNoteIterator.teardown(it);
         context.closePath();
 
-        return true;
+        // See the bounding box note above.
+        return rangesOverlap(minY, maxY, 0, canvasHeight);
     }
 
     return false;
@@ -306,8 +384,8 @@ export function drawNoteBackground(
     pitch: number,
     pitchEnvelope: Breakpoint.Type[] | null,
     volumeEnvelope: Breakpoint.Type[] | null,
-): void {
-    if (drawNoteBackgroundPath(
+): boolean {
+    const hasPath: boolean = drawNoteBackgroundPath(
         it,
         style,
         context,
@@ -322,9 +400,11 @@ export function drawNoteBackground(
         pitchEnvelope,
         volumeEnvelope,
         /* force */ false,
-    )) {
+    );
+    if (hasPath) {
         context.fill();
     }
+    return hasPath;
 }
 
 /** The return value indicates whether the foreground was drawn or not. */
@@ -467,7 +547,7 @@ export function drawNoteLeftHandle(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return;
     }
@@ -480,7 +560,7 @@ export function drawNoteLeftHandle(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return;
         }
@@ -558,7 +638,7 @@ export function drawNoteRightHandle(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return;
     }
@@ -571,7 +651,7 @@ export function drawNoteRightHandle(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return;
         }
@@ -647,7 +727,7 @@ export function drawNoteTopHandle(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return;
     }
@@ -662,7 +742,7 @@ export function drawNoteTopHandle(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return;
         }
@@ -750,7 +830,7 @@ export function drawNoteBottomHandle(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
     const w: number = Math.max(1, x1 - x0);
     const x: number = x0;
-    if ((x + w) < 0 || x > canvasWidth) {
+    if (!rangesOverlap(x, x + w, 0, canvasWidth)) {
         // Quit early if note is horizontally out of bounds.
         return;
     }
@@ -765,7 +845,7 @@ export function drawNoteBottomHandle(
         style === NoteDrawingStyle.Flat
         || (style === NoteDrawingStyle.Bent && !hasPitchEnvelope)
     ) {
-        if ((y + h) < 0 || y > canvasHeight) {
+        if (!rangesOverlap(y, y + h, 0, canvasHeight)) {
             // Quit early if note is vertically out of bounds.
             return;
         }
@@ -827,4 +907,3 @@ export function drawNoteBottomHandle(
         context.fill();
     }
 }
-

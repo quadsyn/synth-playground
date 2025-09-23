@@ -1,4 +1,4 @@
-import { remap } from "@synth-playground/common/math.js";
+import { remap, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
@@ -41,7 +41,7 @@ export function pointOverlapsNote(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
 
     // Exit early if the point is fully outside of the note, horizontally.
-    if (pointX < x0 || pointX > x1) {
+    if (!insideRange(pointX, x0, x1)) {
         return result;
     }
 
@@ -70,13 +70,13 @@ export function pointOverlapsNote(
         const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, actualPitch);
         const y1: number = y0 + pixelsPerPitch;
 
-        if (pointX >= x0 && pointX <= x1 && pointY >= y0 && pointY <= y1) {
+        if (insideRange(pointX, x0, x1) && insideRange(pointY, y0, y1)) {
             result |= NoteHit.Inside;
         }
-        if (pointY >= (y0 + noteTopHandleY0) && pointY <= (y0 + noteTopHandleY1)) {
+        if (insideRange(pointY, y0 + noteTopHandleY0, y0 + noteTopHandleY1)) {
             result |= NoteHit.Top;
         }
-        if (pointY >= (y0 + noteBottomHandleY0) && pointY <= (y0 + noteBottomHandleY1)) {
+        if (insideRange(pointY, y0 + noteBottomHandleY0, y0 + noteBottomHandleY1)) {
             result |= NoteHit.Bottom;
         }
     } else {
@@ -94,7 +94,7 @@ export function pointOverlapsNote(
                 // should instead test all unique axes perpendicular to the edges of the participating convex polygons. As soon as there is
                 // no overlap in one of these axes, we can stop. Otherwise, if all of them contain an overlap, then we have a collision.
 
-                const overlapsHorizontally: boolean = pointX >= it.segmentX0 && pointX <= it.segmentX1;
+                const overlapsHorizontally: boolean = insideRange(pointX, it.segmentX0, it.segmentX1);
                 if (overlapsHorizontally) {
                     // We need to figure out the topmost and bottommost points.
                     // The topmost point will be the smallest coordinate.
@@ -104,7 +104,7 @@ export function pointOverlapsNote(
 
                     // Technically, in this case we don't need to check the vertical axis, it will be covered by the next check.
                     // But it doesn't really hurt, only makes it maybe a little bit slower. Can be axed if it matters.
-                    const overlapsVertically: boolean = pointY >= segmentYMin && pointY <= segmentYMax;
+                    const overlapsVertically: boolean = insideRange(pointY, segmentYMin, segmentYMax);
                     if (overlapsVertically) {
                         if (it.segmentY0 !== it.segmentY1) {
                             // There's a slope, so we now have to do the most involved check.
@@ -134,14 +134,14 @@ export function pointOverlapsNote(
                             const projThicknessDot: number = pixelsPerPitch * axisY;
 
                             // We now only need to do a range overlap check with these two dot products.
-                            const overlapsAtAnAngle: boolean = 0 <= projPointEdgeDot && projThicknessDot >= projPointEdgeDot;
+                            const overlapsAtAnAngle: boolean = insideRange(projPointEdgeDot, 0, projThicknessDot);
 
                             if (overlapsAtAnAngle) {
                                 const y: number = remap(pointX, it.segmentX0, it.segmentX1, it.segmentY0, it.segmentY1);
-                                if (pointY >= (y + noteTopHandleY0) && pointY <= (y + noteTopHandleY1)) {
+                                if (insideRange(pointY, y + noteTopHandleY0, y + noteTopHandleY1)) {
                                     result |= NoteHit.Top;
                                 }
-                                if (pointY >= (y + noteBottomHandleY0) && pointY <= (y + noteBottomHandleY1)) {
+                                if (insideRange(pointY, y + noteBottomHandleY0, y + noteBottomHandleY1)) {
                                     result |= NoteHit.Bottom;
                                 }
 
@@ -150,10 +150,10 @@ export function pointOverlapsNote(
                             }
                         } else {
                             const y: number = remap(pointX, it.segmentX0, it.segmentX1, it.segmentY0, it.segmentY1);
-                            if (pointY >= (y + noteTopHandleY0) && pointY <= (y + noteTopHandleY1)) {
+                            if (insideRange(pointY, y + noteTopHandleY0, y + noteTopHandleY1)) {
                                 result |= NoteHit.Top;
                             }
-                            if (pointY >= (y + noteBottomHandleY0) && pointY <= (y + noteBottomHandleY1)) {
+                            if (insideRange(pointY, y + noteBottomHandleY0, y + noteBottomHandleY1)) {
                                 result |= NoteHit.Bottom;
                             }
 
@@ -171,10 +171,10 @@ export function pointOverlapsNote(
     }
 
     if ((result & NoteHit.Inside) !== 0) {
-        if (pointX >= noteStartStretchHandleX0 && pointX <= noteStartStretchHandleX1) {
+        if (insideRange(pointX, noteStartStretchHandleX0, noteStartStretchHandleX1)) {
             result |= NoteHit.Left;
         }
-        if (pointX >= noteEndStretchHandleX0 && pointX <= noteEndStretchHandleX1) {
+        if (insideRange(pointX, noteEndStretchHandleX0, noteEndStretchHandleX1)) {
             result |= NoteHit.Right;
         }
     }
@@ -206,7 +206,7 @@ export function rectOverlapsNote(
     const x1: number = tickToX(viewport, pixelsPerTick, end);
 
     // Exit early if the rect is fully outside of the note, horizontally.
-    if (rectX1 < x0 || rectX0 > x1) {
+    if (!rangesOverlap(rectX0, rectX1, x0, x1)) {
         return result;
     }
 
@@ -223,7 +223,7 @@ export function rectOverlapsNote(
         const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, actualPitch);
         const y1: number = y0 + pixelsPerPitch;
 
-        if ((x0 <= rectX1 && x1 >= rectX0) && (y0 <= rectY1 && y1 >= rectY0)) {
+        if (rangesOverlap(rectX0, rectX1, x0, x1) && rangesOverlap(rectY0, rectY1, y0, y1)) {
             result |= NoteHit.Inside;
         }
     } else {
@@ -237,11 +237,11 @@ export function rectOverlapsNote(
             }
 
             // See `pointOverlapsNote`.
-            const overlapsHorizontally: boolean = it.segmentX0 <= rectX1 && it.segmentX1 >= rectX0;
+            const overlapsHorizontally: boolean = rangesOverlap(rectX0, rectX1, it.segmentX0, it.segmentX1);
             if (overlapsHorizontally) {
                 const segmentYMin: number = Math.min(it.segmentY0, it.segmentY1);
                 const segmentYMax: number = Math.max(it.segmentY0, it.segmentY1) + pixelsPerPitch;
-                const overlapsVertically: boolean = segmentYMin <= rectY1 && segmentYMax >= rectY0;
+                const overlapsVertically: boolean = rangesOverlap(rectY0, rectY1, segmentYMin, segmentYMax);
                 if (overlapsVertically) {
                     if (it.segmentY0 !== it.segmentY1) {
                         const topEdgeX: number = it.segmentX1 - it.segmentX0;
@@ -272,7 +272,7 @@ export function rectOverlapsNote(
 
                         const maxThicknessDot: number = pixelsPerPitch * axisY;
 
-                        const overlapsAtAnAngle: boolean = 0 <= maxRectDot && maxThicknessDot >= minRectDot;
+                        const overlapsAtAnAngle: boolean = rangesOverlap(minRectDot, maxRectDot, 0, maxThicknessDot);
 
                         if (overlapsAtAnAngle) {
                             result |= NoteHit.Inside;

@@ -1,3 +1,4 @@
+import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
@@ -174,10 +175,8 @@ export class MenuBar implements Component {
             const button: HTMLButtonElement = this._menuButtons[buttonIndex];
             const bounds: DOMRect = button.getBoundingClientRect();
             if (
-                event.clientX >= bounds.x
-                && event.clientX <= bounds.x + bounds.width
-                && event.clientY >= bounds.y
-                && event.clientY <= bounds.y + bounds.height
+                insideRange(event.clientX, bounds.x, bounds.x + bounds.width)
+                && insideRange(event.clientY, bounds.y, bounds.y + bounds.height)
             ) {
                 newIndex = buttonIndex;
                 break;

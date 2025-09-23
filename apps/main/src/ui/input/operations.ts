@@ -1,3 +1,4 @@
+import { insideRange } from "@synth-playground/common/math.js";
 import {
     GestureKind,
     isMouseGesture,
@@ -86,10 +87,7 @@ export function mouseStartedInside(context: OperationContext, root: HTMLElement)
     const height: number = bounds.height;
     const mouseX: number = context.x0 - bounds.left;
     const mouseY: number = context.y0 - bounds.top;
-    return !(
-        mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height
-        || !root.contains(context.element0)
-    );
+    return insideRange(mouseX, 0, width) && insideRange(mouseY, 0, height) && root.contains(context.element0);
 }
 
 export function mouseIsInside(context: OperationContext, root: HTMLElement): boolean {
@@ -102,7 +100,7 @@ export function mouseIsInside(context: OperationContext, root: HTMLElement): boo
     const height: number = bounds.height;
     const mouseX: number = context.x1 - bounds.left;
     const mouseY: number = context.y1 - bounds.top;
-    return !(mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height);
+    return insideRange(mouseX, 0, width) && insideRange(mouseY, 0, height);
 }
 
 export function isReleasing(context: OperationContext): boolean {

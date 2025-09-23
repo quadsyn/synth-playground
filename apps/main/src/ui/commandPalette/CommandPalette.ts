@@ -3,7 +3,7 @@ import {
     type HighlightRange,
     type HighlightingResults,
 } from "@synth-playground/common/string.js";
-import { clamp } from "@synth-playground/common/math.js";
+import { clamp, insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { StringId } from "../../localization/StringId.js";
@@ -268,7 +268,7 @@ export class CommandPalette implements Component {
             } break;
             case "Enter": {
                 const index: number = this._commandList.getSelectionIndex();
-                if (index >= 0 && index < this._filteredActions.length) {
+                if (insideRange(index, 0, this._filteredActions.length - 1)) {
                     this.hide();
                     const kind: ActionKind = this._filteredActions[index].kind;
                     this._app.ui.inputManager.executeAction(kind);
@@ -296,7 +296,7 @@ export class CommandPalette implements Component {
                     && this._commandList.element.contains(event.target as HTMLElement)
                 ) {
                     const index: number = this._commandList.getDataIndexFromMouse(event.clientX, event.clientY);
-                    if (index >= 0 && index < this._filteredActions.length) {
+                    if (insideRange(index, 0, this._filteredActions.length - 1)) {
                         this.hide();
                         const kind: ActionKind = this._filteredActions[index].kind;
                         this._app.ui.inputManager.executeAction(kind);
@@ -510,7 +510,7 @@ class List extends VirtualizedList<FilteredAction> {
 
     protected override _renderItem(item: Item, y: number, dataIndex: number): void {
         item.setTop(y + "px");
-        if (dataIndex >= 0 && dataIndex < this._rows.length) {
+        if (insideRange(dataIndex, 0, this._rows.length - 1)) {
             const data: FilteredAction = this._rows[dataIndex];
             item.setText(data.label);
             item.setHighlightRanges(data.highlightRanges);

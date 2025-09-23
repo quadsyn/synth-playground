@@ -42,7 +42,10 @@ export class DockablePanel implements Component, IContentRenderer {
     protected _dispose(): void {} // Override this in subclasses.
 
     public render(): void {
-        if (!this._api?.isVisible) return;
+        if (!this._api?.isVisible) {
+            return;
+        }
+
         this._render();
     }
 

@@ -1,3 +1,4 @@
+import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
@@ -249,7 +250,7 @@ export class VirtualizedList<T> implements Component {
     }
 
     protected _renderItem(item: IListItem, y: number, dataIndex: number): void {
-        if (dataIndex >= 0 && dataIndex < this._rows.length) {
+        if (insideRange(dataIndex, 0, this._rows.length - 1)) {
             const data: T = this._rows[dataIndex];
             item.setTop(y + "px");
             item.setText(data + "");
@@ -282,7 +283,7 @@ export class VirtualizedList<T> implements Component {
             const rowY: number = (rowIndex - topRowIndexResidue) * rowHeight;
             const dataIndex: number = topRowIndex + rowIndex;
             const hit: boolean = mouseY >= rowY && mouseY <= rowY + rowHeight;
-            if (hit && dataIndex >= 0 && dataIndex < rowCount) {
+            if (hit && insideRange(dataIndex, 0, rowCount - 1)) {
                 return dataIndex;
             }
         }
@@ -290,7 +291,7 @@ export class VirtualizedList<T> implements Component {
     }
 
     public scrollToIndex(index: number): void {
-        if (index < 0 || index >= this._rows.length) {
+        if (!insideRange(index, 0, this._rows.length - 1)) {
             return;
         }
         // const rowCount: number = this._rows.length;

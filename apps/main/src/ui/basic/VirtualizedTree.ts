@@ -1,5 +1,5 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { clamp } from "@synth-playground/common/math.js";
+import { clamp, insideRange } from "@synth-playground/common/math.js";
 import { matchExactSubstring } from "@synth-playground/common/string.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
@@ -427,7 +427,7 @@ export class VirtualizedTree implements Component {
             const renderedRow: TreeViewItem = this._renderedRows[rowIndex];
             const y: number = scrollTop + (rowIndex - topRowIndexResidue - overscanCount) * rowHeight;
             const dataIndex: number = topRowIndex + rowIndex - overscanCount;
-            if (dataIndex >= 0 && dataIndex < rowCount) {
+            if (insideRange(dataIndex, 0, rowCount - 1)) {
                 const data: TreeNode = state.pointers[dataIndex];
                 const indent: number = 20 * (state.depths[dataIndex] + 1);
                 renderedRow.setMarginLeft(indent + "px");
@@ -490,7 +490,7 @@ export class VirtualizedTree implements Component {
         for (let rowIndex: number = 0; rowIndex < this._renderedRows.length; rowIndex++) {
             const y: number = (rowIndex - topRowIndexResidue) * rowHeight;
             const dataIndex: number = topRowIndex + rowIndex;
-            if (mouseY >= y && mouseY <= y + rowHeight && dataIndex >= 0 && dataIndex < rowCount) {
+            if (insideRange(mouseY, y, y + rowHeight) && insideRange(dataIndex, 0, rowCount - 1)) {
                 const data: TreeNode = state.pointers[dataIndex];
                 if (data.children != null && state.filter == null) {
                     if (state.expanded.has(data)) {

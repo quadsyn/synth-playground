@@ -1,3 +1,4 @@
+import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
@@ -250,7 +251,7 @@ export class Menu implements Component {
 
     public activateSelectedMenuItem(): void {
         const index: number = this._selectedMenuButtonIndex;
-        if (index < 0 || index >= this._menuButtons.length) {
+        if (!insideRange(index, 0, this._menuButtons.length - 1)) {
             return;
         }
 
@@ -268,7 +269,7 @@ export class Menu implements Component {
 
     public openSelectedSubMenu(): void {
         const index: number = this._selectedMenuButtonIndex;
-        if (index < 0 || index >= this._menuButtons.length) {
+        if (!insideRange(index, 0, this._menuButtons.length - 1)) {
             return;
         }
 
@@ -357,7 +358,7 @@ export class Menu implements Component {
     private _handleClick = (event: MouseEvent): void => {
         // @TODO: Use event.target here instead.
         const index: number = this._selectedMenuButtonIndex;
-        if (index < 0 || index >= this._menuButtons.length) {
+        if (!insideRange(index, 0, this._menuButtons.length - 1)) {
             return;
         }
         const button: HTMLButtonElement = event.target as HTMLButtonElement;
@@ -381,10 +382,10 @@ export class Menu implements Component {
             const bounds: DOMRect = this.element.getBoundingClientRect();
             if (
                 this.element.contains(event.target as HTMLElement)
-                && mouseX >= bounds.x && mouseX <= bounds.x + bounds.width
+                && insideRange(mouseX, bounds.x, bounds.x + bounds.width)
                 // @TODO: Something better than these offsets to prevent some
                 // spurious closing that happens here.
-                && mouseY >= (bounds.y + 1) && mouseY < (bounds.y + 1) + (bounds.height - 2)
+                && insideRange(mouseY, bounds.y + 1, (bounds.y + 1) + (bounds.height - 2))
             ) {
                 const button: HTMLButtonElement = event.target as HTMLButtonElement;
                 const item: MenuItem | undefined = this._menuItemsByButton.get(button);
@@ -449,7 +450,7 @@ export class Menu implements Component {
             // @TODO: vscode at least also has page up and page down here.
             case "ArrowLeft": {
                 const index: number = this._selectedMenuButtonIndex;
-                if (index >= 0 && index <= this._menuButtons.length - 1) {
+                if (insideRange(index, 0, this._menuButtons.length - 1)) {
                     const button: HTMLButtonElement = this._menuButtons[index];
                     const item: MenuItem = this._menuItemsByButton.get(button)!;
                     if (item.children != null && this._activeSubMenu != null) {
@@ -473,7 +474,7 @@ export class Menu implements Component {
             } break;
             case "ArrowRight": {
                 const index: number = this._selectedMenuButtonIndex;
-                if (index >= 0 && index <= this._menuButtons.length - 1) {
+                if (insideRange(index, 0, this._menuButtons.length - 1)) {
                     const button: HTMLButtonElement = this._menuButtons[index];
                     const item: MenuItem = this._menuItemsByButton.get(button)!
                     if (item.children != null) {

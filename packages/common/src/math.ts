@@ -45,3 +45,23 @@ export function rotateLeft32(x: number, n: number): number {
 export function rotateRight32(x: number, n: number): number {
     return ((x >>> n) | (x << (32 - n))) >>> 0;
 }
+
+/**
+ * This assumes that `a <= b`.
+ *
+ * Note that if `x` is equal to `a` or `b`, it counts as being inside the
+ * range.
+ */
+export function insideRange(x: number, a: number, b: number): boolean {
+    return x >= a && x <= b;
+}
+
+/**
+ * This assumes that `a <= b` and `c <= d`.
+ *
+ * Note that cases where ranges "touch" (like `a=2, b=3, c=4, d=5`)
+ * don't count as overlapping.
+ */
+export function rangesOverlap(a: number, b: number, c: number, d: number): boolean {
+    return a <= d && b >= c;
+}

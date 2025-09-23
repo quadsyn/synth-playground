@@ -283,6 +283,10 @@ export class TrackOutlinerLane implements Component {
                 this._trackPanSlider.setValue(this._trackPan);
                 this._trackPanSlider.render();
             } else if (this._kind === Lane.Kind.Automation) {
+                if (this._renderedAutomationLabel !== this._automationLabel) {
+                    this._automationLabelDisplay.textContent = this._automationLabel;
+                    this._renderedAutomationLabel = this._automationLabel;
+                }
             } else if (this._kind === Lane.Kind.TempoAutomation) {
                 if (this._renderedAutomationLabel !== this._automationLabel) {
                     this._automationLabelDisplay.textContent = this._automationLabel;
