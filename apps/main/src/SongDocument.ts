@@ -1,5 +1,4 @@
 import * as LongId from "@synth-playground/common/LongId.js";
-import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { ValueAnalyser } from "@synth-playground/browser/ValueAnalyser.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
@@ -544,6 +543,7 @@ export class SongDocument {
         const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
         const idGenerator: LongId.Type = project.noteIdGeneratorsByPatternIndex[patternIndex];
         const newNotes: Note.Type[] = [];
+        let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
         for (const oldNote of notes) {
             let newPitchEnvelope: Breakpoint.Type[] | null = null;
             if (oldNote.pitchEnvelope != null) {
@@ -578,12 +578,14 @@ export class SongDocument {
             newNotes.push(newNote);
             pattern.notes.push(newNote);
 
-            let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
-            if (cachedInfo == null) {
-                this._createPatternInfoCacheFor(song, pattern);
-            } else {
+            if (cachedInfo != null) {
                 cachedInfo.pitchBounds.add(oldNote.pitch);
             }
+        }
+        if (cachedInfo == null) {
+            // This will iterate over all the notes, but the order doesn't
+            // matter, so it's fine to do it before we reindex.
+            this._createPatternInfoCacheFor(song, pattern);
         }
         this.markPatternAsDirty(pattern);
         this.markProjectAsDirty();
@@ -616,47 +618,32 @@ export class SongDocument {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
 
-        // @TODO: It may be better to take a map of notes, then go through
-        // the note array backwards, instead of using the interval tree search
-        // (where I don't know if it can deal with removals like this, probably
-        // not, which is why I wrote all this in first place). That's not
-        // exactly instant either, but I think I can even avoid the need for
-        // splice, by doing the swap-and-pop trick for fast unordered removals.
-        // Then it's that plus a hash table lookup per note. I think that's as
-        // good as it gets for now.
+        // @TODO: It may be better to take a map of notes.
 
-        const indices: number[] = [];
-        for (let noteIndex: number = 0; noteIndex < notes.length; noteIndex++) {
-            const target: Note.Type = notes[noteIndex];
-            IITree.findOverlapping(
-                pattern.notes,
-                pattern.notesMaxLevel,
-                target.start,
-                target.end,
-                (note: Note.Type, index: number) => {
-                    if (note === target) {
-                        indices.push(index);
-                    }
-                },
-            );
-        }
-        // @TODO: Slow.
-        indices.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+        const noteSet: Set<Note.Type> = new Set(notes);
 
-        for (let i: number = indices.length - 1; i >= 0; i--) {
-            const index: number = indices[i];
-            const note: Note.Type = pattern.notes[index];
+        let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
+
+        for (let i: number = pattern.notes.length - 1; i >= 0; i--) {
+            const note: Note.Type = pattern.notes[i];
             const pitch: number = note.pitch;
 
-            // @TODO: Slow.
-            pattern.notes.splice(index, 1);
+            if (noteSet.has(note)) {
+                const otherNote: Note.Type = pattern.notes[pattern.notes.length - 1];
+                pattern.notes[i] = otherNote;
+                pattern.notes[pattern.notes.length - 1] = note;
+                pattern.notes.pop();
 
-            let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
-            if (cachedInfo == null) {
-                this._createPatternInfoCacheFor(song, pattern);
-            } else {
-                cachedInfo.pitchBounds.remove(pitch);
+                if (cachedInfo != null) {
+                    cachedInfo.pitchBounds.remove(pitch);
+                }
             }
+        }
+
+        if (cachedInfo == null) {
+            // This will iterate over all the notes, but the order doesn't
+            // matter, so it's fine to do it before we reindex.
+            this._createPatternInfoCacheFor(song, pattern);
         }
 
         this.markPatternAsDirty(pattern);
@@ -704,6 +691,8 @@ export class SongDocument {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
 
+        let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
+
         for (let noteIndex: number = 0; noteIndex < notes.length; noteIndex++) {
             const note: Note.Type = notes[noteIndex];
 
@@ -718,12 +707,15 @@ export class SongDocument {
             note.end = newEnd;
             note.pitch = newPitch;
 
-            let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
-            if (cachedInfo == null) {
-                this._createPatternInfoCacheFor(song, pattern);
-            } else {
+            if (cachedInfo != null) {
                 cachedInfo.pitchBounds.change(oldPitch, newPitch);
             }
+        }
+
+        if (cachedInfo == null) {
+            // This will iterate over all the notes, but the order doesn't
+            // matter, so it's fine to do it before we reindex.
+            this._createPatternInfoCacheFor(song, pattern);
         }
 
         // @TODO: Skip sorting if not needed. Reindexing is always necessary
