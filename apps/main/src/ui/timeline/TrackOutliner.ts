@@ -6,6 +6,7 @@ import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as TrackMetadata from "@synth-playground/synthesizer/data/TrackMetadata.js";
 import * as Viewport from "../common/Viewport.js";
 import * as Lane from "./Lane.js";
+import { type LaneLayout } from "./LaneLayout.js";
 import { LaneManager } from "./LaneManager.js";
 import { TrackOutlinerLane } from "./TrackOutlinerLane.js";
 
@@ -21,7 +22,7 @@ export class TrackOutliner implements Component {
     private _viewport: Viewport.Type;
     private _laneElements: TrackOutlinerLane[];
 
-    // private _renderedViewport: Viewport.Type | null;
+    private _renderedViewport: Viewport.Type | null;
     // private _renderedLanesVersion: number | null;
 
     constructor(
@@ -56,7 +57,7 @@ export class TrackOutliner implements Component {
             /* maxHeight */ 0,
         );
 
-        // this._renderedViewport = null;
+        this._renderedViewport = null;
         // this._renderedLanesVersion = null;
 
         this.element = H("div", {
@@ -78,19 +79,40 @@ export class TrackOutliner implements Component {
 
     public render(): void {
         const width: number = this._width;
-        // const height: number = this._height;
+        const height: number = this._height;
         const viewportY0: number = this._viewport.y0;
         const lanes: Lane.Type[] = this._laneManager.getLanes();
+        const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
         // const lanesVersion: number = this._laneManager.getLanesVersion();
 
-        // const dirty: boolean = (
-        //     Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Y)
-        //     || lanesVersion !== this._renderedLanesVersion
-        // );
+        let visibleLaneCount: number = 0;
+        let firstLaneIndex: number = -1;
+        {
+            // @TODO: Use binary search to find first visible lane.
+            for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
+                const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                const y0: number = laneLayout.y0 - viewportY0;
+                const y1: number = laneLayout.y1 - viewportY0;
+                if (y1 < 0 || y0 > height) {
+                    // Out of bounds.
+                } else {
+                    if (firstLaneIndex === -1) {
+                        firstLaneIndex = laneIndex;
+                    }
+                    visibleLaneCount++;
+                }
+            }
+        }
+
+        const dirty: boolean = (
+            Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Y)
+            || visibleLaneCount !== this._laneElements.length
+            // || lanesVersion !== this._renderedLanesVersion
+        );
 
         // Allocate new lane elements if necessary.
-        while (this._laneElements.length < laneCount) {
+        while (this._laneElements.length < visibleLaneCount) {
             const laneElement: TrackOutlinerLane = new TrackOutlinerLane(this._ui);
             this._laneElements.push(laneElement);
             this.element.appendChild(laneElement.element);
@@ -98,21 +120,29 @@ export class TrackOutliner implements Component {
         // Excess elements are hidden below.
 
         // Update lane elements.
-        // @TODO: Culling.
-        // if (dirty) {
-            let accumulatedTotalHeight: number = 0;
-            for (let laneIndex: number = 0; laneIndex < this._laneElements.length; laneIndex++) {
-                const laneElement: TrackOutlinerLane = this._laneElements[laneIndex];
-                if (laneIndex >= 0 && laneIndex < laneCount) {
+        if (dirty) {
+            const laneElementCount: number = this._laneElements.length;
+            let laneElementIndex: number = 0;
+            if (firstLaneIndex !== -1) {
+                // Render all visible lanes.
+                let laneIndex: number = firstLaneIndex;
+                while (laneElementIndex < laneElementCount && laneIndex < laneCount) {
+                    const laneElement: TrackOutlinerLane = this._laneElements[laneElementIndex];
                     const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
                     const laneHeight: number = lane.height;
                     const depth: number = lane.depth;
                     const kind: Lane.Kind = lane.kind;
                     const trackIndex: number = lane.trackIndex;
                     const indent: number = Lane.IndentSize * depth;
+                    const y0: number = laneLayout.y0 - viewportY0;
+                    // const y1: number = laneLayout.y1 - viewportY0;
+                    if (y0 > height) {
+                        break;
+                    }
                     laneElement.setVisible(true);
                     laneElement.setHasTopBorder(laneIndex === 0);
-                    laneElement.setTop((accumulatedTotalHeight - viewportY0));
+                    laneElement.setTop(y0);
                     laneElement.setLeft(indent);
                     laneElement.setWidth(width - indent);
                     laneElement.setHeight(laneHeight);
@@ -130,15 +160,23 @@ export class TrackOutliner implements Component {
                         // @TODO: Cached localization.
                         laneElement.setAutomationLabel("Tempo");
                     }
-                    accumulatedTotalHeight += laneHeight;
-                } else {
-                    laneElement.setVisible(false);
-                }
-                laneElement.render();
-            }
-        // }
+                    laneElement.render();
 
-        // this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
+                    laneElementIndex++;
+                    laneIndex++;
+                }
+            }
+            // Hide the excess.
+            while (laneElementIndex < laneElementCount) {
+                const laneElement: TrackOutlinerLane = this._laneElements[laneElementIndex];
+                laneElement.setVisible(false);
+                laneElement.render();
+
+                laneElementIndex++;
+            }
+        }
+
+        this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
         // this._renderedLanesVersion = lanesVersion;
     }
 
@@ -150,7 +188,7 @@ export class TrackOutliner implements Component {
         this.element.style.width = this._width + "px";
         this.element.style.height = this._height + "px";
 
-        // Viewport.clearRendered(this._renderedViewport);
+        Viewport.clearRendered(this._renderedViewport);
 
         this._ui.scheduleMainRender();
     }

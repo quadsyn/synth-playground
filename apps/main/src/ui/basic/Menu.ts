@@ -315,6 +315,8 @@ export class Menu implements Component {
         // In order to keep the submenu fully within the window, I need a
         // synchronous reflow here, by populating it and querying for its size.
         // :/
+        // Though maybe it's whatever, I also have a synchronous reflow above I
+        // think, due to the synchronous removal of the current submenu.
         const subMenuBounds: DOMRect = this._activeSubMenu.element.getBoundingClientRect();
         const oldSubMenuX0: number = subMenuBounds.x;
         const oldSubMenuX1: number = subMenuBounds.x + subMenuBounds.width;

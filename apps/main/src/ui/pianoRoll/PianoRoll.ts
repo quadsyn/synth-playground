@@ -340,10 +340,26 @@ export class PianoRoll implements Component {
             this._pitchScrollBar.element,
         );
 
+        this._canvasesContainer.addEventListener("mouseout", this._onMouseOut);
         this._canvasesContainer.addEventListener("mousemove", this._onMouseMove);
         this._piano.element.addEventListener("wheel", this._onPianoWheel);
         this._doc.onChangedPianoRollPattern.addListener(this._onChangedPianoRollPattern);
     }
+
+    private _onMouseOut = (event: MouseEvent): void => {
+        this._hoveringNoteIndex = -1;
+        this._hoveringNoteHit = NoteHit.None;
+
+        const changed: boolean = (
+            this._hoveringNoteIndex !== this._renderedHoveringNoteIndex
+            || this._hoveringNoteHit !== this._renderedHoveringNoteHit
+        );
+
+        if (changed) {
+            this._state.selectionOverlayIsDirty = true;
+            this._ui.scheduleMainRender();
+        }
+    };
 
     private _onMouseMove = (event: MouseEvent): void => {
         if (this._activeOperation != null) {
@@ -351,6 +367,10 @@ export class PianoRoll implements Component {
 
             return;
         }
+
+        // @TODO: I have to guard the checks here based on what bindings are
+        // active (e.g. if you can disable stretching notes from the left, then
+        // the left handle shouldn't show up).
 
         // @TODO: It's expensive to query for the bounds here. I don't have a
         // good way to solve this yet though.
@@ -380,6 +400,7 @@ export class PianoRoll implements Component {
     };
 
     public dispose(): void {
+        this._canvasesContainer.removeEventListener("mouseout", this._onMouseOut);
         this._canvasesContainer.removeEventListener("mousemove", this._onMouseMove);
         this._piano.element.removeEventListener("wheel", this._onPianoWheel);
 

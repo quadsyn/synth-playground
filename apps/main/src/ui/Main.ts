@@ -42,7 +42,7 @@ import {
 
 // For now, bump this once changes are made, to effectively clear the saved
 // dockable panel layout.
-const SERIALIZED_DOCKVIEW_VERSION = 3;
+const SERIALIZED_DOCKVIEW_VERSION = 4;
 
 // @TODO: Generalize this properly.
 // Current idea is to have a "panel registry", which will be stored inside the

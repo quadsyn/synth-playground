@@ -3,11 +3,13 @@ import { UIContext } from "../UIContext.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as TrackMetadata from "@synth-playground/synthesizer/data/TrackMetadata.js";
 import * as Lane from "./Lane.js";
+import { type LaneLayout } from "./LaneLayout.js";
 
 export class LaneManager {
     // private _ui: UIContext;
     private _doc: SongDocument;
     private _lanes: Lane.Type[];
+    private _laneLayouts: LaneLayout[];
     private _lanesVersion: number;
     private _totalHeight: number;
     private _lanesAreDirty: boolean;
@@ -17,6 +19,7 @@ export class LaneManager {
         this._doc = doc;
 
         this._lanes = [];
+        this._laneLayouts = [];
         this._lanesVersion = 0;
         this._totalHeight = 0;
         this._lanesAreDirty = true;
@@ -32,6 +35,13 @@ export class LaneManager {
             this._determineVisibleLanes();
         }
         return this._lanes;
+    }
+
+    public getLaneLayouts(): LaneLayout[] {
+        if (this._lanesAreDirty) {
+            this._determineVisibleLanes();
+        }
+        return this._laneLayouts;
     }
 
     public getTotalHeight(): number {
@@ -80,9 +90,14 @@ export class LaneManager {
                 /* height */ 1,
                 /* depth */ 0,
             ));
+            this._laneLayouts.push({
+                y0: 0,
+                y1: 0,
+            });
         }
         // Trim the excess.
         this._lanes.length = laneCount;
+        this._laneLayouts.length = laneCount;
 
         // Update lane objects.
         let laneIndex: number = 0;
@@ -94,6 +109,11 @@ export class LaneManager {
             lane.automationSubtrackIndex = -1;
             lane.height = Lane.AutomationLaneHeight;
             lane.depth = 0;
+
+            const laneLayout: LaneLayout = this._laneLayouts[laneIndex];
+            laneLayout.y0 = newTotalHeight;
+            laneLayout.y1 = laneLayout.y0 + lane.height;
+
             laneIndex++;
 
             newTotalHeight += lane.height;
@@ -111,6 +131,11 @@ export class LaneManager {
             lane.automationSubtrackIndex = -1;
             lane.height = trackHeight;
             lane.depth = 0;
+
+            const laneLayout: LaneLayout = this._laneLayouts[laneIndex];
+            laneLayout.y0 = newTotalHeight;
+            laneLayout.y1 = laneLayout.y0 + lane.height;
+
             laneIndex++;
 
             newTotalHeight += lane.height;

@@ -401,6 +401,7 @@ export class Timeline implements Component {
         context.strokeStyle = "#191919";
         {
             // Lane grid.
+            // @TODO: Use binary search to find first visible lane.
             let accumulatedTotalHeight: number = 0;
             for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
                 const lane: Lane.Type = lanes[laneIndex];
@@ -476,6 +477,8 @@ export class Timeline implements Component {
         const selectedClipTrackIndex: number = this._selectedClipTrackIndex;
 
         context.clearRect(0, 0, width, height);
+
+        // @TODO: Use binary search to find first visible lane.
 
         let accumulatedTotalHeight: number = 0;
         for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
@@ -674,6 +677,8 @@ export class Timeline implements Component {
         // context.strokeStyle = "#4090ca";
         context.strokeStyle = "#17d15b";
         context.lineWidth = 2;
+
+        // @TODO: Use binary search to find first visible lane.
 
         let accumulatedTotalHeight: number = 0;
         for (let laneIndex: number = 0; laneIndex < laneCount; laneIndex++) {
