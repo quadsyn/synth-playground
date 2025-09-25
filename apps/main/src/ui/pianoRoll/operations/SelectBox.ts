@@ -10,11 +10,13 @@ import { type NoteTransform } from "../NoteTransform.js";
 import { tickToX, pitchToY } from "../common.js";
 import * as BentNoteIterator from "../BentNoteIterator.js";
 import { NoteHit, rectOverlapsNote } from "../noteHitTesting.js";
+import { SongDocument } from "../../../SongDocument.js";
 
 export class SelectBox implements Operation {
     public kind: OperationKind;
     public notes: Map<Note.Type, NoteTransform> | undefined;
 
+    private _doc: SongDocument;
     private _operationState: OperationState;
     private _cursorPpqn0: number;
     private _cursorPitch0: number;
@@ -23,10 +25,12 @@ export class SelectBox implements Operation {
     private _bentNoteIterator: BentNoteIterator.Type;
 
     constructor(
+        doc: SongDocument,
         operationState: OperationState,
         cursorPpqn0: number,
         cursorPitch0: number,
     ) {
+        this._doc = doc;
         this.kind = OperationKind.Selection;
         this.notes = undefined;
         this._operationState = operationState;
@@ -71,6 +75,7 @@ export class SelectBox implements Operation {
             const pixelsPerTick: number = canvasWidth / viewportWidth;
             const viewportHeight: number = viewportY1 - viewportY0;
             const pixelsPerPitch: number = canvasHeight / viewportHeight;
+            const maxPitch: number = this._doc.project.song.maxPitch;
 
             // @TODO: Inline findOverlapping manually.
             IITree.findOverlapping(
@@ -82,9 +87,9 @@ export class SelectBox implements Operation {
                     if ((rectOverlapsNote(
                         this._bentNoteIterator,
                         tickToX(this._operationState.viewport, pixelsPerTick, bx0),
-                        pitchToY(canvasHeight, this._operationState.viewport, pixelsPerPitch, by1),
+                        pitchToY(canvasHeight, this._operationState.viewport, pixelsPerPitch, maxPitch, by1),
                         tickToX(this._operationState.viewport, pixelsPerTick, bx1),
-                        pitchToY(canvasHeight, this._operationState.viewport, pixelsPerPitch, by0),
+                        pitchToY(canvasHeight, this._operationState.viewport, pixelsPerPitch, maxPitch, by0),
                         note,
                         this._operationState.noteDrawingStyle,
                         this._operationState.noteStretchHandleSize,
@@ -93,6 +98,7 @@ export class SelectBox implements Operation {
                         this._operationState.viewport,
                         pixelsPerTick,
                         pixelsPerPitch,
+                        maxPitch,
                     ) & NoteHit.Inside) !== 0) {
                         this._operationState.selectedNotes.push(note);
                     }

@@ -63,6 +63,8 @@ export class RightStretchNote implements Operation {
                 const newEnd: number = clamp(transform.newEnd, 1, pattern.duration);
 
                 this._operationState.lastCommittedNoteDuration = newEnd - note.start;
+                this._operationState.lastCommittedNoteVolumeEnvelope = note.volumeEnvelope;
+                this._operationState.lastCommittedNotePitchEnvelope = note.pitchEnvelope;
                 this._operationState.selectedNotes = [note];
                 this._operationState.selectionOverlayIsDirty = true;
 

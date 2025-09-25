@@ -4,54 +4,69 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
+import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import { type Operation } from "../Operation.js";
 import { OperationKind } from "../OperationKind.js";
 import { type OperationState } from "../OperationState.js";
 import { type NoteTransform } from "../NoteTransform.js";
 
-export class PaintFlatNote implements Operation {
+export class MoveNoteVolumePointBounded implements Operation {
     public kind: OperationKind;
     public notes: Map<Note.Type, NoteTransform> | undefined;
 
     private _operationState: OperationState;
     private _doc: SongDocument;
     private _cursorPpqn0: number;
+    private _cursorPitch0: number;
+    private _pointIndex: number;
 
     constructor(
         operationState: OperationState,
         doc: SongDocument,
         cursorPpqn0: number,
+        cursorPitch0: number,
         notes: Map<Note.Type, NoteTransform>,
+        pointIndex: number,
     ) {
         this.kind = OperationKind.Note;
         this.notes = notes;
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
+        this._cursorPitch0 = cursorPitch0;
+        this._pointIndex = pointIndex;
     }
 
-    private _move(pattern: Pattern.Type, x1: number): void {
+    private _move(pattern: Pattern.Type, x1: number, y1: number): void {
         if (this.notes == null) {
             return;
         }
 
-        for (let [_, transform] of this.notes.entries()) {
-            let cursorPpqn0: number = this._cursorPpqn0 | 0;
-            let cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
+        for (let [note, transform] of this.notes.entries()) {
+            const cursorPpqn0: number = this._cursorPpqn0;
+            const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
+            const ppqnDelta: number = cursorPpqn1 - cursorPpqn0;
 
-            // Swap so we have ppqn0 < ppqn1 (ppqn0 == ppqn1 is fine, that's a
-            // zero-length note).
-            if (cursorPpqn0 > cursorPpqn1) {
-                const t: number = cursorPpqn1;
-                cursorPpqn1 = cursorPpqn0;
-                cursorPpqn0 = t;
+            const cursorPitch0: number = this._cursorPitch0;
+            const cursorPitch1: number = this._operationState.mouseToPitch(y1);
+            const pitchDelta: number = cursorPitch1 - cursorPitch0;
+
+            const srcPoint: Breakpoint.Type = note.volumeEnvelope![this._pointIndex];
+            const dstPoint: Breakpoint.Type = transform.newVolumeEnvelope![this._pointIndex];
+
+            let minTime: number = 0;
+            let maxTime: number = note.end - note.start;
+            const prevPointIndex: number = this._pointIndex - 1;
+            if (prevPointIndex >= 0) {
+                minTime = note.volumeEnvelope![prevPointIndex].time;
+            }
+            const nextPointIndex: number = this._pointIndex + 1;
+            if (nextPointIndex < note.volumeEnvelope!.length) {
+                maxTime = note.volumeEnvelope![nextPointIndex].time;
             }
 
-            // Normally we'd clamp cursorPpqn0 to [0, pattern.duration - 1], but
-            // here it's okay to have a zero-length note (which is what that is
-            // trying to prevent).
-            transform.newStart = clamp(cursorPpqn0, 0, pattern.duration);
-            transform.newEnd = clamp(cursorPpqn1, 0, pattern.duration);
+            dstPoint.time = clamp((srcPoint.time + ppqnDelta) | 0, minTime, maxTime);
+            dstPoint.value = clamp(srcPoint.value + pitchDelta * (1 / 4), 0, 1);
 
             // We only have one note to process.
             break;
@@ -66,31 +81,18 @@ export class PaintFlatNote implements Operation {
         }
 
         if (isReleasing(context)) {
+            // @TODO: Skip committing if the note properties didn't change.
             for (let [note, transform] of this.notes.entries()) {
-                const newStart: number = transform.newStart;
-                const newEnd: number = transform.newEnd;
-                const newDuration: number = newEnd - newStart;
-                const newPitch: number = note.pitch;
+                const pointIndex: number = this._pointIndex;
+                const dstPoint: Breakpoint.Type = transform.newVolumeEnvelope![pointIndex];
 
-                if (newDuration <= 0) {
-                    // Zero-length note means we don't have anything to create.
-                    break;
-                }
-
-                this._doc.insertNote(
-                    pattern,
-                    newStart,
-                    newEnd,
-                    newPitch,
-                    /* pitchEnvelope */ null,
-                    /* volumeEnvelope */ null,
-                );
-
-                this._operationState.lastCommittedNoteDuration = newDuration;
+                this._operationState.lastCommittedNoteDuration = note.end - note.start;
                 this._operationState.lastCommittedNoteVolumeEnvelope = note.volumeEnvelope;
                 this._operationState.lastCommittedNotePitchEnvelope = note.pitchEnvelope;
-                this._operationState.selectedNotes = [];
+                this._operationState.selectedNotes = [note];
                 this._operationState.selectionOverlayIsDirty = true;
+
+                this._doc.changeNoteVolumePoint(pattern, note, pointIndex, dstPoint.time, dstPoint.value);
 
                 // We only have one note to process.
                 break;
@@ -100,7 +102,7 @@ export class PaintFlatNote implements Operation {
         }
 
         if (gestureHasKind(context.gesture1, GestureKind.Drag) || gestureHasKind(context.gesture1, GestureKind.Move)) {
-            this._move(pattern, context.x1);
+            this._move(pattern, context.x1, context.y1);
         }
 
         return OperationResponse.Running;

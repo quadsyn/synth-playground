@@ -386,6 +386,15 @@
 
 - [ ] Script to check for string IDs defined that have no translated text
 
+## Icons
+
+- [ ] Make these work for light themes and dark themes (right now, I just have
+      one dark theme).
+  - I could try to generate the variations with JS somehow. But maybe
+    pre-generating "offline" would be better?
+  - `mask-image` works fine for monochromatic things.
+  - For now I've just edited the icons myself.
+
 # Data structures and algorithms
 
 - [x] Hash table
@@ -467,3 +476,7 @@
     - Use the opportunity to switch to 2 spaces for indentation?
   - I'm not sure about a linter. Given that the context here is different than
     in most JS codebases (I assume), I don't expect they will help much.
+  - I need to work out exactly how credits should work. The acknowledgements
+    page is really there so I can dump license texts, but I think there should
+    be a panel/dialog inside the program with the same info, just maybe without
+    the license texts as those can get pretty large.

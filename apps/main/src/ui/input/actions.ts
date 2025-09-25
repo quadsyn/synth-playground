@@ -39,10 +39,18 @@ export const enum ActionKind {
     LeftStretchNote,
     RightStretchNote,
     MoveNotes,
+    CreateNoteVolumePoint,
+    CreateNotePitchPoint,
+    RemoveNoteVolumePoint,
+    RemoveNotePitchPoint,
+    MoveNoteVolumePointBounded,
+    MoveNotePitchPointBounded,
     PianoRollSelectBox,
     PianoRollSelectAll,
-    PianoRollZoomInAroundMouse,
-    PianoRollZoomOutAroundMouse,
+    PianoRollZoomInAroundMouseHorizontally,
+    PianoRollZoomOutAroundMouseHorizontally,
+    PianoRollZoomInAroundMouseVertically,
+    PianoRollZoomOutAroundMouseVertically,
     PianoRollQuantize,
 
     // Timeline
@@ -53,6 +61,7 @@ export const enum ActionTags {
     None = 0,
 
     // Don't allow redefining this, don't show it anywhere, etc.
+    // Currently unused.
     Internal = 1 << 0,
 
     ShowInCommandPalette = 1 << 1,
@@ -108,8 +117,8 @@ type ActionTableEntry = [
     // Array of gestures that should be bound to this action by default.
     DefaultShortcuts,
 
-    // Action ID, used when serializing references to actions (e.g. for saving
-    // or loading shortcut tables)
+    // External action identifier, used when serializing references to actions
+    // (e.g. for saving or loading shortcut tables)
     ActionId,
 
     // Action label, used in the command palette, in menus, etc. It's a
@@ -300,6 +309,54 @@ type ActionTableEntry = [
     ],
     [
         ActionTags.None,
+        ActionKind.CreateNoteVolumePoint,
+        AreaKind.PianoRoll,
+        [GestureKind.Press | MouseButton.Left],
+        <ActionId>"pianoRoll.createNoteVolumePoint",
+        StringId.PianoRollActionCreateNoteVolumePoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.CreateNotePitchPoint,
+        AreaKind.PianoRoll,
+        [GestureKind.Press | MouseButton.Left],
+        <ActionId>"pianoRoll.createNotePitchPoint",
+        StringId.PianoRollActionCreateNotePitchPoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.RemoveNoteVolumePoint,
+        AreaKind.PianoRoll,
+        [GestureKind.Release | MouseButton.Left],
+        <ActionId>"pianoRoll.removeNoteVolumePoint",
+        StringId.PianoRollActionRemoveNoteVolumePoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.RemoveNotePitchPoint,
+        AreaKind.PianoRoll,
+        [GestureKind.Release | MouseButton.Left],
+        <ActionId>"pianoRoll.removeNotePitchPoint",
+        StringId.PianoRollActionRemoveNotePitchPoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.MoveNoteVolumePointBounded,
+        AreaKind.PianoRoll,
+        [GestureKind.Drag | MouseButton.Left],
+        <ActionId>"pianoRoll.moveNoteVolumePointBounded",
+        StringId.PianoRollActionMoveNoteVolumePointBounded,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.MoveNotePitchPointBounded,
+        AreaKind.PianoRoll,
+        [GestureKind.Drag | MouseButton.Left],
+        <ActionId>"pianoRoll.moveNotePitchPointBounded",
+        StringId.PianoRollActionMoveNotePitchPointBounded,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
         ActionKind.PianoRollSelectBox,
         AreaKind.PianoRoll,
         // [GestureKind.Press | MouseButton.Left],
@@ -320,25 +377,35 @@ type ActionTableEntry = [
     ],
     [
         ActionTags.ShowInCommandPalette,
-        ActionKind.PianoRollZoomInAroundMouse,
+        ActionKind.PianoRollZoomInAroundMouseHorizontally,
         AreaKind.PianoRoll,
-        [
-            GestureKind.Press | MouseButton.WheelUp,
-            GestureKind.Press | Key.N,
-        ],
-        <ActionId>"pianoRoll.zoomInAroundMouse",
-        StringId.PianoRollActionZoomInAroundMouse,
+        [GestureKind.Press | MouseButton.WheelUp],
+        <ActionId>"pianoRoll.zoomInAroundMouseHorizontally",
+        StringId.PianoRollActionZoomInAroundMouseHorizontally,
     ],
     [
         ActionTags.ShowInCommandPalette,
-        ActionKind.PianoRollZoomOutAroundMouse,
+        ActionKind.PianoRollZoomOutAroundMouseHorizontally,
         AreaKind.PianoRoll,
-        [
-            GestureKind.Press | MouseButton.WheelDown,
-            GestureKind.Press | Key.M,
-        ],
-        <ActionId>"pianoRoll.zoomOutAroundMouse",
-        StringId.PianoRollActionZoomOutAroundMouse,
+        [GestureKind.Press | MouseButton.WheelDown],
+        <ActionId>"pianoRoll.zoomOutAroundMouseHorizontally",
+        StringId.PianoRollActionZoomOutAroundMouseHorizontally,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.PianoRollZoomInAroundMouseVertically,
+        AreaKind.PianoRoll,
+        [GestureKind.Press | Mod.Shift | MouseButton.WheelUp],
+        <ActionId>"pianoRoll.zoomInAroundMouseVertically",
+        StringId.PianoRollActionZoomInAroundMouseVertically,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.PianoRollZoomOutAroundMouseVertically,
+        AreaKind.PianoRoll,
+        [GestureKind.Press | Mod.Shift | MouseButton.WheelDown],
+        <ActionId>"pianoRoll.zoomOutAroundMouseVertically",
+        StringId.PianoRollActionZoomOutAroundMouseVertically,
     ],
     [
         ActionTags.ShowInCommandPalette,

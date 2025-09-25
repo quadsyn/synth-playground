@@ -232,6 +232,21 @@ export function zoomAndPanY(viewport: Type, zoom: number, pan: number): boolean 
     return y0 !== viewport.y0 || y1 !== viewport.y1;
 }
 
+/**
+ * @returns Whether the coordinates changed, useful for skipping rendering.
+ */
+export function zoomAroundPointY(viewport: Type, pan: number, heightFactor: number): boolean {
+    const y0: number = viewport.y0;
+    const y1: number = viewport.y1;
+    const newH: number = clamp((y1 - y0) * heightFactor, viewport.minHeight, viewport.maxHeight);
+    const newY: number = lerp(pan, y0, y1) - newH * pan;
+    return zoomAndPanY(
+        viewport,
+        computeYZoom(newH, viewport.minHeight, viewport.maxHeight),
+        computeYPan(newY, newH, viewport.maxHeight),
+    );
+}
+
 export function panYWithUnzoomableY(
     viewport: Type,
     canvasHeight: number,

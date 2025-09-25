@@ -1,4 +1,9 @@
 import { H } from "@synth-playground/browser/dom.js";
+import iconMouseLeft from "../icons/mouse-left.svg";
+import iconMouseRight from "../icons/mouse-right.svg";
+import iconMouseMiddle from "../icons/mouse-middle.svg";
+import iconWheelUp from "../icons/wheel-up.svg";
+import iconWheelDown from "../icons/wheel-down.svg";
 
 // @TODO:
 // - Maybe rename these to something else? "Gesture" is a term I associate more
@@ -327,16 +332,15 @@ export function gestureKindToString(kind: GestureKind): string {
 
 // @TODO: Localization
 export function mouseButtonToString(button: MouseButton): string {
-    // @TODO: Not sure about any of these, really.
     switch (button) {
         case MouseButton.None: return "None";
         case MouseButton.Left:
         case MouseButton.LeftDouble:
-        case MouseButton.LeftTriple: return "LMB";
-        case MouseButton.Right: return "RMB";
-        case MouseButton.Middle: return "MMB";
-        case MouseButton.WheelUp: return "MWU";
-        case MouseButton.WheelDown: return "MWD";
+        case MouseButton.LeftTriple: return "Mouse Left";
+        case MouseButton.Right: return "Mouse Right";
+        case MouseButton.Middle: return "Mouse Middle";
+        case MouseButton.WheelUp: return "Wheel Up";
+        case MouseButton.WheelDown: return "Wheel Down";
         default: return "";
     }
 }
@@ -489,18 +493,11 @@ export function gestureToString(gesture: EncodedGesture): string {
 }
 
 // @TODO:
-// - Using <kbd> for mouse things is probably not right, but I don't feel like
-//   coming up with something else for now.
 // - Highlighting.
 // - Localization.
+// - Option to use the mouse icons or words.
 export function gestureToHtml(gesture: EncodedGesture, container: HTMLElement): HTMLElement {
-    if (gesture !== GestureKind.None && isKeyboardGesture(gesture)) {
-        let buttonString: string = "";
-        if (isMouseGesture(gesture)) {
-            buttonString = mouseButtonToString(gesture & (Masks.Button | Masks.Clicks | Masks.Device));
-        } else {
-            buttonString = keyToString(gesture & Masks.Button);
-        }
+    if (gesture !== GestureKind.None) {
         // @TODO: Show macOS specific labels.
         if ((gesture & Mod.Ctrl) !== 0) {
             container.appendChild(H("kbd", {}, "Ctrl"));
@@ -518,7 +515,28 @@ export function gestureToHtml(gesture: EncodedGesture, container: HTMLElement): 
             container.appendChild(H("kbd", {}, "Meta"));
             container.appendChild(document.createTextNode("+"));
         }
-        container.appendChild(H("kbd", {}, buttonString));
+        const useMouseIcons: boolean = true;
+        if (isMouseGesture(gesture) && useMouseIcons) {
+            let url: string = "";
+            switch (gesture & (Masks.Button | Masks.Clicks | Masks.Device)) {
+                case MouseButton.None: break;
+                // @TODO: Disambiguate from double/triple-click?
+                case MouseButton.Left:
+                case MouseButton.LeftDouble:
+                case MouseButton.LeftTriple: url = iconMouseLeft; break;
+                case MouseButton.Right: url = iconMouseRight; break;
+                case MouseButton.Middle: url = iconMouseMiddle; break;
+                case MouseButton.WheelUp: url = iconWheelUp; break;
+                case MouseButton.WheelDown: url = iconWheelDown; break;
+            }
+            container.appendChild(H("img", { src: url }));
+        } else {
+            container.appendChild(H("kbd", {},
+                isMouseGesture(gesture)
+                ? mouseButtonToString(gesture & (Masks.Button | Masks.Clicks | Masks.Device))
+                : keyToString(gesture & Masks.Button)
+            ));
+        }
     }
 
     return container;

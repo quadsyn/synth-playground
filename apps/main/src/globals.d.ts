@@ -11,3 +11,6 @@ declare module "*.module.css";
 
 // For localization.
 declare module "*.json";
+
+// For icons.
+declare module "*.svg";

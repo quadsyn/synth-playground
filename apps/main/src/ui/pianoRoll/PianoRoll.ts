@@ -29,6 +29,8 @@ import { PaintFlatNote } from "./operations/PaintFlatNote.js";
 import { LeftStretchNote } from "./operations/LeftStretchNote.js";
 import { RightStretchNote } from "./operations/RightStretchNote.js";
 import { MoveNotes } from "./operations/MoveNotes.js";
+import { MoveNoteVolumePointBounded } from "./operations/MoveNoteVolumePointBounded.js";
+import { MoveNotePitchPointBounded } from "./operations/MoveNotePitchPointBounded.js";
 import { SelectBox } from "./operations/SelectBox.js";
 import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 import * as BentNoteIterator from "./BentNoteIterator.js";
@@ -43,7 +45,7 @@ import {
     drawNoteTopHandle,
     drawNoteBottomHandle,
 } from "./notePainting.js";
-import { tickToX, noteIsFlat } from "./common.js";
+import { tickToX, pitchToY, noteIsFlat } from "./common.js";
 import { type PatternInfo } from "../../data/PatternInfo.js";
 
 export class PianoRoll implements Component {
@@ -87,6 +89,8 @@ export class PianoRoll implements Component {
     private _cursor: string;
     private _hoveringNoteIndex: number;
     private _hoveringNoteHit: NoteHit;
+    private _hoveringNoteVolumePointIndex: number;
+    private _hoveringNotePitchPointIndex: number;
 
     private _pitchScrollBarOverlayDirty: boolean;
     private _renderedNotesDirty: boolean;
@@ -96,6 +100,8 @@ export class PianoRoll implements Component {
     private _renderedCursor: string | null;
     private _renderedHoveringNoteIndex: number | null;
     private _renderedHoveringNoteHit: NoteHit | null;
+    private _renderedHoveringNoteVolumePointIndex: number | null;
+    private _renderedHoveringNotePitchPointIndex: number | null;
 
     constructor(ui: UIContext, doc: SongDocument) {
         this._ui = ui;
@@ -140,9 +146,12 @@ export class PianoRoll implements Component {
                 maxViewportHeight,
             ),
             noteStretchHandleSize: 6,
-            noteVolumeHandleSizeFactor: 4,
-            notePitchHandleSizeFactor: 4,
-            lastCommittedNoteDuration: song.ppqn * 2,
+            noteVolumeHandleSizeFactor: 3,
+            notePitchHandleSizeFactor: 3,
+            noteEnvelopePointSizeFactor: 1.1,
+            lastCommittedNoteDuration: song.ppqn,
+            lastCommittedNoteVolumeEnvelope: null,
+            lastCommittedNotePitchEnvelope: null,
             boxSelectionActive: false,
             boxSelectionX0: 0,
             boxSelectionX1: 0,
@@ -182,6 +191,8 @@ export class PianoRoll implements Component {
         this._cursor = "default";
         this._hoveringNoteIndex = -1;
         this._hoveringNoteHit = NoteHit.None;
+        this._hoveringNoteVolumePointIndex = -1;
+        this._hoveringNotePitchPointIndex = -1;
 
         this._renderedPlayhead = null;
         this._renderedPlayheadIsVisible = false;
@@ -192,6 +203,8 @@ export class PianoRoll implements Component {
         this._pitchScrollBarOverlayDirty = true;
         this._renderedHoveringNoteIndex = null;
         this._renderedHoveringNoteHit = null;
+        this._renderedHoveringNoteVolumePointIndex = null;
+        this._renderedHoveringNotePitchPointIndex = null;
 
         this._timeScrollBar = new StretchyScrollBar(
             this._ui,
@@ -349,10 +362,14 @@ export class PianoRoll implements Component {
     private _onMouseOut = (event: MouseEvent): void => {
         this._hoveringNoteIndex = -1;
         this._hoveringNoteHit = NoteHit.None;
+        this._hoveringNoteVolumePointIndex = -1;
+        this._hoveringNotePitchPointIndex = -1;
 
         const changed: boolean = (
             this._hoveringNoteIndex !== this._renderedHoveringNoteIndex
             || this._hoveringNoteHit !== this._renderedHoveringNoteHit
+            || this._hoveringNoteVolumePointIndex !== this._renderedHoveringNoteVolumePointIndex
+            || this._hoveringNotePitchPointIndex !== this._renderedHoveringNotePitchPointIndex
         );
 
         if (changed) {
@@ -363,8 +380,7 @@ export class PianoRoll implements Component {
 
     private _onMouseMove = (event: MouseEvent): void => {
         if (this._activeOperation != null) {
-            this._hoveringNoteHit = NoteHit.None;
-
+            this._clearHoveredNoteState();
             return;
         }
 
@@ -380,20 +396,125 @@ export class PianoRoll implements Component {
         const mouseX: number = event.clientX - bounds.left;
         const mouseY: number = event.clientY - bounds.top;
 
-        this._findNoteUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
-        this._hoveringNoteIndex = this._hoverQueryResult.index;
-        this._hoveringNoteHit = this._hoverQueryResult.hit;
-
-        const changed: boolean = (
-            this._hoveringNoteIndex !== this._renderedHoveringNoteIndex
-            || this._hoveringNoteHit !== this._renderedHoveringNoteHit
-        );
-
-        if (changed) {
+        this._computeHoveredNoteState(width, height, mouseX, mouseY);
+        if (this._hoveredNoteStateChanged()) {
             this._state.selectionOverlayIsDirty = true;
             this._ui.scheduleMainRender();
         }
     };
+
+    private _computeHoveredNoteState(
+        canvasWidth: number,
+        canvasHeight: number,
+        mouseX: number,
+        mouseY: number,
+    ): void {
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
+        const viewportWidth: number = viewportX1 - viewportX0;
+        const pixelsPerTick: number = canvasWidth / viewportWidth;
+        const viewportY0: number = this._state.viewport.y0;
+        const viewportY1: number = this._state.viewport.y1;
+        const viewportHeight: number = viewportY1 - viewportY0;
+        const pixelsPerPitch: number = canvasHeight / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
+
+        this._findNoteUnderMouse(canvasWidth, canvasHeight, mouseX, mouseY, this._hoverQueryResult);
+        this._hoveringNoteIndex = this._hoverQueryResult.index;
+        this._hoveringNoteHit = this._hoverQueryResult.hit;
+        this._hoveringNoteVolumePointIndex = -1;
+        this._hoveringNotePitchPointIndex = -1;
+
+        if (this._hoveringNoteIndex <= -1) {
+            return;
+        }
+
+        const note: Note.Type = this._pattern!.notes[this._hoveringNoteIndex];
+
+        if ((this._hoveringNoteHit & NoteHit.Top) !== 0) {
+            const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
+            for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+                const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
+                const pointTime: number = point.time;
+                const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
+                const clampedPitchIndex1: number = pitchIndex1 > -1 ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
+                const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
+                const pitch1Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
+                const pitch0Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].value : 0;
+                const pitch1Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
+                const pitch0Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].time : 0;
+                const pitch1: number = note.pitch + pitch1Value;
+                const pitch0: number = note.pitch + pitch0Value;
+                const pitch0Y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch0);
+                const pitch1Y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch1);
+                const t: number = (
+                    pitchIndex1 <= -1
+                    ? 0 // In this case, there's no pitch envelope.
+                    : pitch0Time === pitch1Time
+                        ? 0 // In this case, the pitch bent segment has a duration of 0.
+                        : unlerp(pointTime, pitch0Time, pitch1Time)
+                );
+                const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
+                const baseR: number = (pixelsPerPitch / this._state.noteVolumeHandleSizeFactor) * 0.5;
+                const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
+                const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
+                const distanceX: number = mouseX - x;
+                const distanceY: number = mouseY - y;
+                const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+                if (distanceSquared < r * r) {
+                    this._hoveringNoteVolumePointIndex = pointIndex;
+                    break;
+                }
+                if (x + r < mouseX) {
+                    // Stop here, since any other points must be entirely to the
+                    // left of mouseX now.
+                    break;
+                }
+            }
+        }
+
+        if ((this._hoveringNoteHit & NoteHit.Bottom) !== 0) {
+            const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
+            for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+                const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
+                const pointTime: number = point.time;
+                const pointValue: number = point.value;
+                const pitch: number = note.pitch + pointValue;
+                const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
+                const baseR: number = (pixelsPerPitch / this._state.notePitchHandleSizeFactor) * 0.5;
+                const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
+                const y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
+                const distanceX: number = mouseX - x;
+                const distanceY: number = mouseY - y;
+                const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+                if (distanceSquared < r * r) {
+                    this._hoveringNotePitchPointIndex = pointIndex;
+                    break;
+                }
+                if (x + r < mouseX) {
+                    // Stop here, since any other points must be entirely to the
+                    // left of mouseX now.
+                    break;
+                }
+            }
+        }
+    }
+
+    private _clearHoveredNoteState(): void {
+        this._hoveringNoteIndex = -1;
+        this._hoveringNoteHit = NoteHit.None;
+        this._hoveringNoteVolumePointIndex = -1;
+        this._hoveringNotePitchPointIndex = -1;
+    }
+
+    private _hoveredNoteStateChanged(): boolean {
+        return (
+            this._hoveringNoteIndex !== this._renderedHoveringNoteIndex
+            || this._hoveringNoteHit !== this._renderedHoveringNoteHit
+            || this._hoveringNoteVolumePointIndex !== this._renderedHoveringNoteVolumePointIndex
+            || this._hoveringNotePitchPointIndex !== this._renderedHoveringNotePitchPointIndex
+        );
+    }
 
     private _onChangedPianoRollPattern = (): void => {
         this.setPattern(this._doc.pianoRollPatternIndex, this._doc.pianoRollTrackIndex, this._doc.pianoRollClipIndex);
@@ -485,6 +606,8 @@ export class PianoRoll implements Component {
             this._activeOperation = null;
         }
         this._state.lastCommittedNoteDuration = song.ppqn;
+        this._state.lastCommittedNoteVolumeEnvelope = null;
+        this._state.lastCommittedNotePitchEnvelope = null;
 
         this._timeScrollBar.setZoom(Viewport.getXZoom(this._state.viewport));
         this._timeScrollBar.setPan(Viewport.getXPan(this._state.viewport));
@@ -496,6 +619,7 @@ export class PianoRoll implements Component {
         this._renderedNotesDirty = true;
         this._state.selectedNotes = [];
         this._state.selectionOverlayIsDirty = true;
+        this._clearHoveredNoteState();
         Viewport.clearRendered(this._renderedViewport);
 
         this._ui.scheduleMainRender();
@@ -604,21 +728,23 @@ export class PianoRoll implements Component {
         const hoveringOverBottomOfNote: boolean = (this._hoveringNoteHit & NoteHit.Bottom) !== 0;
 
         if (hoveringOverTopOfNote) {
-            const hoveringOverVolumePoint: boolean = false;
+            const hoveringOverVolumePoint: boolean = this._hoveringNoteVolumePointIndex !== -1;
             if (hoveringOverVolumePoint) {
                 this._cursor = "n-resize";
             } else {
-                // @TODO: cursor=copy?
                 this._cursor = "copy";
             }
         } else if (hoveringOverBottomOfNote) {
-            const hoveringOverPitchPoint: boolean = false;
+            const hoveringOverPitchPoint: boolean = this._hoveringNotePitchPointIndex !== -1;
             if (hoveringOverPitchPoint) {
                 this._cursor = "s-resize";
             } else {
-                // @TODO: cursor=copy?
-                this._cursor = "default";
+                this._cursor = "copy";
             }
+        } else if (this._activeOperation instanceof MoveNoteVolumePointBounded) {
+            this._cursor = "n-resize";
+        } else if (this._activeOperation instanceof MoveNotePitchPointBounded) {
+            this._cursor = "s-resize";
         } else if (hoveringOverStartOfNote || this._activeOperation instanceof LeftStretchNote) {
             this._cursor = "w-resize";
         } else if (hoveringOverEndOfNote || this._activeOperation instanceof RightStretchNote) {
@@ -646,6 +772,8 @@ export class PianoRoll implements Component {
 
         this._renderedHoveringNoteIndex = this._hoveringNoteIndex;
         this._renderedHoveringNoteHit = this._hoveringNoteHit;
+        this._renderedHoveringNoteVolumePointIndex = this._hoveringNoteVolumePointIndex;
+        this._renderedHoveringNotePitchPointIndex = this._hoveringNotePitchPointIndex;
         this._renderedNotesDirty = false;
         this._state.selectionOverlayIsDirty = false;
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._state.viewport);
@@ -805,6 +933,7 @@ export class PianoRoll implements Component {
         const viewportY1: number = this._state.viewport.y1;
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         let selectedNotes: Map<Note.Type, NoteTransform> | undefined = undefined;
         if (this._activeOperation != null && this._activeOperation.kind === OperationKind.Note) {
@@ -844,6 +973,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     note.start,
                     note.end,
                     note.pitch,
@@ -860,6 +990,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     note.start,
                     note.end,
                     note.pitch,
@@ -890,7 +1021,7 @@ export class PianoRoll implements Component {
             },
         );
         if (selectedNotes != null && this._activeOperation != null) {
-            for (const [note, transform] of selectedNotes) {
+            for (const [_, transform] of selectedNotes) {
                 context.fillStyle = "#0c6735";
                 drawNoteBackground(
                     this._bentNoteIterator,
@@ -901,11 +1032,12 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     transform.newStart,
                     transform.newEnd,
                     transform.newPitch,
-                    note.pitchEnvelope,
-                    note.volumeEnvelope,
+                    transform.newPitchEnvelope,
+                    transform.newVolumeEnvelope,
                 );
                 context.fillStyle = "#17d15b";
                 drawNoteForeground(
@@ -917,11 +1049,12 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     transform.newStart,
                     transform.newEnd,
                     transform.newPitch,
-                    note.pitchEnvelope,
-                    note.volumeEnvelope,
+                    transform.newPitchEnvelope,
+                    transform.newVolumeEnvelope,
                 );
             }
         }
@@ -953,6 +1086,7 @@ export class PianoRoll implements Component {
         const viewportY1: number = this._state.viewport.y1;
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         context.clearRect(0, 0, width, height);
 
@@ -972,6 +1106,14 @@ export class PianoRoll implements Component {
                     continue;
                 }
 
+                if (
+                    this._activeOperation != null
+                    && this._activeOperation.notes != null
+                    && this._activeOperation.notes.has(note)
+                ) {
+                    continue;
+                }
+
                 drawNoteOutline(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
@@ -981,8 +1123,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
-                    // @NOTE: We're not using NoteTransform here as that's only
-                    // really relevant when we have an active operation.
+                    maxPitch,
                     note.start,
                     note.end,
                     note.pitch,
@@ -1020,7 +1161,7 @@ export class PianoRoll implements Component {
             const note: Note.Type = this._pattern.notes[this._hoveringNoteIndex];
 
             if (this._hoveringNoteHit !== NoteHit.None) {
-                context.fillStyle = "rgba(255, 255, 255, 0.8)";
+                context.fillStyle = "rgba(255, 255, 255, 0.4)";
             }
 
             const hoveringOverStartOfNote: boolean = (this._hoveringNoteHit & NoteHit.Left) !== 0;
@@ -1038,6 +1179,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     this._state.noteVolumeHandleSizeFactor,
                     note.start,
                     note.end,
@@ -1045,6 +1187,48 @@ export class PianoRoll implements Component {
                     note.pitchEnvelope,
                     note.volumeEnvelope,
                 );
+
+                context.lineWidth = 1;
+                context.strokeStyle = "rgb(255, 255, 255)";
+                context.fillStyle = "rgb(255, 255, 255)";
+                const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
+                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+                    const hovering: boolean = pointIndex === this._hoveringNoteVolumePointIndex;
+                    const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
+                    const pointTime: number = point.time;
+                    if (note.start + pointTime > note.end) {
+                        break;
+                    }
+                    const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
+                    const clampedPitchIndex1: number = pitchIndex1 > -1 ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
+                    const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
+                    const pitch1Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
+                    const pitch0Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].value : 0;
+                    const pitch1Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
+                    const pitch0Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].time : 0;
+                    const pitch1: number = note.pitch + pitch1Value;
+                    const pitch0: number = note.pitch + pitch0Value;
+                    const pitch0Y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch0);
+                    const pitch1Y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch1);
+                    const t: number = (
+                        pitchIndex1 <= -1
+                        ? 0 // In this case, there's no pitch envelope.
+                        : pitch0Time === pitch1Time
+                            ? 0 // In this case, the pitch bent segment has a duration of 0.
+                            : unlerp(pointTime, pitch0Time, pitch1Time)
+                    );
+                    const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
+                    const baseR: number = (pixelsPerPitch / this._state.noteVolumeHandleSizeFactor) * 0.5;
+                    const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
+                    const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
+                    context.beginPath();
+                    context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
+                    if (hovering) {
+                        context.fill();
+                    } else {
+                        context.stroke();
+                    }
+                }
             } else if (hoveringOverBottomOfNote) {
                 drawNoteBottomHandle(
                     this._bentNoteIterator,
@@ -1055,13 +1239,40 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
-                    this._state.noteVolumeHandleSizeFactor,
+                    maxPitch,
+                    this._state.notePitchHandleSizeFactor,
                     note.start,
                     note.end,
                     note.pitch,
                     note.pitchEnvelope,
                     note.volumeEnvelope,
                 );
+
+                context.lineWidth = 1;
+                context.strokeStyle = "rgb(255, 255, 255)";
+                context.fillStyle = "rgb(255, 255, 255)";
+                const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
+                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+                    const hovering: boolean = pointIndex === this._hoveringNotePitchPointIndex;
+                    const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
+                    const pointTime: number = point.time;
+                    if (note.start + pointTime > note.end) {
+                        break;
+                    }
+                    const pointValue: number = point.value;
+                    const pitch: number = note.pitch + pointValue;
+                    const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
+                    const baseR: number = (pixelsPerPitch / this._state.notePitchHandleSizeFactor) * 0.5;
+                    const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
+                    const y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
+                    context.beginPath();
+                    context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
+                    if (hovering) {
+                        context.fill();
+                    } else {
+                        context.stroke();
+                    }
+                }
             } else if (hoveringOverStartOfNote) {
                 drawNoteLeftHandle(
                     this._bentNoteIterator,
@@ -1072,6 +1283,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     this._state.noteStretchHandleSize,
                     note.start,
                     note.end,
@@ -1089,6 +1301,7 @@ export class PianoRoll implements Component {
                     this._state.viewport,
                     pixelsPerTick,
                     pixelsPerPitch,
+                    maxPitch,
                     this._state.noteStretchHandleSize,
                     note.start,
                     note.end,
@@ -1133,6 +1346,7 @@ export class PianoRoll implements Component {
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = height / viewportHeight;
         const playhead: number | null = this._playhead;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         context.clearRect(0, 0, width, height);
         context.strokeStyle = "#ffffff";
@@ -1161,6 +1375,7 @@ export class PianoRoll implements Component {
                             this._state.viewport,
                             pixelsPerTick,
                             pixelsPerPitch,
+                            maxPitch,
                             playhead,
                             note.start,
                             note.end,
@@ -1254,6 +1469,7 @@ export class PianoRoll implements Component {
             const pixelsPerTick: number = canvasWidth / viewportWidth;
             const viewportHeight: number = viewportY1 - viewportY0;
             const pixelsPerPitch: number = canvasHeight / viewportHeight;
+            const maxPitch: number = this._doc.project.song.maxPitch;
             const searchWindowStart: number = (
                 this._state.viewport.x0 + remap(mouseX, 0, canvasWidth, 0, viewportWidth)
             ) | 0;
@@ -1280,6 +1496,7 @@ export class PianoRoll implements Component {
                         this._state.viewport,
                         pixelsPerTick,
                         pixelsPerPitch,
+                        maxPitch,
                     );
                     const isInsideNote: boolean = (overlapResult & NoteHit.Inside) !== 0;
 
@@ -1315,6 +1532,7 @@ export class PianoRoll implements Component {
         const pixelsPerTick: number = canvasWidth / viewportWidth;
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = canvasHeight / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         const overlapResult: NoteHit = pointOverlapsNote(
             this._bentNoteIterator,
@@ -1330,13 +1548,14 @@ export class PianoRoll implements Component {
             this._state.viewport,
             pixelsPerTick,
             pixelsPerPitch,
+            maxPitch,
         );
         const isOnStartHandle: boolean = (overlapResult & NoteHit.Left) !== 0;
 
         return isOnStartHandle;
     }
 
-    private _mouseIsOnEndOfNote(
+    public _mouseIsOnEndOfNote(
         index: number,
         canvasWidth: number,
         canvasHeight: number,
@@ -1357,6 +1576,7 @@ export class PianoRoll implements Component {
         const pixelsPerTick: number = canvasWidth / viewportWidth;
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = canvasHeight / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         const overlapResult: NoteHit = pointOverlapsNote(
             this._bentNoteIterator,
@@ -1372,13 +1592,14 @@ export class PianoRoll implements Component {
             this._state.viewport,
             pixelsPerTick,
             pixelsPerPitch,
+            maxPitch,
         );
         const isOnEndHandle: boolean = (overlapResult & NoteHit.Right) !== 0;
 
         return isOnEndHandle;
     }
 
-    private _mouseIsOnMiddleOfNote(
+    public _mouseIsOnMiddleOfNote(
         index: number,
         canvasWidth: number,
         canvasHeight: number,
@@ -1399,6 +1620,7 @@ export class PianoRoll implements Component {
         const pixelsPerTick: number = canvasWidth / viewportWidth;
         const viewportHeight: number = viewportY1 - viewportY0;
         const pixelsPerPitch: number = canvasHeight / viewportHeight;
+        const maxPitch: number = this._doc.project.song.maxPitch;
 
         const overlapResult: NoteHit = pointOverlapsNote(
             this._bentNoteIterator,
@@ -1414,6 +1636,7 @@ export class PianoRoll implements Component {
             this._state.viewport,
             pixelsPerTick,
             pixelsPerPitch,
+            maxPitch,
         );
         const isOnStartHandle: boolean = (overlapResult & NoteHit.Left) !== 0;
         const isOnEndHandle: boolean = (overlapResult & NoteHit.Right) !== 0;
@@ -1425,7 +1648,7 @@ export class PianoRoll implements Component {
         return isInsideNote && !isOnStartHandle && !isOnEndHandle;
     }
 
-    private _zoomAroundMouse(zoomIn: boolean, clientX: number): void {
+    private _zoomAroundMouseHorizontally(zoomIn: boolean, clientX: number): void {
         const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
         const width: number = bounds.width;
         const mouseX: number = clientX - bounds.left;
@@ -1438,6 +1661,28 @@ export class PianoRoll implements Component {
         if (Viewport.zoomAroundPointX(this._state.viewport, unlerp(mouseX, 0, width), factor)) {
             this._timeScrollBar.setZoom(Viewport.getXZoom(this._state.viewport));
             this._timeScrollBar.setPan(Viewport.getXPan(this._state.viewport));
+
+            this._renderedNotesDirty = true;
+            this._state.selectionOverlayIsDirty = true;
+            Viewport.clearRendered(this._renderedViewport);
+
+            this._ui.scheduleMainRender();
+        }
+    }
+
+    private _zoomAroundMouseVertically(zoomIn: boolean, clientY: number): void {
+        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+        const height: number = bounds.height;
+        const mouseY: number = clientY - bounds.top;
+
+        let factor: number = 1.25;
+        if (zoomIn) {
+            factor = 1.0 / factor;
+        }
+
+        if (Viewport.zoomAroundPointY(this._state.viewport, unlerp(mouseY, height, 0), factor)) {
+            this._pitchScrollBar.setZoom(Viewport.getYZoom(this._state.viewport));
+            this._pitchScrollBar.setPan(Viewport.getYPan(this._state.viewport));
 
             this._renderedNotesDirty = true;
             this._state.selectionOverlayIsDirty = true;
@@ -1500,8 +1745,7 @@ export class PianoRoll implements Component {
                 const mouseY: number = context.y0 - bounds.top;
 
                 if (!this._hoveringOverAnyNote(width, height, mouseX, mouseY)) {
-                    this._hoveringNoteIndex = -1;
-                    this._hoveringNoteHit = NoteHit.None;
+                    this._clearHoveredNoteState();
                     this._state.selectedNotes = [];
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1517,12 +1761,16 @@ export class PianoRoll implements Component {
                     const absActualDuration: number = Math.abs(actualDuration);
                     const pitch: number = clamp(cursorPitch, 0, song.maxPitch);
                     if (absActualDuration > 0) {
-                        const pitchEnvelope: Breakpoint.Type[] | null = [];
-                        for (let i = 0; i < 10; i++)
-                            pitchEnvelope.push(Breakpoint.make((i / 10 * absActualDuration) | 0, Math.random() * 4 - 2));
-                        const volumeEnvelope: Breakpoint.Type[] | null = [];
-                        for (let i = 0; i < 5; i++)
-                            volumeEnvelope.push(Breakpoint.make((i / 5 * absActualDuration) | 0, Math.random()));
+                        const pitchEnvelope: Breakpoint.Type[] | null = (
+                            this._state.lastCommittedNotePitchEnvelope == null
+                            ? null
+                            : Breakpoint.cloneArray(this._state.lastCommittedNotePitchEnvelope)
+                        );
+                        const volumeEnvelope: Breakpoint.Type[] | null = (
+                            this._state.lastCommittedNoteVolumeEnvelope == null
+                            ? null
+                            : Breakpoint.cloneArray(this._state.lastCommittedNoteVolumeEnvelope)
+                        );
 
                         this._doc.insertNote(
                             this._pattern,
@@ -1562,8 +1810,7 @@ export class PianoRoll implements Component {
                 if (!this._hoveringOverAnyNote(width, height, mouseX0, mouseY0)) {
                     const mouseX1: number = context.x1 - bounds.left;
 
-                    this._hoveringNoteIndex = -1;
-                    this._hoveringNoteHit = NoteHit.None;
+                    this._clearHoveredNoteState();
                     this._state.selectedNotes = [];
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1594,7 +1841,13 @@ export class PianoRoll implements Component {
                         this._state,
                         this._doc,
                         cursorPpqn0,
-                        new Map([[fakeNote, { newStart: start, newEnd: end, newPitch: pitch }]]),
+                        new Map([[fakeNote, {
+                            newStart: start,
+                            newEnd: end,
+                            newPitch: pitch,
+                            newPitchEnvelope: null,
+                            newVolumeEnvelope: null,
+                        }]]),
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
                     this._ui.scheduleMainRender();
@@ -1609,8 +1862,7 @@ export class PianoRoll implements Component {
                     if (this._state.selectedNotes.length > 0) {
                         const notes: Note.Type[] = this._state.selectedNotes;
 
-                        this._hoveringNoteIndex = -1;
-                        this._hoveringNoteHit = NoteHit.None;
+                        this._clearHoveredNoteState();
                         this._state.selectedNotes = [];
                         this._state.selectionOverlayIsDirty = true;
 
@@ -1634,9 +1886,13 @@ export class PianoRoll implements Component {
 
                     this._findNoteUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
                     const index: number = this._hoverQueryResult.index;
-                    if (index !== -1) {
-                        this._hoveringNoteIndex = -1;
-                        this._hoveringNoteHit = NoteHit.None;
+                    const hit: number = this._hoverQueryResult.hit;
+                    if (
+                        index !== -1
+                        && (hit & NoteHit.Top) === 0
+                        && (hit & NoteHit.Bottom) === 0
+                    ) {
+                        this._clearHoveredNoteState();
                         this._state.selectedNotes = [];
                         this._state.selectionOverlayIsDirty = true;
 
@@ -1670,19 +1926,21 @@ export class PianoRoll implements Component {
 
                 this._findNoteUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
                 const index: number = this._hoverQueryResult.index;
+                const hit: NoteHit = this._hoverQueryResult.hit;
                 if (index === -1) {
                     return ActionResponse.NotApplicable;
                 }
 
-                // @TODO: Remove this now that findNoteUnderMouse works with a
-                // query result object.
-                if (this._mouseIsOnStartOfNote(index, width, height, mouseX, mouseY)) {
+                if (
+                    (hit & NoteHit.Left) !== 0
+                    && (hit & NoteHit.Top) === 0
+                    && (hit & NoteHit.Bottom) === 0
+                ) {
                     const note: Note.Type = this._pattern.notes[index];
                     const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
                     const cursorPpqn0: number = (this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)) | 0;
 
-                    this._hoveringNoteIndex = -1;
-                    this._hoveringNoteHit = NoteHit.None;
+                    this._clearHoveredNoteState();
                     this._state.selectedNotes = [];
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1690,7 +1948,13 @@ export class PianoRoll implements Component {
                         this._state,
                         this._doc,
                         cursorPpqn0,
-                        new Map([[note, { newStart: note.start, newEnd: note.end, newPitch: note.pitch }]]),
+                        new Map([[note, {
+                            newStart: note.start,
+                            newEnd: note.end,
+                            newPitch: note.pitch,
+                            newPitchEnvelope: note.pitchEnvelope,
+                            newVolumeEnvelope: note.volumeEnvelope,
+                        }]]),
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
 
@@ -1718,19 +1982,21 @@ export class PianoRoll implements Component {
 
                 this._findNoteUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
                 const index: number = this._hoverQueryResult.index;
+                const hit: NoteHit = this._hoverQueryResult.hit;
                 if (index === -1) {
                     return ActionResponse.NotApplicable;
                 }
 
-                // @TODO: Remove this now that findNoteUnderMouse works with a
-                // query result object.
-                if (this._mouseIsOnEndOfNote(index, width, height, mouseX, mouseY)) {
+                if (
+                    (hit & NoteHit.Right) !== 0
+                    && (hit & NoteHit.Top) === 0
+                    && (hit & NoteHit.Bottom) === 0
+                ) {
                     const note: Note.Type = this._pattern.notes[index];
                     const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
                     const cursorPpqn0: number = (this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)) | 0;
 
-                    this._hoveringNoteIndex = -1;
-                    this._hoveringNoteHit = NoteHit.None;
+                    this._clearHoveredNoteState();
                     this._state.selectedNotes = [];
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1738,7 +2004,13 @@ export class PianoRoll implements Component {
                         this._state,
                         this._doc,
                         cursorPpqn0,
-                        new Map([[note, { newStart: note.start, newEnd: note.end, newPitch: note.pitch }]]),
+                        new Map([[note, {
+                            newStart: note.start,
+                            newEnd: note.end,
+                            newPitch: note.pitch,
+                            newPitchEnvelope: note.pitchEnvelope,
+                            newVolumeEnvelope: note.volumeEnvelope,
+                        }]]),
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
 
@@ -1766,6 +2038,7 @@ export class PianoRoll implements Component {
 
                 this._findNoteUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
                 const index: number = this._hoverQueryResult.index;
+                const hit: NoteHit = this._hoverQueryResult.hit;
                 if (index === -1) {
                     return ActionResponse.NotApplicable;
                 }
@@ -1781,9 +2054,13 @@ export class PianoRoll implements Component {
                 // ctrl first then pressing a mouse button. Checking gesture0
                 // means we can only hold ctrl first.
 
-                // @TODO: Remove this now that findNoteUnderMouse works with a
-                // query result object.
-                if (this._mouseIsOnMiddleOfNote(index, width, height, mouseX, mouseY)) {
+                if (
+                    (hit & NoteHit.Inside) !== 0
+                    && (hit & NoteHit.Left) === 0
+                    && (hit & NoteHit.Right) === 0
+                    && (hit & NoteHit.Top) === 0
+                    && (hit & NoteHit.Bottom) === 0
+                ) {
                     const note: Note.Type = this._pattern.notes[index];
 
                     let noteBoundsX0: number = note.start;
@@ -1821,6 +2098,8 @@ export class PianoRoll implements Component {
                                 newStart: note.start,
                                 newEnd: note.end,
                                 newPitch: note.pitch,
+                                newPitchEnvelope: note.pitchEnvelope,
+                                newVolumeEnvelope: note.volumeEnvelope,
                             });
                         }
                     } else {
@@ -1833,6 +2112,8 @@ export class PianoRoll implements Component {
                                     newStart: newNote.start,
                                     newEnd: newNote.end,
                                     newPitch: newNote.pitch,
+                                    newPitchEnvelope: newNote.pitchEnvelope,
+                                    newVolumeEnvelope: newNote.volumeEnvelope,
                                 });
                             }
                         } else {
@@ -1840,6 +2121,8 @@ export class PianoRoll implements Component {
                                 newStart: note.start,
                                 newEnd: note.end,
                                 newPitch: note.pitch,
+                                newPitchEnvelope: note.pitchEnvelope,
+                                newVolumeEnvelope: note.volumeEnvelope,
                             });
                         }
                     }
@@ -1857,8 +2140,7 @@ export class PianoRoll implements Component {
                     const pitchDeltaMin: number = 0 - noteBoundsY0;
                     const pitchDeltaMax: number = this._doc.project.song.maxPitch - noteBoundsY1;
 
-                    this._hoveringNoteIndex = -1;
-                    this._hoveringNoteHit = NoteHit.None;
+                    this._clearHoveredNoteState();
                     this._state.selectedNotes = [];
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1872,6 +2154,391 @@ export class PianoRoll implements Component {
                         timeDeltaMax,
                         pitchDeltaMin,
                         pitchDeltaMax,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.CreateNoteVolumePoint: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                const hit: NoteHit = this._hoveringNoteHit;
+                const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                // const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if ((hit & NoteHit.Top) !== 0 && hoveringVolumePointIndex === -1) {
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const viewportHeight: number = this._state.viewport.y1 - this._state.viewport.y0;
+                    const cursorPpqn: number = Math.round(this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth));
+                    const duration: number = note.end - note.start;
+                    const time: number = clamp(cursorPpqn - note.start, 0, duration);
+                    const existingVolumeIndex: number = Breakpoint.findIndex(note.volumeEnvelope, time);
+                    const value: number = (
+                        existingVolumeIndex !== -1
+                        ? Breakpoint.evaluateNoteEnvelope(note.volumeEnvelope!, time, existingVolumeIndex, 1)
+                        : 1
+                    );
+
+                    // Creating and starting a move operation:
+                    const newPoint: Breakpoint.Type = this._doc.insertNoteVolumePoint(this._pattern, note, time, value);
+                    const newPointIndex: number = note.volumeEnvelope!.indexOf(newPoint);
+                    if (newPointIndex === -1) {
+                        throw new Error("New point wasn't found in the volume envelope?");
+                    }
+                    const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+                    const cursorPitch0: number = this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight);
+                    const noteMap: Map<Note.Type, NoteTransform> = new Map([[note, {
+                        newStart: note.start,
+                        newEnd: note.end,
+                        newPitch: note.pitch,
+                        newPitchEnvelope: note.pitchEnvelope,
+                        newVolumeEnvelope: Breakpoint.cloneArray(note.volumeEnvelope!),
+                    }]]);
+                    this._activeOperation = new MoveNoteVolumePointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorPitch0,
+                        noteMap,
+                        newPointIndex,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+                    return ActionResponse.StartedOperation;
+
+                    // Creating without starting a move operation:
+                    // this._doc.insertNoteVolumePoint(this._pattern, note, time, value);
+                    // this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                    // this._renderedNotesDirty = true;
+                    // this._state.selectedNotes = [];
+                    // this._state.selectionOverlayIsDirty = true;
+                    // this._ui.scheduleMainRender();
+                    // return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.RemoveNoteVolumePoint: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                // const hit: NoteHit = this._hoveringNoteHit;
+                const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                // const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if (hoveringVolumePointIndex !== -1) {
+                    this._doc.removeNoteVolumePoint(
+                        this._pattern,
+                        note,
+                        hoveringVolumePointIndex,
+                    );
+
+                    this._computeHoveredNoteState(width, height, mouseX, mouseY);
+
+                    this._renderedNotesDirty = true;
+                    this._state.selectedNotes = [];
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.CreateNotePitchPoint: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                const hit: NoteHit = this._hoveringNoteHit;
+                // const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if ((hit & NoteHit.Bottom) !== 0 && hoveringPitchPointIndex === -1) {
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const viewportHeight: number = this._state.viewport.y1 - this._state.viewport.y0;
+                    const cursorPpqn: number = Math.round(this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth));
+                    // const cursorPitch: number = (
+                    //     this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight)
+                    // );
+                    const duration: number = note.end - note.start;
+                    const time: number = clamp(cursorPpqn - note.start, 0, duration);
+                    const existingPitchIndex: number = Breakpoint.findIndex(note.pitchEnvelope, time);
+                    const value: number = (
+                        existingPitchIndex !== -1
+                        ? Breakpoint.evaluateNoteEnvelope(note.pitchEnvelope!, time, existingPitchIndex, 0)
+                        : 0
+                    );
+
+                    // Creating and starting a move operation:
+                    const newPoint: Breakpoint.Type = this._doc.insertNotePitchPoint(this._pattern, note, time, value);
+                    const newPointIndex: number = note.pitchEnvelope!.indexOf(newPoint);
+                    if (newPointIndex === -1) {
+                        throw new Error("New point wasn't found in the pitch envelope?");
+                    }
+                    const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+                    const cursorPitch0: number = this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight);
+                    const noteMap: Map<Note.Type, NoteTransform> = new Map([[note, {
+                        newStart: note.start,
+                        newEnd: note.end,
+                        newPitch: note.pitch,
+                        newPitchEnvelope: Breakpoint.cloneArray(note.pitchEnvelope!),
+                        newVolumeEnvelope: note.volumeEnvelope,
+                    }]]);
+                    this._activeOperation = new MoveNotePitchPointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorPitch0,
+                        noteMap,
+                        newPointIndex,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+                    return ActionResponse.StartedOperation;
+
+                    // Creating without starting a move operation:
+                    // this._doc.insertNotePitchPoint(this._pattern, note, time, value);
+                    // this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                    // this._renderedNotesDirty = true;
+                    // this._state.selectedNotes = [];
+                    // this._state.selectionOverlayIsDirty = true;
+                    // this._ui.scheduleMainRender();
+                    // return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.RemoveNotePitchPoint: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                // const hit: NoteHit = this._hoveringNoteHit;
+                // const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if (hoveringPitchPointIndex !== -1) {
+                    this._doc.removeNotePitchPoint(
+                        this._pattern,
+                        note,
+                        hoveringPitchPointIndex,
+                    );
+
+                    this._computeHoveredNoteState(width, height, mouseX, mouseY);
+
+                    this._renderedNotesDirty = true;
+                    this._state.selectedNotes = [];
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.MoveNoteVolumePointBounded: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                // const hit: NoteHit = this._hoveringNoteHit;
+                const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                // const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if (hoveringVolumePointIndex !== -1) {
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const viewportHeight: number = this._state.viewport.y1 - this._state.viewport.y0;
+                    const cursorPpqn0: number = (
+                        this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                    );
+                    const cursorPitch0: number = (
+                        this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight)
+                    );
+
+                    const noteMap: Map<Note.Type, NoteTransform> = new Map([[note, {
+                        newStart: note.start,
+                        newEnd: note.end,
+                        newPitch: note.pitch,
+                        newPitchEnvelope: note.pitchEnvelope,
+                        newVolumeEnvelope: Breakpoint.cloneArray(note.volumeEnvelope!),
+                    }]]);
+
+                    this._activeOperation = new MoveNoteVolumePointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorPitch0,
+                        noteMap,
+                        hoveringVolumePointIndex,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.MoveNotePitchPointBounded: {
+                // @TODO: Revisit this? Mostly I'm just not sure what can be done
+                // if there's no sensible initial mouse position. In Blender I
+                // have seen special cases added that would wait for a mouse
+                // drag, after executing an operator via e.g. a toolbar.
+                // If there's no good options, then I should introduce the
+                // notion of restricting bindings to certain types of gestures.
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                const index: number = this._hoveringNoteIndex;
+                // const hit: NoteHit = this._hoveringNoteHit;
+                // const hoveringVolumePointIndex: number = this._hoveringNoteVolumePointIndex;
+                const hoveringPitchPointIndex: number = this._hoveringNotePitchPointIndex;
+                this._clearHoveredNoteState();
+                if (index === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const note: Note.Type = this._pattern.notes[index];
+
+                if (hoveringPitchPointIndex !== -1) {
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const viewportHeight: number = this._state.viewport.y1 - this._state.viewport.y0;
+                    const cursorPpqn0: number = (
+                        this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                    );
+                    const cursorPitch0: number = (
+                        this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight)
+                    );
+
+                    const noteMap: Map<Note.Type, NoteTransform> = new Map([[note, {
+                        newStart: note.start,
+                        newEnd: note.end,
+                        newPitch: note.pitch,
+                        newPitchEnvelope: Breakpoint.cloneArray(note.pitchEnvelope!),
+                        newVolumeEnvelope: note.volumeEnvelope,
+                    }]]);
+
+                    this._activeOperation = new MoveNotePitchPointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorPitch0,
+                        noteMap,
+                        hoveringPitchPointIndex,
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
 
@@ -1912,19 +2579,17 @@ export class PianoRoll implements Component {
                     this._state.viewport.y0 + remap(mouseY, height, 0, 0, viewportHeight) - 1
                 );
 
-                this._hoveringNoteIndex = -1;
-                this._hoveringNoteHit = NoteHit.None;
+                this._clearHoveredNoteState();
                 this._state.selectedNotes = [];
                 this._state.selectionOverlayIsDirty = true;
 
-                this._activeOperation = new SelectBox(this._state, cursorPpqn0, cursorPitch0);
+                this._activeOperation = new SelectBox(this._doc, this._state, cursorPpqn0, cursorPitch0);
                 this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
 
                 return ActionResponse.StartedOperation;
             };
             case ActionKind.PianoRollSelectAll: {
-                this._hoveringNoteIndex = -1;
-                this._hoveringNoteHit = NoteHit.None;
+                this._clearHoveredNoteState();
 
                 this._state.selectedNotes = [];
                 const notes: Note.Type[] = this._pattern.notes;
@@ -1940,7 +2605,7 @@ export class PianoRoll implements Component {
 
                 return ActionResponse.Done;
             };
-            case ActionKind.PianoRollZoomInAroundMouse: {
+            case ActionKind.PianoRollZoomInAroundMouseHorizontally: {
                 // To not conflict with the piano scrolling.
                 if (
                     !mouseIsInside(context, this._canvasesContainer)
@@ -1949,14 +2614,22 @@ export class PianoRoll implements Component {
                     return ActionResponse.NotApplicable;
                 }
 
-                // @TODO: I think I may need to query for the hovered note here?
-                // Think of e.g. zooming while on top of the start handle.
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x1 - bounds.left;
+                const mouseY: number = context.y1 - bounds.top;
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                if (this._hoveredNoteStateChanged()) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._ui.scheduleMainRender();
+                }
 
-                this._zoomAroundMouse(/* zoomIn */ true, context.x1);
+                this._zoomAroundMouseHorizontally(/* zoomIn */ true, context.x1);
 
                 return ActionResponse.Done;
             };
-            case ActionKind.PianoRollZoomOutAroundMouse: {
+            case ActionKind.PianoRollZoomOutAroundMouseHorizontally: {
                 // To not conflict with the piano scrolling.
                 if (
                     !mouseIsInside(context, this._canvasesContainer)
@@ -1965,10 +2638,66 @@ export class PianoRoll implements Component {
                     return ActionResponse.NotApplicable;
                 }
 
-                // @TODO: I think I may need to query for the hovered note here?
-                // Think of e.g. zooming while on top of the end handle.
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x1 - bounds.left;
+                const mouseY: number = context.y1 - bounds.top;
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                if (this._hoveredNoteStateChanged()) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._ui.scheduleMainRender();
+                }
 
-                this._zoomAroundMouse(/* zoomIn */ false, context.x1);
+                this._zoomAroundMouseHorizontally(/* zoomIn */ false, context.x1);
+
+                return ActionResponse.Done;
+            };
+            case ActionKind.PianoRollZoomInAroundMouseVertically: {
+                // To not conflict with the piano scrolling.
+                if (
+                    !mouseIsInside(context, this._canvasesContainer)
+                    && !mouseIsInside(context, this._timeRuler.element)
+                ) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x1 - bounds.left;
+                const mouseY: number = context.y1 - bounds.top;
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                if (this._hoveredNoteStateChanged()) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._ui.scheduleMainRender();
+                }
+
+                this._zoomAroundMouseVertically(/* zoomIn */ true, context.y1);
+
+                return ActionResponse.Done;
+            };
+            case ActionKind.PianoRollZoomOutAroundMouseVertically: {
+                // To not conflict with the piano scrolling.
+                if (
+                    !mouseIsInside(context, this._canvasesContainer)
+                    && !mouseIsInside(context, this._timeRuler.element)
+                ) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x1 - bounds.left;
+                const mouseY: number = context.y1 - bounds.top;
+                this._computeHoveredNoteState(width, height, mouseX, mouseY);
+                if (this._hoveredNoteStateChanged()) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._ui.scheduleMainRender();
+                }
+
+                this._zoomAroundMouseVertically(/* zoomIn */ false, context.y1);
 
                 return ActionResponse.Done;
             };
@@ -1992,11 +2721,13 @@ export class PianoRoll implements Component {
             this._renderedNotesDirty = true;
         }
         this._state.selectionOverlayIsDirty = true;
-        this._ui.scheduleMainRender();
 
         if (response === OperationResponse.Done || response === OperationResponse.Aborted) {
+            // @TODO: Call _computeHoveredNoteState here.
             this._activeOperation = null;
         }
+
+        this._ui.scheduleMainRender();
 
         return response;
     };

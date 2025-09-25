@@ -231,6 +231,7 @@ export function computeSegment(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
 ): void {
     const duration: number = it.noteEnd - it.noteStart;
     const segmentDuration: number = it.pitchTime1 - it.pitchTime0;
@@ -248,9 +249,9 @@ export function computeSegment(
     // @TODO: Maybe remove these from the iterator? If that's done, then
     // `notePitch` can also be removed, as the segment pitches are relative.
     it.segmentX0 = tickToX(viewport, pixelsPerTick, it.noteStart + it.adjustedPitchTime0);
-    it.segmentY0 = pitchToY(canvasHeight, viewport, pixelsPerPitch, it.notePitch + it.adjustedPitch0);
+    it.segmentY0 = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, it.notePitch + it.adjustedPitch0);
     it.segmentX1 = tickToX(viewport, pixelsPerTick, it.noteStart + it.adjustedPitchTime1);
-    it.segmentY1 = pitchToY(canvasHeight, viewport, pixelsPerPitch, it.notePitch + it.adjustedPitch1);
+    it.segmentY1 = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, it.notePitch + it.adjustedPitch1);
 }
 
 export function advance(it: Type): void {

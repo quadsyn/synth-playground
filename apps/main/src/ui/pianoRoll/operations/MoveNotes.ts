@@ -81,6 +81,8 @@ export class MoveNotes implements Operation {
             const notes: Note.Type[] = Array.from(this.notes.keys());
             if (notes.length === 1) {
                 this._operationState.lastCommittedNoteDuration = notes[0].end - notes[0].start;
+                this._operationState.lastCommittedNoteVolumeEnvelope = notes[0].volumeEnvelope;
+                this._operationState.lastCommittedNotePitchEnvelope = notes[0].pitchEnvelope;
             }
             const timeDelta: number = this._timeDelta;
             const pitchDelta: number = this._pitchDelta;

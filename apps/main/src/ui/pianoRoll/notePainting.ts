@@ -15,6 +15,7 @@ export function drawNoteBackgroundPath(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     start: number,
     end: number,
     pitch: number,
@@ -35,10 +36,12 @@ export function drawNoteBackgroundPath(
         // Quit early if note is horizontally out of bounds.
         return false;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
+    const volumeEnvelopeLength: number = volumeEnvelope != null ? volumeEnvelope.length : 0;
     const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
+    const hasVolumeEnvelope: boolean = volumeEnvelopeLength > 0;
 
     if (
         style === NoteDrawingStyle.Flat
@@ -49,8 +52,10 @@ export function drawNoteBackgroundPath(
             return false;
         }
 
-        if (force) {
-            // We have this here for outlines and note flashing at least.
+        if (
+            hasVolumeEnvelope
+            || force // We have this here for outlines and note flashing at least.
+        ) {
             context.beginPath();
             context.rect(x, y, w, h);
             return true;
@@ -78,7 +83,7 @@ export function drawNoteBackgroundPath(
             let prevSegmentY1: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     const segmentX0: number = it.segmentX0;
@@ -116,7 +121,7 @@ export function drawNoteBackgroundPath(
             let prevSegmentY0: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     const segmentX0: number = it.segmentX0;
@@ -165,6 +170,7 @@ export function drawNoteForegroundPath(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     start: number,
     end: number,
     pitch: number,
@@ -184,7 +190,7 @@ export function drawNoteForegroundPath(
         // Quit early if note is horizontally out of bounds.
         return false;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
     const volumeEnvelopeLength: number = volumeEnvelope != null ? volumeEnvelope.length : 0;
@@ -239,13 +245,13 @@ export function drawNoteForegroundPath(
             let prevSegmentY1: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
-                    const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
+                    const startVolume: number = clamp(Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume), 0, 1);
                     const segmentX0: number = it.segmentX0;
-                    const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 0.5 + startVolume * 0.5);
+                    const segmentY0: number = it.segmentY0 + pixelsPerPitch * 0.5 - pixelsPerPitch * 0.5 * startVolume;
                     if (firstLine) {
                         firstLine = false;
                         context.moveTo(segmentX0, segmentY0);
@@ -263,9 +269,8 @@ export function drawNoteForegroundPath(
                                 break;
                             }
                             const t: number = clamp(unlerp(volumeTime, it.adjustedPitchTime0, it.adjustedPitchTime1), 0, 1);
-                            const middlePitch: number = lerp(t, it.adjustedPitch0, it.adjustedPitch1);
                             const segmentX: number = tickToX(viewport, pixelsPerTick, start + volumeTime);
-                            const segmentY: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + middlePitch - 0.5 + volumePoint.value * 0.5);
+                            const segmentY: number = lerp(t, it.segmentY0, it.segmentY1) + pixelsPerPitch * 0.5 - pixelsPerPitch * 0.5 * clamp(volumePoint.value, 0, 1);
                             if (segmentX !== prevSegmentX1 || segmentY !== prevSegmentY1) {
                                 context.lineTo(segmentX, segmentY);
                                 prevSegmentX1 = segmentX;
@@ -274,9 +279,9 @@ export function drawNoteForegroundPath(
                         }
                     }
                     const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
-                    const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
+                    const endVolume: number = clamp(Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume), 0, 1);
                     const segmentX1: number = it.segmentX1;
-                    const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 0.5 + endVolume * 0.5);
+                    const segmentY1: number = it.segmentY1 + pixelsPerPitch * 0.5 - pixelsPerPitch * 0.5 * endVolume;
                     if (segmentX1 !== prevSegmentX1 || segmentY1 !== prevSegmentY1) {
                         context.lineTo(segmentX1, segmentY1);
                         prevSegmentX1 = segmentX1;
@@ -304,13 +309,13 @@ export function drawNoteForegroundPath(
             let prevSegmentY0: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     const volumeEndIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime1);
                     const endVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime1, volumeEndIndex, defaultVolume);
                     const segmentX1: number = it.segmentX1;
-                    const segmentY1: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch1 - 1 + 0.5 - endVolume * 0.5);
+                    const segmentY1: number = it.segmentY1 + pixelsPerPitch * 0.5 + pixelsPerPitch * 0.5 * endVolume;
                     if (segmentX1 !== prevSegmentX0 || segmentY1 !== prevSegmentY0) {
                         context.lineTo(segmentX1, segmentY1);
                     }
@@ -325,9 +330,8 @@ export function drawNoteForegroundPath(
                                 continue;
                             }
                             const t: number = clamp(unlerp(volumeTime, it.adjustedPitchTime0, it.adjustedPitchTime1), 0, 1);
-                            const middlePitch: number = lerp(t, it.adjustedPitch0, it.adjustedPitch1);
                             const segmentX: number = tickToX(viewport, pixelsPerTick, start + volumeTime);
-                            const segmentY: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + middlePitch - 1 + 0.5 - volumePoint.value * 0.5);
+                            const segmentY: number = lerp(t, it.segmentY0, it.segmentY1) + pixelsPerPitch * 0.5 + pixelsPerPitch * 0.5 * volumePoint.value;
                             if (segmentX !== prevSegmentX0 || segmentY !== prevSegmentY0) {
                                 context.lineTo(segmentX, segmentY);
                                 prevSegmentX0 = segmentX;
@@ -338,7 +342,7 @@ export function drawNoteForegroundPath(
                     const volumeStartIndex: number = Breakpoint.findIndex(volumeEnvelope, it.adjustedPitchTime0);
                     const startVolume: number = Breakpoint.evaluateNoteEnvelope(volumeEnvelope!, it.adjustedPitchTime0, volumeStartIndex, defaultVolume);
                     const segmentX0: number = it.segmentX0;
-                    const segmentY0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch + it.adjustedPitch0 - 1 + 0.5 - startVolume * 0.5);
+                    const segmentY0: number = it.segmentY0 + pixelsPerPitch * 0.5 + pixelsPerPitch * 0.5 * startVolume;
                     if (segmentX0 !== prevSegmentX0 || segmentY0 !== prevSegmentY0) {
                         context.lineTo(segmentX0, segmentY0);
                         prevSegmentX0 = segmentX0;
@@ -379,6 +383,7 @@ export function drawNoteBackground(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     start: number,
     end: number,
     pitch: number,
@@ -394,6 +399,7 @@ export function drawNoteBackground(
         viewport,
         pixelsPerTick,
         pixelsPerPitch,
+        maxPitch,
         start,
         end,
         pitch,
@@ -417,6 +423,7 @@ export function drawNoteForeground(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     start: number,
     end: number,
     pitch: number,
@@ -432,6 +439,7 @@ export function drawNoteForeground(
         viewport,
         pixelsPerTick,
         pixelsPerPitch,
+        maxPitch,
         start,
         end,
         pitch,
@@ -453,6 +461,7 @@ export function drawNoteOutline(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     start: number,
     end: number,
     pitch: number,
@@ -468,6 +477,7 @@ export function drawNoteOutline(
         viewport,
         pixelsPerTick,
         pixelsPerPitch,
+        maxPitch,
         start,
         end,
         pitch,
@@ -488,6 +498,7 @@ export function drawNoteFlash(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     playhead: number,
     start: number,
     end: number,
@@ -507,6 +518,7 @@ export function drawNoteFlash(
         viewport,
         pixelsPerTick,
         pixelsPerPitch,
+        maxPitch,
         start,
         end,
         pitch,
@@ -529,6 +541,7 @@ export function drawNoteLeftHandle(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     handleSize: number,
     start: number,
     end: number,
@@ -551,7 +564,7 @@ export function drawNoteLeftHandle(
         // Quit early if note is horizontally out of bounds.
         return;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
     const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
@@ -584,7 +597,7 @@ export function drawNoteLeftHandle(
         // Top left -> top right (for the handle shape!)
         BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
         while (!BentNoteIterator.isDone(it)) {
-            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
             if (adjustedDuration > 0) {
                 handleX0 = it.segmentX0;
@@ -620,6 +633,7 @@ export function drawNoteRightHandle(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     handleSize: number,
     start: number,
     end: number,
@@ -642,7 +656,7 @@ export function drawNoteRightHandle(
         // Quit early if note is horizontally out of bounds.
         return;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
     const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
@@ -675,7 +689,7 @@ export function drawNoteRightHandle(
         // Top left -> top right (for the handle shape!)
         BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
         while (!BentNoteIterator.isDone(it)) {
-            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
             if (adjustedDuration > 0) {
                 handleX0 = clamp(it.segmentX1 - handleSize, it.segmentX0, it.segmentX1);
@@ -711,6 +725,7 @@ export function drawNoteTopHandle(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     handleSizeFactor: number,
     start: number,
     end: number,
@@ -731,7 +746,7 @@ export function drawNoteTopHandle(
         // Quit early if note is horizontally out of bounds.
         return;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
     const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
@@ -764,7 +779,7 @@ export function drawNoteTopHandle(
             let prevSegmentY1: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     if (firstLine) {
@@ -786,7 +801,7 @@ export function drawNoteTopHandle(
             let prevSegmentY0: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {
@@ -814,6 +829,7 @@ export function drawNoteBottomHandle(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
     handleSizeFactor: number,
     start: number,
     end: number,
@@ -834,7 +850,7 @@ export function drawNoteBottomHandle(
         // Quit early if note is horizontally out of bounds.
         return;
     }
-    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, pitch);
+    const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch);
     const h: number = pixelsPerPitch;
     const pitchEnvelopeLength: number = pitchEnvelope != null ? pitchEnvelope.length : 0;
     const hasPitchEnvelope: boolean = pitchEnvelopeLength > 0;
@@ -867,7 +883,7 @@ export function drawNoteBottomHandle(
             let prevSegmentY1: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Forward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     if (firstLine) {
@@ -889,7 +905,7 @@ export function drawNoteBottomHandle(
             let prevSegmentY0: number = 0;
             BentNoteIterator.setup(it, start, end, pitch, pitchEnvelope, BentNoteIterator.Mode.Backward);
             while (!BentNoteIterator.isDone(it)) {
-                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+                BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
                 const adjustedDuration: number = it.adjustedPitchTime1 - it.adjustedPitchTime0;
                 if (adjustedDuration > 0) {
                     if (it.segmentX1 !== prevSegmentX0 || it.segmentY1 !== prevSegmentY0) {

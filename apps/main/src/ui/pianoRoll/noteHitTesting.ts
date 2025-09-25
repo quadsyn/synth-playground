@@ -31,6 +31,7 @@ export function pointOverlapsNote(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
 ): NoteHit {
     let result: NoteHit = NoteHit.None;
 
@@ -67,7 +68,7 @@ export function pointOverlapsNote(
             pitchCount === 1 ? pitches![0].value : 0
         );
 
-        const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, actualPitch);
+        const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, actualPitch);
         const y1: number = y0 + pixelsPerPitch;
 
         if (insideRange(pointX, x0, x1) && insideRange(pointY, y0, y1)) {
@@ -84,7 +85,7 @@ export function pointOverlapsNote(
 
         BentNoteIterator.setup(it, start, end, pitch, pitches, BentNoteIterator.Mode.Forward);
         while (!BentNoteIterator.isDone(it)) {
-            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const segmentDuration: number = it.pitchTime1 - it.pitchTime0;
             if (segmentDuration > 0) {
                 // This collision detection approach makes use of the separating axis theorem.
@@ -196,6 +197,7 @@ export function rectOverlapsNote(
     viewport: Viewport.Type,
     pixelsPerTick: number,
     pixelsPerPitch: number,
+    maxPitch: number,
 ): NoteHit {
     let result: NoteHit = NoteHit.None;
 
@@ -220,7 +222,7 @@ export function rectOverlapsNote(
             pitchCount === 1 ? pitches![0].value : 0
         );
 
-        const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, actualPitch);
+        const y0: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, actualPitch);
         const y1: number = y0 + pixelsPerPitch;
 
         if (rangesOverlap(rectX0, rectX1, x0, x1) && rangesOverlap(rectY0, rectY1, y0, y1)) {
@@ -229,7 +231,7 @@ export function rectOverlapsNote(
     } else {
         BentNoteIterator.setup(it, start, end, pitch, pitches, BentNoteIterator.Mode.Forward);
         while (!BentNoteIterator.isDone(it)) {
-            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch);
+            BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const segmentDuration: number = it.pitchTime1 - it.pitchTime0;
             if (segmentDuration <= 0) {
                 BentNoteIterator.advance(it);

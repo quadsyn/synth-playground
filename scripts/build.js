@@ -248,6 +248,9 @@ async function bundleApplication(
         minify: shouldMinify,
         outdir: path.join(outputDirectory, appName),
         plugins: [inlineWorkerPlugin(shouldMinify, skipTypeChecking)],
+        loader: {
+            ".svg": "dataurl",
+        },
     });
 }
 

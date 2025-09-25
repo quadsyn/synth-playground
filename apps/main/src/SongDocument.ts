@@ -724,6 +724,144 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
+    public insertNoteVolumePoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointTime: number,
+        pointValue: number,
+    ): Breakpoint.Type {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.volumeEnvelope == null) {
+            note.volumeEnvelope = [];
+        }
+        // @TODO: Constrain time and value.
+        const newPoint: Breakpoint.Type = Breakpoint.make(pointTime, pointValue);
+        note.volumeEnvelope.push(newPoint);
+        note.volumeEnvelope.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+
+        return newPoint;
+    }
+
+    public insertNotePitchPoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointTime: number,
+        pointValue: number,
+    ): Breakpoint.Type {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.pitchEnvelope == null) {
+            note.pitchEnvelope = [];
+        }
+        // @TODO: Constrain time and value.
+        const newPoint: Breakpoint.Type = Breakpoint.make(pointTime, pointValue);
+        note.pitchEnvelope.push(newPoint);
+        note.pitchEnvelope.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+
+        return newPoint;
+    }
+
+    public removeNoteVolumePoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointIndex: number,
+    ): void {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.volumeEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        note.volumeEnvelope.splice(pointIndex, 1);
+        note.volumeEnvelope.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting if not needed. Reindexing is always necessary
+        // though, I think.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+    }
+
+    public removeNotePitchPoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointIndex: number,
+    ): void {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.pitchEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        note.pitchEnvelope.splice(pointIndex, 1);
+        note.pitchEnvelope.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting if not needed. Reindexing is always necessary
+        // though, I think.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+    }
+
+    public changeNoteVolumePoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointIndex: number,
+        pointTime: number,
+        pointValue: number,
+    ): void {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.volumeEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        note.volumeEnvelope![pointIndex].time = pointTime;
+        note.volumeEnvelope![pointIndex].value = pointValue;
+        // @TODO: Skip this when the move is bounded.
+        note.volumeEnvelope!.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting if not needed. Reindexing is always necessary
+        // though, I think.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+    }
+
+    public changeNotePitchPoint(
+        pattern: Pattern.Type,
+        note: Note.Type,
+        pointIndex: number,
+        pointTime: number,
+        pointValue: number,
+    ): void {
+        // @TODO: I need to check if the pattern is still in the song.
+
+        if (note.pitchEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        note.pitchEnvelope![pointIndex].time = pointTime;
+        note.pitchEnvelope![pointIndex].value = pointValue;
+        // @TODO: Skip this when the move is bounded.
+        note.pitchEnvelope!.sort(Breakpoint.byTimeAscending);
+
+        // @TODO: Skip sorting if not needed. Reindexing is always necessary
+        // though, I think.
+        this.markPatternAsDirty(pattern);
+        this.markProjectAsDirty();
+    }
+
     private _createPatternInfoCacheFor(song: Song.Type, pattern: Pattern.Type): void {
         const patternInfo: PatternInfo = {
             pitchBounds: new NotePitchBoundsTracker(song.maxPitch),

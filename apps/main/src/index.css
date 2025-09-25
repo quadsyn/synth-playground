@@ -133,6 +133,7 @@ kbd {
 }
 
 .tree-view-item[data-has-children="true"][data-is-open="true"]::before {
+    /* @TODO: Find a way to move this to ./ui/icons if kept */
     /* From https://github.com/microsoft/fluentui-system-icons */
     /* background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M27.5281 40.7723C25.9112 43.7622 21.6128 43.7384 20.0291 40.7308L4.49524 11.2291C3.00505 8.39896 5.0573 4.99902 8.25579 4.99902L39.7434 4.99903C42.9626 4.99903 45.0131 8.43896 43.4818 11.2706L27.5281 40.7723Z" fill="rgb(255, 255, 255)" /></svg>'); */
     background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.25 3C3.45507 3 2 4.45507 2 6.25V15.1618L4.04451 11.6206C4.8037 10.3057 6.20674 9.49561 7.72512 9.49561L20 9.49561V8.75C20 6.95507 18.5449 5.5 16.75 5.5H11.5607L9.71967 3.65901C9.29771 3.23705 8.72542 3 8.12868 3H5.25ZM7.72512 10.9956L20.7445 10.9956C22.4765 10.9956 23.5591 12.8706 22.6931 14.3706L19.6569 19.6294C19.1657 20.4802 18.2578 21.0044 17.2753 21.0044H4.25594C2.52389 21.0044 1.44136 19.1294 2.30738 17.6294L5.34355 12.3706C5.83479 11.5198 6.74264 10.9956 7.72512 10.9956Z" fill="rgb(255, 255, 255)" /></svg>');
@@ -144,6 +145,7 @@ kbd {
 }
 
 .tree-view-item[data-has-children="true"][data-is-open="false"]::before {
+    /* @TODO: Find a way to move this to ./ui/icons if kept */
     /* From https://github.com/microsoft/fluentui-system-icons */
     /* background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M40.7733 20.4713C43.7632 22.0881 43.7394 26.3866 40.7318 27.9702L11.2301 43.5041C8.39994 44.9943 5 42.942 5 39.7435L5 8.25595C5 5.03672 8.43993 2.98626 11.2716 4.51756L40.7733 20.4713Z" fill="rgb(255, 255, 255)" /></svg>'); */
     background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 8V6.25C2 4.45507 3.45507 3 5.25 3H8.12868C8.72542 3 9.29771 3.23705 9.71967 3.65901L11.25 5.18934L8.65901 7.78033C8.51836 7.92098 8.32759 8 8.12868 8H2ZM2 9.5V17.75C2 19.5449 3.45507 21 5.25 21H18.75C20.5449 21 22 19.5449 22 17.75V8.75C22 6.95507 20.5449 5.5 18.75 5.5H13.0607L9.71967 8.84099C9.29771 9.26295 8.72542 9.5 8.12868 9.5H2Z" fill="rgb(255, 255, 255)" /></svg>');

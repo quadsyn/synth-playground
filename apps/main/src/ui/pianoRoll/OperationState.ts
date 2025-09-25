@@ -1,4 +1,5 @@
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
+import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
 import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 
@@ -21,9 +22,26 @@ export interface OperationState {
     notePitchHandleSizeFactor: number;
 
     /**
+     * This will be multiplied with the size of the relevant handle.
+     */
+    noteEnvelopePointSizeFactor: number;
+
+    /**
      * In pulses per quarter note.
      */
     lastCommittedNoteDuration: number;
+
+    /**
+     * This is a reference - **always** make a copy with `Breakpoint.cloneArray`
+     * if you're going to use it with another note.
+     */
+    lastCommittedNoteVolumeEnvelope: Breakpoint.Type[] | null;
+
+    /**
+     * This is a reference - **always** make a copy with `Breakpoint.cloneArray`
+     * if you're going to use it with another note.
+     */
+    lastCommittedNotePitchEnvelope: Breakpoint.Type[] | null;
 
     boxSelectionActive: boolean;
     boxSelectionX0: number;

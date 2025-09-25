@@ -167,3 +167,20 @@ export function evaluateNoteEnvelope(
 
     return value;
 }
+
+// Sort comparator, as used by Array.prototype.sort.
+export function byTimeAscending(a: Type, b: Type): number {
+    return a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+}
+
+export function cloneArray(source: Type[]): Type[] {
+    const destination: Type[] = [];
+
+    const count: number = source.length;
+    for (let index: number = 0; index < count; index++) {
+        const point: Type = source[index];
+        destination.push(make(point.time, point.value));
+    }
+
+    return destination;
+}

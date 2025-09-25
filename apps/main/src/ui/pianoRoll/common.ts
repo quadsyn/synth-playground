@@ -1,3 +1,4 @@
+import { clamp } from "@synth-playground/common/math.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
@@ -8,9 +9,14 @@ export function tickToX(viewport: Viewport.Type, tickWidth: number, tick: number
 }
 
 /** Returns the top of the note. Add `pixelsPerPitch` to get the bottom. */
-export function pitchToY(canvasHeight: number, viewport: Viewport.Type, noteHeight: number, pitch: number): number {
-    // @TODO: Clamp this.
-    return canvasHeight - (pitch - viewport.y0 + 1) * noteHeight;
+export function pitchToY(
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    noteHeight: number,
+    maxPitch: number,
+    pitch: number,
+): number {
+    return canvasHeight - (clamp(pitch, 0, maxPitch) - viewport.y0 + 1) * noteHeight;
 }
 
 export function noteIsFlat(noteDrawingStyle: NoteDrawingStyle, note: Note.Type): boolean {
