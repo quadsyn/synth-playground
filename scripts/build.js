@@ -222,6 +222,7 @@ function inlineWorkerPlugin(shouldMinify, skipTypeChecking) {
                     entryPoints: [args.pluginData.realPath],
                     bundle: true,
                     minify: shouldMinify,
+                    sourcemap: shouldMinify ? undefined : 'inline',
                     write: false,
                 });
                 const contents = outputFiles[0].contents;
@@ -246,6 +247,7 @@ async function bundleApplication(
         entryPoints: [path.join(appDirectory, entryPoint)],
         bundle: true,
         minify: shouldMinify,
+        sourcemap: shouldMinify ? undefined : 'inline',
         outdir: path.join(outputDirectory, appName),
         plugins: [inlineWorkerPlugin(shouldMinify, skipTypeChecking)],
         loader: {
