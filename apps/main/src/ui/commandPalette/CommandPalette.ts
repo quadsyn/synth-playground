@@ -194,6 +194,9 @@ export class CommandPalette implements Component {
                 score = results.score;
                 highlightRanges = results.ranges;
             }
+            if (action === this._app.ui.inputManager.getLastExecutedAction()) {
+                score = Infinity;
+            }
             if (score === 0) {
                 continue;
             }
@@ -329,6 +332,9 @@ class Item implements IListItem {
     private _shortcutContainer: HTMLDivElement;
     private _highlightRanges: HighlightRange[] | undefined;
     private _highlightingIsDirty: boolean;
+    private _recentlyUsedIndicator: HTMLDivElement;
+    private _recentlyUsed: boolean;
+    private _renderedRecentlyUsed: boolean | null;
 
     constructor(height: number) {
         this._text = "";
@@ -341,6 +347,8 @@ class Item implements IListItem {
         this._renderedHeight = height;
         this._highlightRanges = undefined;
         this._highlightingIsDirty = false;
+        this._recentlyUsed = false;
+        this._renderedRecentlyUsed = null;
 
         // @TODO: Maybe find another way to vertically center the text? Maybe
         // not, maybe the extra wrapper would come from the user, which could
@@ -374,6 +382,15 @@ class Item implements IListItem {
             `,
         });
         this.element.appendChild(this._shortcutContainer);
+
+        this._recentlyUsedIndicator = H("div", {
+            style: `
+                display: none;
+                margin: 0 0 0 0.5em;
+                opacity: 0.5;
+            `,
+        }, "recently used");
+        this.element.appendChild(this._recentlyUsedIndicator);
 
         this._selected = false;
         this._renderedSelected = this._selected;
@@ -454,6 +471,13 @@ class Item implements IListItem {
             }
             this._renderedShortcut = this._shortcut;
         }
+
+        if (this._recentlyUsed !== this._renderedRecentlyUsed) {
+            this._recentlyUsedIndicator.style.display = (
+                this._recentlyUsed ? "" : "none"
+            );
+            this._renderedRecentlyUsed = this._recentlyUsed;
+        }
     }
 
     public setHeight(height: number): void {
@@ -498,6 +522,10 @@ class Item implements IListItem {
         }
         this._highlightRanges = highlightRanges;
     }
+
+    public setRecentlyUsed(value: boolean): void {
+        this._recentlyUsed = value;
+    }
 }
 
 class List extends VirtualizedList<FilteredAction> {
@@ -517,6 +545,7 @@ class List extends VirtualizedList<FilteredAction> {
             item.setShortcut(data.shortcut);
             item.setVisible(true);
             item.setSelected(dataIndex === this._selectionIndex);
+            item.setRecentlyUsed(data.score === Infinity);
         } else {
             item.setVisible(false);
         }

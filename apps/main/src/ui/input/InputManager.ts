@@ -109,6 +109,8 @@ export class InputManager {
 
     private _shouldBlockActions: () => boolean;
 
+    private _lastExecutedAction: ActionKind;
+
     constructor(
         rootElement: HTMLElement,
         onGlobalAction: OnAction,
@@ -152,6 +154,8 @@ export class InputManager {
             gesture1: GestureKind.None,
         };
         this._onUpdateOperation = null;
+
+        this._lastExecutedAction = ActionKind.None;
     }
 
     public registerListeners(): void {
@@ -337,6 +341,10 @@ export class InputManager {
         this._bindingsAreDirty = false;
     }
 
+    public getLastExecutedAction(): ActionKind {
+        return this._lastExecutedAction;
+    }
+
     public getShortcutsByAction(action: ActionKind): EncodedGesture[] | undefined {
         // @NOTE: This may be slow, so after changing the bindings this probably
         // should be eagerly recomputed as soon as possible instead of here.
@@ -504,6 +512,11 @@ export class InputManager {
         // selection in progress, and somehow still execute an action like play.
         // Operations eat all inputs here, so you can't open the command palette.
         if (this.hasActiveOperationHandler()) return ActionResponse.NotApplicable;
+
+        // @TODO: Since the command palette is the only caller of executeAction,
+        // I'm just storing this here right now, but it may have to be a more
+        // nuanced thing later on.
+        this._lastExecutedAction = kind;
 
         // Note that tool-specific actions won't be reachable this way. I think
         // that's okay though, that probably shouldn't be happening anyway.
