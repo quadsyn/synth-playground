@@ -175,10 +175,11 @@ export class Piano implements Component {
         const cursorPitch: number = clamp((
             viewportY0 + remap(mouseY, height, 0, 0, viewportHeight)
         ) | 0, 0, this._maxPitch);
+        if (this._cursorPitch != null) {
+            this._onKeyUp(this._cursorPitch);
+            this._cursorPitch = null;
+        }
         if (this._cursorPitch !== cursorPitch) {
-            if (this._cursorPitch != null) {
-                this._onKeyUp(this._cursorPitch);
-            }
             this._onKeyDown(cursorPitch);
         }
         this._cursorPitch = cursorPitch;
