@@ -57,7 +57,7 @@ async function build(
 ) {
     await copyPublicFiles(shouldMinify, outputDirectory, ".");
     for (const appDirectory of appDirectories) {
-        const name = appDirectory.split("/").at(-1);
+        const name = appDirectory.split(path.sep).at(-1);
         await copyPublicFiles(
             shouldMinify,
             path.join(outputDirectory, name),
@@ -131,7 +131,7 @@ async function copyLanguageFiles(outputDirectory, inputDirectory) {
 async function checkTypes(appDirectory) {
     try {
         await new Promise((resolve, reject) => {
-            const tsc = spawn("npx", ["tsc", "--noEmit", "-p", appDirectory], {
+            const tsc = spawn("npx", ["tsc", "--noEmit", "-p", `"${appDirectory}"`], {
                 shell: true,
             });
             tsc.stdout.on("data", (data) => {

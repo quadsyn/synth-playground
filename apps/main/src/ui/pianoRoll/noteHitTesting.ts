@@ -6,7 +6,9 @@ import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 import * as BentNoteIterator from "./BentNoteIterator.js";
 import { tickToX, pitchToY, noteIsFlat } from "./common.js";
 
-// @TODO: Maybe I should just pass the operation state to these...
+// @TODO:
+// - Maybe I should just pass the operation state to these...
+// - Move the pitch and volume envelope point hit testing to here.
 
 export const enum NoteHit {
     None   = 0b00000,
@@ -233,6 +235,11 @@ export function rectOverlapsNote(
         while (!BentNoteIterator.isDone(it)) {
             BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const segmentDuration: number = it.pitchTime1 - it.pitchTime0;
+            // @TODO: Actually, if the segment has a duration of 0, then we
+            // should test it as if it was a line or point. It's weird to have
+            // a note with instantaneous pitch changes not be included in box
+            // selections when you pass the selection box through certain parts
+            // of them.
             if (segmentDuration <= 0) {
                 BentNoteIterator.advance(it);
                 continue;

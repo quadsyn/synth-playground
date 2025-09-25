@@ -27,8 +27,8 @@ export function noteIsFlat(noteDrawingStyle: NoteDrawingStyle, note: Note.Type):
         || (
             noteDrawingStyle === NoteDrawingStyle.Bent
             && pitchEnvelopeLength <= 1
-            // The note could still be entirely flat, but that could take more
-            // time overall, as that check is not free. So I won't bother.
+            // The note could still be entirely flat, but that check is probably
+            // not free once you have a lot of notes, so I won't bother.
         )
     );
 }

@@ -5,6 +5,8 @@ import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 import * as BentNoteIterator from "./BentNoteIterator.js";
 import { tickToX, pitchToY } from "./common.js";
 
+// @TODO: Move the pitch and volume envelope point drawing to here.
+
 /** The return value indicates whether the background was drawn or not. */
 export function drawNoteBackgroundPath(
     it: BentNoteIterator.Type,
