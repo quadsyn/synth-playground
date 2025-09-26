@@ -34,7 +34,12 @@ import { MoveNotePitchPointBounded } from "./operations/MoveNotePitchPointBounde
 import { SelectBox } from "./operations/SelectBox.js";
 import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 import * as BentNoteIterator from "./BentNoteIterator.js";
-import { NoteHit, pointOverlapsNote } from "./noteHitTesting.js";
+import {
+    NoteHit,
+    pointOverlapsNote,
+    pointOverlapsVolumeEnvelopePoint,
+    pointOverlapsPitchEnvelopePoint,
+} from "./noteHitTesting.js";
 import {
     drawNoteBackground,
     drawNoteFlash,
@@ -43,10 +48,27 @@ import {
     drawNoteLeftHandle,
     drawNoteRightHandle,
     drawNoteTopHandle,
+    drawNoteVolumeEnvelopePoints,
     drawNoteBottomHandle,
+    drawNotePitchEnvelopePoints,
 } from "./notePainting.js";
-import { tickToX, pitchToY, noteIsFlat } from "./common.js";
+import { tickToX, noteIsFlat } from "./common.js";
 import { type PatternInfo } from "../../data/PatternInfo.js";
+import {
+    gridBackgroundColor,
+    gridOctaveColor,
+    gridFifthColor,
+    gridLineColor,
+    noteBackgroundColor,
+    noteForegroundColor,
+    noteEdgeHoverColor,
+    noteEnvelopePointColor,
+    selectedNoteLineColor,
+    boxSelectionLineColor,
+    boxSelectionFillColor,
+    noteFlashColorTable,
+    playheadColor,
+} from "./colors.js";
 
 export class PianoRoll implements Component {
     public element: HTMLDivElement;
@@ -432,71 +454,35 @@ export class PianoRoll implements Component {
         const note: Note.Type = this._pattern!.notes[this._hoveringNoteIndex];
 
         if ((this._hoveringNoteHit & NoteHit.Top) !== 0) {
-            const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
-            for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
-                const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
-                const pointTime: number = point.time;
-                const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
-                const clampedPitchIndex1: number = pitchIndex1 > -1 ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
-                const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
-                const pitch1Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
-                const pitch0Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].value : 0;
-                const pitch1Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
-                const pitch0Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].time : 0;
-                const pitch1: number = note.pitch + pitch1Value;
-                const pitch0: number = note.pitch + pitch0Value;
-                const pitch0Y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch0);
-                const pitch1Y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch1);
-                const t: number = (
-                    pitchIndex1 <= -1
-                    ? 0 // In this case, there's no pitch envelope.
-                    : pitch0Time === pitch1Time
-                        ? 0 // In this case, the pitch bent segment has a duration of 0.
-                        : unlerp(pointTime, pitch0Time, pitch1Time)
-                );
-                const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
-                const baseR: number = (pixelsPerPitch / this._state.noteVolumeHandleSizeFactor) * 0.5;
-                const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
-                const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
-                const distanceX: number = mouseX - x;
-                const distanceY: number = mouseY - y;
-                const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
-                if (distanceSquared < r * r) {
-                    this._hoveringNoteVolumePointIndex = pointIndex;
-                    break;
-                }
-                if (x + r < mouseX) {
-                    // Stop here, since any other points must be entirely to the
-                    // left of mouseX now.
-                    break;
-                }
-            }
+            this._hoveringNoteVolumePointIndex = pointOverlapsVolumeEnvelopePoint(
+                mouseX,
+                mouseY,
+                note,
+                this._state.noteVolumeHandleSizeFactor,
+                this._state.noteEnvelopePointSizeFactor,
+                canvasWidth,
+                canvasHeight,
+                this._state.viewport,
+                pixelsPerTick,
+                pixelsPerPitch,
+                maxPitch,
+            );
         }
 
         if ((this._hoveringNoteHit & NoteHit.Bottom) !== 0) {
-            const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
-            for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
-                const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
-                const pointTime: number = point.time;
-                const pointValue: number = point.value;
-                const pitch: number = note.pitch + pointValue;
-                const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
-                const baseR: number = (pixelsPerPitch / this._state.notePitchHandleSizeFactor) * 0.5;
-                const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
-                const y: number = pitchToY(canvasHeight, this._state.viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
-                const distanceX: number = mouseX - x;
-                const distanceY: number = mouseY - y;
-                const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
-                if (distanceSquared < r * r) {
-                    this._hoveringNotePitchPointIndex = pointIndex;
-                    break;
-                }
-                if (x + r < mouseX) {
-                    // Stop here, since any other points must be entirely to the
-                    // left of mouseX now.
-                    break;
-                }
-            }
+            this._hoveringNotePitchPointIndex = pointOverlapsPitchEnvelopePoint(
+                mouseX,
+                mouseY,
+                note,
+                this._state.notePitchHandleSizeFactor,
+                this._state.noteEnvelopePointSizeFactor,
+                canvasWidth,
+                canvasHeight,
+                this._state.viewport,
+                pixelsPerTick,
+                pixelsPerPitch,
+                maxPitch,
+            );
         }
     }
 
@@ -808,12 +794,12 @@ export class PianoRoll implements Component {
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
 
-        context.fillStyle = "#303030";
+        context.fillStyle = gridBackgroundColor;
         context.fillRect(0, 0, width, height);
 
         {
             // Octaves.
-            context.fillStyle = "#886644";
+            context.fillStyle = gridOctaveColor;
 
             let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
             while (worldY < viewportY1) {
@@ -833,7 +819,7 @@ export class PianoRoll implements Component {
 
         {
             // Fifths.
-            context.fillStyle = "#446688";
+            context.fillStyle = gridFifthColor;
 
             let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
             while (worldY < viewportY1) {
@@ -853,7 +839,7 @@ export class PianoRoll implements Component {
 
         {
             // Pitch grid.
-            context.strokeStyle = "#000000";
+            context.strokeStyle = gridLineColor;
 
             let worldY: number = Math.max(0, Math.floor(viewportY0) - 1);
             while (worldY < viewportY1) {
@@ -940,9 +926,6 @@ export class PianoRoll implements Component {
             selectedNotes = this._activeOperation.notes;
         }
 
-        context.strokeStyle = "#000000";
-        context.lineWidth = 1;
-
         offscreenNotesContext.clearRect(0, 0, width, this._timeRuler.size + this._height + this._timeScrollBar.size);
         context.clearRect(0, 0, width, height);
 
@@ -963,7 +946,7 @@ export class PianoRoll implements Component {
                     return;
                 }
 
-                context.fillStyle = "#0c6735";
+                context.fillStyle = noteBackgroundColor;
                 const backgroundIsVisible: boolean = drawNoteBackground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
@@ -980,7 +963,7 @@ export class PianoRoll implements Component {
                     note.pitchEnvelope,
                     note.volumeEnvelope,
                 );
-                context.fillStyle = "#17d15b";
+                context.fillStyle = noteForegroundColor;
                 drawNoteForeground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
@@ -1005,7 +988,7 @@ export class PianoRoll implements Component {
                 );
 
                 if (!noteIsVisible) {
-                    offscreenNotesContext.fillStyle = "#17d15b";
+                    offscreenNotesContext.fillStyle = noteForegroundColor;
                     const x0: number = tickToX(this._state.viewport, pixelsPerTick, note.start);
                     const x1: number = tickToX(this._state.viewport, pixelsPerTick, note.end);
                     const x: number = x0;
@@ -1022,7 +1005,7 @@ export class PianoRoll implements Component {
         );
         if (selectedNotes != null && this._activeOperation != null) {
             for (const [_, transform] of selectedNotes) {
-                context.fillStyle = "#0c6735";
+                context.fillStyle = noteBackgroundColor;
                 drawNoteBackground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
@@ -1039,7 +1022,7 @@ export class PianoRoll implements Component {
                     transform.newPitchEnvelope,
                     transform.newVolumeEnvelope,
                 );
-                context.fillStyle = "#17d15b";
+                context.fillStyle = noteForegroundColor;
                 drawNoteForeground(
                     this._bentNoteIterator,
                     this._state.noteDrawingStyle,
@@ -1094,9 +1077,8 @@ export class PianoRoll implements Component {
             return;
         }
 
-        context.fillStyle = "rgba(255, 255, 255, 0.8)";
-        context.strokeStyle = "#ffffff";
-        context.lineWidth = 2;
+        context.strokeStyle = selectedNoteLineColor;
+        context.lineWidth = selectedNoteLineWidth;
 
         const selectedNoteCount: number = this._state.selectedNotes.length;
         if (selectedNoteCount > 0) {
@@ -1148,7 +1130,8 @@ export class PianoRoll implements Component {
             const w: number = x1 - x0;
             const h: number = y1 - y0;
 
-            context.fillStyle = "rgba(255, 255, 255, 0.2)";
+            context.strokeStyle = boxSelectionLineColor;
+            context.fillStyle = boxSelectionFillColor;
             context.fillRect(x, y, w, h);
             context.strokeRect(x, y, w, h);
         }
@@ -1161,7 +1144,7 @@ export class PianoRoll implements Component {
             const note: Note.Type = this._pattern.notes[this._hoveringNoteIndex];
 
             if (this._hoveringNoteHit !== NoteHit.None) {
-                context.fillStyle = "rgba(255, 255, 255, 0.4)";
+                context.fillStyle = noteEdgeHoverColor;
             }
 
             const hoveringOverStartOfNote: boolean = (this._hoveringNoteHit & NoteHit.Left) !== 0;
@@ -1188,47 +1171,26 @@ export class PianoRoll implements Component {
                     note.volumeEnvelope,
                 );
 
-                context.lineWidth = 1;
-                context.strokeStyle = "rgb(255, 255, 255)";
-                context.fillStyle = "rgb(255, 255, 255)";
-                const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
-                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
-                    const hovering: boolean = pointIndex === this._hoveringNoteVolumePointIndex;
-                    const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
-                    const pointTime: number = point.time;
-                    if (note.start + pointTime > note.end) {
-                        break;
-                    }
-                    const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
-                    const clampedPitchIndex1: number = pitchIndex1 > -1 ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
-                    const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
-                    const pitch1Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
-                    const pitch0Value: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].value : 0;
-                    const pitch1Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
-                    const pitch0Time: number = pitchIndex1 > -1 ? note.pitchEnvelope![pitchIndex0].time : 0;
-                    const pitch1: number = note.pitch + pitch1Value;
-                    const pitch0: number = note.pitch + pitch0Value;
-                    const pitch0Y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch0);
-                    const pitch1Y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch1);
-                    const t: number = (
-                        pitchIndex1 <= -1
-                        ? 0 // In this case, there's no pitch envelope.
-                        : pitch0Time === pitch1Time
-                            ? 0 // In this case, the pitch bent segment has a duration of 0.
-                            : unlerp(pointTime, pitch0Time, pitch1Time)
-                    );
-                    const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
-                    const baseR: number = (pixelsPerPitch / this._state.noteVolumeHandleSizeFactor) * 0.5;
-                    const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
-                    const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
-                    context.beginPath();
-                    context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
-                    if (hovering) {
-                        context.fill();
-                    } else {
-                        context.stroke();
-                    }
-                }
+                context.lineWidth = 2;
+                context.strokeStyle = noteEnvelopePointColor;
+                context.fillStyle = noteEnvelopePointColor;
+                drawNoteVolumeEnvelopePoints(
+                    context,
+                    width,
+                    height,
+                    this._state.viewport,
+                    pixelsPerTick,
+                    pixelsPerPitch,
+                    maxPitch,
+                    this._state.noteVolumeHandleSizeFactor,
+                    this._state.noteEnvelopePointSizeFactor,
+                    note,
+                    this._hoveringNoteVolumePointIndex,
+                );
+                // @TODO: If no point is under the mouse, then show the point
+                // that would be created. This is useful because when we quantize
+                // to ppqn, the point may end up further to the left or right
+                // where we'd expect.
             } else if (hoveringOverBottomOfNote) {
                 drawNoteBottomHandle(
                     this._bentNoteIterator,
@@ -1248,31 +1210,26 @@ export class PianoRoll implements Component {
                     note.volumeEnvelope,
                 );
 
-                context.lineWidth = 1;
-                context.strokeStyle = "rgb(255, 255, 255)";
-                context.fillStyle = "rgb(255, 255, 255)";
-                const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
-                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
-                    const hovering: boolean = pointIndex === this._hoveringNotePitchPointIndex;
-                    const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
-                    const pointTime: number = point.time;
-                    if (note.start + pointTime > note.end) {
-                        break;
-                    }
-                    const pointValue: number = point.value;
-                    const pitch: number = note.pitch + pointValue;
-                    const x: number = tickToX(this._state.viewport, pixelsPerTick, note.start + pointTime);
-                    const baseR: number = (pixelsPerPitch / this._state.notePitchHandleSizeFactor) * 0.5;
-                    const r: number = baseR * this._state.noteEnvelopePointSizeFactor;
-                    const y: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
-                    context.beginPath();
-                    context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
-                    if (hovering) {
-                        context.fill();
-                    } else {
-                        context.stroke();
-                    }
-                }
+                context.lineWidth = 2;
+                context.strokeStyle = noteEnvelopePointColor;
+                context.fillStyle = noteEnvelopePointColor;
+                drawNotePitchEnvelopePoints(
+                    context,
+                    width,
+                    height,
+                    this._state.viewport,
+                    pixelsPerTick,
+                    pixelsPerPitch,
+                    maxPitch,
+                    this._state.notePitchHandleSizeFactor,
+                    this._state.noteEnvelopePointSizeFactor,
+                    note,
+                    this._hoveringNotePitchPointIndex,
+                );
+                // @TODO: If no point is under the mouse, then show the point
+                // that would be created. This is useful because when we quantize
+                // to ppqn, the point may end up further to the left or right
+                // where we'd expect.
             } else if (hoveringOverStartOfNote) {
                 drawNoteLeftHandle(
                     this._bentNoteIterator,
@@ -1349,8 +1306,8 @@ export class PianoRoll implements Component {
         const maxPitch: number = this._doc.project.song.maxPitch;
 
         context.clearRect(0, 0, width, height);
-        context.strokeStyle = "#ffffff";
-        context.lineWidth = 2;
+        context.strokeStyle = playheadColor;
+        context.lineWidth = playheadWidth;
         if (this._playheadIsVisible && playhead != null) {
             const x: number = (playhead - viewportX0) * pixelsPerTick;
             context.beginPath();
@@ -1382,6 +1339,7 @@ export class PianoRoll implements Component {
                             note.pitch,
                             note.pitchEnvelope,
                             note.volumeEnvelope,
+                            noteFlashColorTable,
                         );
                     },
                 );
@@ -1424,7 +1382,7 @@ export class PianoRoll implements Component {
             const maxViewportHeight: number = this._state.viewport.maxHeight;
 
             context.clearRect(0, 0, width, height);
-            context.fillStyle = "#886644";
+            context.fillStyle = gridOctaveColor;
             let worldY: number = 0;
             while (worldY < maxViewportHeight) {
                 const screenY: number = remap(worldY, 0, maxViewportHeight, height, 0);
@@ -2757,6 +2715,9 @@ export class PianoRoll implements Component {
         this._doc.stopPianoNote(pitch);
     };
 }
+
+const playheadWidth: number = 2;
+const selectedNoteLineWidth: number = 2;
 
 interface HoverQueryResult {
     index: number;

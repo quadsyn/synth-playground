@@ -3,6 +3,11 @@ import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { remap, clamp } from "@synth-playground/common/math.js";
 import * as Viewport from "../common/Viewport.js";
+import {
+    pianoNaturalKeyColor,
+    pianoAccidentalKeyColor,
+    noteForegroundColor,
+} from "./colors.js";
 
 export type PianoOnKeyDownCallback = (pitch: number) => void;
 export type PianoOnKeyUpCallback = (pitch: number) => void;
@@ -132,10 +137,10 @@ export class Piano implements Component {
             const screenY: number = remap(worldY, viewportY0, viewportY1, height, 0);
             context.fillStyle = (
                 worldY === cursorPitch
-                ? "#17d15b"
+                ? noteForegroundColor
                 : keyColors[worldY % 12] === 0
-                    ? "#a5a5a5"
-                    : "#131313"
+                    ? pianoNaturalKeyColor
+                    : pianoAccidentalKeyColor
             );
             const x: number = 0;
             const w: number = width;

@@ -1,11 +1,10 @@
 import { lerp, unlerp, remap, clamp, rangesOverlap } from "@synth-playground/common/math.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
+import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Viewport from "../common/Viewport.js";
 import { NoteDrawingStyle } from "./NoteDrawingStyle.js";
 import * as BentNoteIterator from "./BentNoteIterator.js";
 import { tickToX, pitchToY } from "./common.js";
-
-// @TODO: Move the pitch and volume envelope point drawing to here.
 
 /** The return value indicates whether the background was drawn or not. */
 export function drawNoteBackgroundPath(
@@ -507,6 +506,7 @@ export function drawNoteFlash(
     pitch: number,
     pitchEnvelope: Breakpoint.Type[] | null,
     volumeEnvelope: Breakpoint.Type[] | null,
+    colorTable: string[],
 ): void {
     const progress: number = clamp(unlerp(playhead, start, end), 0, 1);
     const alpha: number = 1.0 - progress;
@@ -527,9 +527,9 @@ export function drawNoteFlash(
         pitchEnvelope,
         volumeEnvelope,
     )) {
-        // @TODO: Cache these colors. Although this is rather
-        // slow regardless.
-        context.fillStyle = "rgba(255, 255, 255, " + alpha + ")";
+        const colorTableSize: number = colorTable.length;
+        const colorIndex: number = clamp((alpha * colorTableSize) | 0, 0, colorTableSize - 1);
+        context.fillStyle = colorTable[colorIndex];
         context.fill();
     }
 }
@@ -822,6 +822,64 @@ export function drawNoteTopHandle(
     }
 }
 
+export function drawNoteVolumeEnvelopePoints(
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    maxPitch: number,
+    handleSizeFactor: number,
+    envelopePointSizeFactor: number,
+    note: Note.Type,
+    hoveringPointIndex: number,
+): void {
+    const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
+    const hasPitchEnvelope: boolean = note.pitchEnvelope != null && note.pitchEnvelope.length > 0;
+    for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+        const hovering: boolean = pointIndex === hoveringPointIndex;
+        const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
+        const pointTime: number = point.time;
+
+        // @TODO: Hmm, should this be >=?
+        if (note.start + pointTime > note.end) {
+            break;
+        }
+
+        const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
+        const clampedPitchIndex1: number = hasPitchEnvelope ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
+        const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
+        const pitch1Value: number = hasPitchEnvelope ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
+        const pitch0Value: number = hasPitchEnvelope ? note.pitchEnvelope![pitchIndex0].value : 0;
+        const pitch1Time: number = hasPitchEnvelope ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
+        const pitch0Time: number = hasPitchEnvelope ? note.pitchEnvelope![pitchIndex0].time : 0;
+        const pitch1: number = note.pitch + pitch1Value;
+        const pitch0: number = note.pitch + pitch0Value;
+        const pitch0Y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch0);
+        const pitch1Y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch1);
+        const t: number = (
+            pitchIndex1 <= -1
+            ? 0 // In this case, there's no pitch envelope.
+            : pitch0Time === pitch1Time
+                ? 0 // In this case, the pitch bent segment has a duration of 0.
+                : unlerp(pointTime, pitch0Time, pitch1Time)
+        );
+        const x: number = tickToX(viewport, pixelsPerTick, note.start + pointTime);
+        const baseR: number = (pixelsPerPitch / handleSizeFactor) * 0.5;
+        const r: number = baseR * envelopePointSizeFactor;
+        const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
+
+        context.beginPath();
+        context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
+        if (hovering) {
+            context.fill();
+        } else {
+            context.stroke();
+        }
+    }
+}
+
 export function drawNoteBottomHandle(
     it: BentNoteIterator.Type,
     style: NoteDrawingStyle,
@@ -923,5 +981,45 @@ export function drawNoteBottomHandle(
         BentNoteIterator.teardown(it);
         context.closePath();
         context.fill();
+    }
+}
+
+export function drawNotePitchEnvelopePoints(
+    context: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    maxPitch: number,
+    handleSizeFactor: number,
+    envelopePointSizeFactor: number,
+    note: Note.Type,
+    hoveringPointIndex: number,
+): void {
+    const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
+    for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+        const hovering: boolean = pointIndex === hoveringPointIndex;
+        const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
+        const pointTime: number = point.time;
+
+        if (note.start + pointTime > note.end) {
+            break;
+        }
+
+        const pointValue: number = point.value;
+        const pitch: number = note.pitch + pointValue;
+        const x: number = tickToX(viewport, pixelsPerTick, note.start + pointTime);
+        const baseR: number = (pixelsPerPitch / handleSizeFactor) * 0.5;
+        const r: number = baseR * envelopePointSizeFactor;
+        const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
+
+        context.beginPath();
+        context.arc(x, y, r * (hovering ? 1 : 0.5), 0, Math.PI * 2.0, false);
+        if (hovering) {
+            context.fill();
+        } else {
+            context.stroke();
+        }
     }
 }

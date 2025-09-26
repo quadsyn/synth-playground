@@ -1,4 +1,4 @@
-import { remap, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
+import { lerp, unlerp, remap, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
@@ -8,7 +8,6 @@ import { tickToX, pitchToY, noteIsFlat } from "./common.js";
 
 // @TODO:
 // - Maybe I should just pass the operation state to these...
-// - Move the pitch and volume envelope point hit testing to here.
 
 export const enum NoteHit {
     None   = 0b00000,
@@ -185,6 +184,127 @@ export function pointOverlapsNote(
     return result;
 }
 
+// @TODO: If I generalize the top and bottom handles so they can be used to edit
+// other note envelopes, I will need to base that on pointOverlapsVolumeEnvelopePoint,
+// for the bent drawing style, as the pitch bends are "dominant" in that case.
+
+/**
+ * For the bent drawing style.
+ *
+ * Returns the index of the matching envelope point, or -1 if none match.
+ */
+export function pointOverlapsVolumeEnvelopePoint(
+    pointX: number,
+    pointY: number,
+    note: Note.Type,
+    noteVolumeHandleSizeFactor: number,
+    noteEnvelopePointSizeFactor: number,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    maxPitch: number,
+): number {
+    let volumePointIndex: number = -1;
+
+    const hasPitchEnvelope: boolean = note.pitchEnvelope != null && note.pitchEnvelope.length > 0;
+    const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
+    for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+        const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
+        const pointTime: number = point.time;
+
+        const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
+        const clampedPitchIndex1: number = hasPitchEnvelope ? Math.min(pitchIndex1, note.pitchEnvelope!.length - 1) : 0;
+        const pitchIndex0: number = Math.max(0, pitchIndex1 - 1);
+        const pitch1Value: number = hasPitchEnvelope ? note.pitchEnvelope![clampedPitchIndex1].value : 0;
+        const pitch0Value: number = hasPitchEnvelope ? note.pitchEnvelope![pitchIndex0].value : 0;
+        const pitch1Time: number = hasPitchEnvelope ? note.pitchEnvelope![clampedPitchIndex1].time : 0;
+        const pitch0Time: number = hasPitchEnvelope ? note.pitchEnvelope![pitchIndex0].time : 0;
+        const pitch1: number = note.pitch + pitch1Value;
+        const pitch0: number = note.pitch + pitch0Value;
+        const pitch0Y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch0);
+        const pitch1Y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch1);
+        const t: number = (
+            pitchIndex1 <= -1
+            ? 0 // In this case, there's no pitch envelope.
+            : pitch0Time === pitch1Time
+                ? 0 // In this case, the pitch bent segment has a duration of 0.
+                : unlerp(pointTime, pitch0Time, pitch1Time)
+        );
+        const x: number = tickToX(viewport, pixelsPerTick, note.start + pointTime);
+        const baseR: number = (pixelsPerPitch / noteVolumeHandleSizeFactor) * 0.5;
+        const r: number = baseR * noteEnvelopePointSizeFactor;
+        const y: number = lerp(t, pitch0Y, pitch1Y) + baseR;
+
+        const distanceX: number = pointX - x;
+        const distanceY: number = pointY - y;
+        const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+        if (distanceSquared < r * r) {
+            volumePointIndex = pointIndex;
+            break;
+        }
+
+        if (x + r < pointX) {
+            // Stop here, since any other points must be entirely to the
+            // left of pointX now.
+            break;
+        }
+    }
+
+    return volumePointIndex;
+}
+
+/**
+ * For the bent drawing style.
+ *
+ * Returns the index of the matching envelope point, or -1 if none match.
+ */
+export function pointOverlapsPitchEnvelopePoint(
+    pointX: number,
+    pointY: number,
+    note: Note.Type,
+    notePitchHandleSizeFactor: number,
+    noteEnvelopePointSizeFactor: number,
+    canvasWidth: number,
+    canvasHeight: number,
+    viewport: Viewport.Type,
+    pixelsPerTick: number,
+    pixelsPerPitch: number,
+    maxPitch: number,
+): number {
+    let pitchPointIndex: number = -1;
+
+    const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
+    for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+        const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
+        const pointTime: number = point.time;
+        const pointValue: number = point.value;
+        const pitch: number = note.pitch + pointValue;
+
+        const x: number = tickToX(viewport, pixelsPerTick, note.start + pointTime);
+        const baseR: number = (pixelsPerPitch / notePitchHandleSizeFactor) * 0.5;
+        const r: number = baseR * noteEnvelopePointSizeFactor;
+        const y: number = pitchToY(canvasHeight, viewport, pixelsPerPitch, maxPitch, pitch) + pixelsPerPitch - baseR;
+
+        const distanceX: number = pointX - x;
+        const distanceY: number = pointY - y;
+        const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+        if (distanceSquared < r * r) {
+            pitchPointIndex = pointIndex;
+            break;
+        }
+
+        if (x + r < pointX) {
+            // Stop here, since any other points must be entirely to the
+            // left of pointX now.
+            break;
+        }
+    }
+
+    return pitchPointIndex;
+}
+
 export function rectOverlapsNote(
     it: BentNoteIterator.Type,
     rectX0: number,
@@ -235,14 +355,18 @@ export function rectOverlapsNote(
         while (!BentNoteIterator.isDone(it)) {
             BentNoteIterator.computeSegment(it, canvasWidth, canvasHeight, viewport, pixelsPerTick, pixelsPerPitch, maxPitch);
             const segmentDuration: number = it.pitchTime1 - it.pitchTime0;
-            // @TODO: Actually, if the segment has a duration of 0, then we
-            // should test it as if it was a line or point. It's weird to have
-            // a note with instantaneous pitch changes not be included in box
-            // selections when you pass the selection box through certain parts
-            // of them.
             if (segmentDuration <= 0) {
-                BentNoteIterator.advance(it);
-                continue;
+                // If this note has instantaneous pitch changes, we still want to select it if the box passes
+                // through those.
+                const overlapsHorizontally: boolean = insideRange(it.segmentX0, rectX0, rectX1);
+                const overlapsVertically: boolean = rangesOverlap(rectY0, rectY1, it.segmentY0, it.segmentY1);
+                if (overlapsHorizontally && overlapsVertically) {
+                    result |= NoteHit.Inside;
+                    break;
+                } else {
+                    BentNoteIterator.advance(it);
+                    continue;
+                }
             }
 
             // See `pointOverlapsNote`.
