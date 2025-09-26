@@ -20,6 +20,7 @@ export class MoveNotePitchPointBounded implements Operation {
     private _cursorPitch0: number;
     private _pointIndex: number;
     private _constraint: ConstraintMode;
+    private _quantize: boolean;
 
     constructor(
         operationState: OperationState,
@@ -37,6 +38,7 @@ export class MoveNotePitchPointBounded implements Operation {
         this._cursorPitch0 = cursorPitch0;
         this._pointIndex = pointIndex;
         this._constraint = ConstraintMode.Unconstrained;
+        this._quantize = true;
     }
 
     private _move(pattern: Pattern.Type, x1: number, y1: number): void {
@@ -57,6 +59,9 @@ export class MoveNotePitchPointBounded implements Operation {
             let pitchDelta: number = cursorPitch1 - cursorPitch0;
             if (this._constraint === ConstraintMode.Horizontal) {
                 pitchDelta = 0;
+            }
+            if (this._quantize) {
+                pitchDelta = Math.round(pitchDelta);
             }
 
             const srcPoint: Breakpoint.Type = note.pitchEnvelope![this._pointIndex];
@@ -95,6 +100,8 @@ export class MoveNotePitchPointBounded implements Operation {
             this._constraint = switchConstraint(this._constraint, ConstraintMode.Horizontal);
         } else if (context.gesture1 === (GestureKind.Press | Key.V)) {
             this._constraint = switchConstraint(this._constraint, ConstraintMode.Vertical);
+        } else if (context.gesture1 === (GestureKind.Press | Key.Q)) {
+            this._quantize = !this._quantize;
         }
 
         if (isReleasing(context)) {
