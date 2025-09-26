@@ -1,4 +1,4 @@
-Mostly links that aren't part of something of the todo list, and smaller notes.
+Mostly links that aren't part of something on the todo list, and smaller notes.
 Larger notes go into their own file here.
 
 --------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { SongDocument } from "../../../SongDocument.js";
 import { clamp } from "@synth-playground/common/math.js";
-import { GestureKind, gestureHasKind } from "../../input/gestures.js";
+import { GestureKind, gestureHasKind, Key } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
@@ -19,6 +19,7 @@ export class MoveNotePitchPointBounded implements Operation {
     private _cursorPpqn0: number;
     private _cursorPitch0: number;
     private _pointIndex: number;
+    private _constraint: ConstraintMode;
 
     constructor(
         operationState: OperationState,
@@ -35,6 +36,7 @@ export class MoveNotePitchPointBounded implements Operation {
         this._cursorPpqn0 = cursorPpqn0;
         this._cursorPitch0 = cursorPitch0;
         this._pointIndex = pointIndex;
+        this._constraint = ConstraintMode.Unconstrained;
     }
 
     private _move(pattern: Pattern.Type, x1: number, y1: number): void {
@@ -45,11 +47,17 @@ export class MoveNotePitchPointBounded implements Operation {
         for (let [note, transform] of this.notes.entries()) {
             const cursorPpqn0: number = this._cursorPpqn0;
             const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
-            const ppqnDelta: number = cursorPpqn1 - cursorPpqn0;
+            let ppqnDelta: number = cursorPpqn1 - cursorPpqn0;
+            if (this._constraint === ConstraintMode.Vertical) {
+                ppqnDelta = 0;
+            }
 
             const cursorPitch0: number = this._cursorPitch0;
             const cursorPitch1: number = this._operationState.mouseToPitch(y1);
-            const pitchDelta: number = cursorPitch1 - cursorPitch0;
+            let pitchDelta: number = cursorPitch1 - cursorPitch0;
+            if (this._constraint === ConstraintMode.Horizontal) {
+                pitchDelta = 0;
+            }
 
             const srcPoint: Breakpoint.Type = note.pitchEnvelope![this._pointIndex];
             const dstPoint: Breakpoint.Type = transform.newPitchEnvelope![this._pointIndex];
@@ -83,6 +91,12 @@ export class MoveNotePitchPointBounded implements Operation {
             return OperationResponse.Aborted;
         }
 
+        if (context.gesture1 === (GestureKind.Press | Key.H)) {
+            this._constraint = switchConstraint(this._constraint, ConstraintMode.Horizontal);
+        } else if (context.gesture1 === (GestureKind.Press | Key.V)) {
+            this._constraint = switchConstraint(this._constraint, ConstraintMode.Vertical);
+        }
+
         if (isReleasing(context)) {
             // @TODO: Skip committing if the note properties didn't change.
             for (let [note, transform] of this.notes.entries()) {
@@ -110,4 +124,35 @@ export class MoveNotePitchPointBounded implements Operation {
 
         return OperationResponse.Running;
     }
+}
+
+const enum ConstraintMode {
+    Unconstrained,
+    Horizontal,
+    Vertical,
+}
+
+function switchConstraint(state: ConstraintMode, desired: ConstraintMode): ConstraintMode {
+    // We assume here that desired can only be set to horizontal or vertical.
+    if (state === ConstraintMode.Unconstrained) {
+        if (desired === ConstraintMode.Horizontal) {
+            return ConstraintMode.Horizontal;
+        } else if (desired === ConstraintMode.Vertical) {
+            return ConstraintMode.Vertical;
+        }
+    } else if (state === ConstraintMode.Horizontal) {
+        if (desired === ConstraintMode.Horizontal) {
+            return ConstraintMode.Unconstrained;
+        } else if (desired === ConstraintMode.Vertical) {
+            return ConstraintMode.Vertical;
+        }
+    } else if (state === ConstraintMode.Vertical) {
+        if (desired === ConstraintMode.Horizontal) {
+            return ConstraintMode.Horizontal;
+        } else if (desired === ConstraintMode.Vertical) {
+            return ConstraintMode.Unconstrained;
+        }
+    }
+
+    return state;
 }

@@ -383,6 +383,9 @@ class Item implements IListItem {
         });
         this.element.appendChild(this._shortcutContainer);
 
+        // @TODO: It's a bit inefficient to always have this here, mostly for
+        // memory reasons. Ideally I should create it the first time it will be
+        // shown instead.
         this._recentlyUsedIndicator = H("div", {
             style: `
                 display: none;
