@@ -1766,6 +1766,19 @@ export class PianoRoll implements Component {
                             ? null
                             : Breakpoint.cloneArray(this._state.lastCommittedNotePitchEnvelope)
                         );
+
+                        if (pitchEnvelope != null && pitchEnvelope.length > 0) {
+                            // The pitch envelope that we're inheriting may have a first point with some non-0 value.
+                            // This is confusing, because when you click, the note won't show up where you clicked,
+                            // but a bit above or below it, so here we make at least the first point match our click.
+                            const difference: number = pitchEnvelope[0].value;
+                            const pointCount: number = pitchEnvelope.length;
+                            for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+                                const point: Breakpoint.Type = pitchEnvelope[pointIndex];
+                                point.value -= difference;
+                            }
+                        }
+
                         const volumeEnvelope: Breakpoint.Type[] | null = (
                             this._state.lastCommittedNoteVolumeEnvelope == null
                             ? null
