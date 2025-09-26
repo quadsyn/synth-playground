@@ -1,0 +1,12 @@
+.closeButton {
+    background: none;
+    color: #fff;
+    appearance: none;
+    border: none;
+    position: absolute;
+    right: 0.5em;
+}
+
+.closeButton:hover {
+    background: rgba(0, 0, 0, 0.2);
+}

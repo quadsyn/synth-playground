@@ -1,0 +1,43 @@
+/* The goal with these styles is to allow overflow "naturally". I'm not sure
+whether this is the best way to achieve that but it will do for now. */
+
+.dialog {
+    border: 1px solid #000000;
+    background-color: #1e1e1e;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    max-width: 95%;
+    max-height: 95%;
+}
+
+.contentWrapper {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+.content {
+    /* @TODO: Maybe remove this padding? */
+    padding: 1em 1em;
+    box-sizing: border-box;
+    display: inline-block;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    padding: 0.25em 0.5em;
+    background-color: #007acc;
+    position: relative;
+    /* Since the close button is positioned absolutely within the header (for
+    the sake of centering the title), we can't let this collapse too much. */
+    min-width: 200px;
+}
+
+.footer {
+    display: flex;
+    padding: 0.25em 0.5em;
+    background-color: #333333;
+}

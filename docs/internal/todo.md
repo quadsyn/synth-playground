@@ -216,10 +216,10 @@
       getBoundingClientRect are not exactly where I should be drawing. Quite
       noticeable if you use page zooming. This is probably unfixable :( (high
       DPI screens probably make this worse too)
-  - So far I feel like banning floating panels is the way to go. I will probably
-    use something else instead of dockview for dialogs (modal-ish)/modals/etc.,
-    and for what remains (like the visualizers), I can probably live without
-    making those float on top of other things.
+  - So far I feel like banning floating panels is the way to go. I've started
+    implementing dialogs (modal-ish)/modals/etc. outside of dockview, and for
+    what remains (like the visualizers), I can probably live without making
+    those float on top of other things.
 - [ ] Piano roll
 - [ ] Timeline
 - [ ] Audio visualizers
@@ -353,14 +353,16 @@
 
 ### Modal
 
-- [ ] Only allow one of these at a time.
+- [x] Only allow one of these at a time.
+  - I actually have a stack now but I could enforce this straightforwardly.
 - [ ] Maybe this should be called `ModalDialog`. Then the below could be called
       `ModelessDialog`.
 - [ ] "Moveable" modal: blocks song data changes but allows e.g. scrolling
       through. Maybe "moveable" isn't the best name.
   - Weirdly enough, the equivalent of this in REAPER doesn't block song data
     changes (e.g. Quantize), which makes the current visual state look weird.
-- [ ] "Dismissable" modal?: click outside and it will disappear.
+- "Dismissable" modeless modal?: click outside and it will disappear.
+  - "Popovers" also cover this case I think.
 - <https://doc.qt.io/qt-6/qt.html#WindowModality-enum>
 - [ ] `MessageBox` equivalent? Probably should go in `UIContext`.
 

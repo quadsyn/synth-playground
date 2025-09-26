@@ -81,6 +81,7 @@ export class TrackOutlinerLane implements Component {
         }, "");
         this._trackMuteButton = H("button", {
             type: "button",
+            class: "track-mute-button",
             style: `
                 font-family: monospace !important;
                 font-size: 12px;
@@ -92,6 +93,7 @@ export class TrackOutlinerLane implements Component {
         }, "M");
         this._trackSoloButton = H("button", {
             type: "button",
+            class: "track-solo-button",
             style: `
                 font-family: monospace !important;
                 font-size: 12px;

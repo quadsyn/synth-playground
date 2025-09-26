@@ -163,7 +163,6 @@ export class Menu implements Component {
                 const itemButton: HTMLButtonElement = H("button", {
                     type: "button",
                     class: "menu-button",
-                    style: ``,
                 },
                     H("div", {
                         style: `

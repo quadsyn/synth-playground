@@ -1,5 +1,8 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
+import {
+    button as buttonClassName,
+} from "./Button.module.css";
 
 export class Button implements Component {
     public element: HTMLButtonElement;
@@ -21,12 +24,7 @@ export class Button implements Component {
 
         this.element = H("button", {
             type: "button",
-            style: `
-                /* width: 100%; */
-                flex-shrink: 0;
-                flex-grow: 1;
-                box-sizing: border-box;
-            `,
+            class: buttonClassName,
         }, label);
 
         this.element.addEventListener("click", this._handleClick);

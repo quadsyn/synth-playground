@@ -1,0 +1,20 @@
+.button {
+    background: #2e2e2e;
+    color: #fff;
+    border: 1px solid #333;
+    flex-shrink: 0;
+    flex-grow: 1;
+    box-sizing: border-box;
+}
+
+.button:hover:not(:disabled) {
+    background: #3e3e3e;
+}
+
+.button:active:not(:disabled) {
+    background: #252525;
+}
+
+.button:disabled {
+    color: #404040;
+}

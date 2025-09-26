@@ -5,15 +5,16 @@ import { LanguageId } from "./localization/LanguageId.js";
 export interface AppContext {
     ui: UIContext;
     doc: SongDocument;
+    showAboutDialog: () => void;
+    showVirtualizedListTestDialog: () => void;
+    showVirtualizedTreeTestDialog: () => void;
     showTimelinePanel: () => void;
     showPianoRollPanel: () => void;
     showTransportPanel: () => void;
     showOscilloscopePanel: () => void;
     showSpectrumAnalyzerPanel: () => void;
     showSpectrogramPanel: () => void;
-    showAboutPanel: () => void;
     showDebugInfoPanel: () => void;
-    showVirtualizedTreeTestPanel: () => void;
     showCommandPalette: () => void;
     changeLanguage: (language: LanguageId) => Promise<void>;
 }

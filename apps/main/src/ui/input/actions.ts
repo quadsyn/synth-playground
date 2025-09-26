@@ -128,6 +128,11 @@ type ActionTableEntry = [
 (<ActionTableEntry[]>[
     // @TODO: Define at least the contextual actions together with their panels?
     // This makes it easier to see what all the default shortcuts are, though.
+    // If I end up doing that, I think I have to get rid of the ActionKind enum
+    // (though I could still use a newtype for readability), and instead have
+    // some function that generates an unique integer ID that gets executed
+    // before the entry point. Then I can register the action next to the code
+    // for the components.
     [
         ActionTags.ShowInCommandPalette,
         ActionKind.TogglePlay,

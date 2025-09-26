@@ -2,6 +2,7 @@ import { CoordinatedResizeObserver } from "@synth-playground/browser/Coordinated
 import { InputManager } from "./input/InputManager.js";
 import { LocalizationManager } from "../localization/LocalizationManager.js";
 import { StringId } from "../localization/StringId.js";
+import { DialogManager } from "./dialog/DialogManager.js";
 
 export type RenderFunction = (timestamp: number) => void;
 
@@ -9,6 +10,7 @@ export class UIContext {
     public resizeObserver: CoordinatedResizeObserver;
     public frame: number;
     public inputManager: InputManager;
+    public dialogManager: DialogManager;
     public localizationManager: LocalizationManager;
 
     private _mainRenderFn: RenderFunction;
@@ -20,6 +22,7 @@ export class UIContext {
         mainRenderFn: RenderFunction,
         inputManager: InputManager,
         localizationManager: LocalizationManager,
+        dialogManager: DialogManager,
     ) {
         this.frame = 0;
         this._mainRenderFn = mainRenderFn;
@@ -29,6 +32,7 @@ export class UIContext {
         this.resizeObserver = new CoordinatedResizeObserver();
         this.inputManager = inputManager;
         this.localizationManager = localizationManager;
+        this.dialogManager = dialogManager;
     }
 
     public dispose(): void {

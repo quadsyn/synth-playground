@@ -10,6 +10,12 @@ import { type LaneLayout } from "./LaneLayout.js";
 import { LaneManager } from "./LaneManager.js";
 import { TrackOutlinerLane } from "./TrackOutlinerLane.js";
 
+// @TODO:
+// - When one of the elements inside a lane gets focus, the lanes will shift
+//   around incorrectly. I need to detect focus events there and scroll+render
+//   I guess? Though I've only noticed this now because I don't have focus
+//   trapping for dialogs at this point.
+
 export class TrackOutliner implements Component {
     public element: HTMLDivElement;
     public size: number;

@@ -13,19 +13,19 @@ import { ActionKind, ActionResponse } from "./input/actions.js";
 import { type OperationContext } from "./input/operations.js";
 import { gestureToString } from "./input/gestures.js";
 import { InputManager } from "./input/InputManager.js";
+import { DialogManager } from "./dialog/DialogManager.js";
+import { AboutDialog } from "./dialogs/AboutDialog.js";
+import { VirtualizedListTestDialog } from "./dialogs/VirtualizedListTestDialog.js";
+import { VirtualizedTreeTestDialog } from "./dialogs/VirtualizedTreeTestDialog.js";
 import { type AppContext } from "../AppContext.js";
 import { MenuBar } from "./basic/MenuBar.js";
 import { CommandPalette } from "./commandPalette/CommandPalette.js";
 import { DockablePanelTab } from "./dockable/DockablePanelTab.js";
-import { PopupTab } from "./dockable/PopupTab.js";
 import { EmptyPanel } from "./dockable/EmptyPanel.js";
-import { AboutPanel } from "./dockable/AboutPanel.js";
 import { OscilloscopePanel } from "./dockable/OscilloscopePanel.js";
 import { SpectrumAnalyzerPanel } from "./dockable/SpectrumAnalyzerPanel.js";
 import { SpectrogramPanel } from "./dockable/SpectrogramPanel.js";
 import { DebugInfoPanel } from "./dockable/DebugInfoPanel.js";
-import { VirtualizedListTestPanel } from "./dockable/VirtualizedListTestPanel.js";
-import { VirtualizedTreeTestPanel } from "./dockable/VirtualizedTreeTestPanel.js";
 import { TransportPanel } from "./dockable/TransportPanel.js";
 import { TimelinePanel } from "./dockable/TimelinePanel.js";
 import { PianoRollPanel } from "./dockable/PianoRollPanel.js";
@@ -112,6 +112,7 @@ export class Main implements Component {
                 this._shouldBlockActions,
             ),
             new LocalizationManager(),
+            new DialogManager(),
         );
 
         this._ui.localizationManager.setLanguage(computeLanguageIdForPreferredLanguage());
@@ -131,6 +132,27 @@ export class Main implements Component {
         this._app = {
             doc: this._doc,
             ui: this._ui,
+            showAboutDialog: () => {
+                this._ui.dialogManager.show(new AboutDialog(this._ui), {
+                    dismissable: true,
+                });
+
+                this._ui.scheduleMainRender();
+            },
+            showVirtualizedListTestDialog: () => {
+                this._ui.dialogManager.show(new VirtualizedListTestDialog(this._ui), {
+                    dismissable: true,
+                });
+
+                this._ui.scheduleMainRender();
+            },
+            showVirtualizedTreeTestDialog: () => {
+                this._ui.dialogManager.show(new VirtualizedTreeTestDialog(this._ui), {
+                    dismissable: true,
+                });
+
+                this._ui.scheduleMainRender();
+            },
             showTimelinePanel: () => {
                 const existing = this._dockview.getPanel("timelinePanel");
                 if (existing != null) {
@@ -209,31 +231,6 @@ export class Main implements Component {
                     });
                 }
             },
-            showAboutPanel: () => {
-                const windowWidth: number = window.innerWidth;
-                const windowHeight: number = window.innerHeight;
-                const panelWidth: number = 500;
-                const panelHeight: number = 200;
-                const panelX: number = windowWidth / 2 - panelWidth / 2;
-                const panelY: number = windowHeight / 2 - panelHeight / 2;
-                const existing = this._dockview.getPanel("aboutPanel");
-                if (existing != null) {
-                    existing.api.setActive();
-                } else {
-                    this._dockview.addPanel({
-                        id: "aboutPanel",
-                        component: "AboutPanel",
-                        tabComponent: "PopupTab",
-                        renderer: "always",
-                        title: this._ui.T(StringId.AboutDialogTitle),
-                        floating: {
-                            position: { left: panelX, top: panelY },
-                            width: panelWidth,
-                            height: panelHeight,
-                        },
-                    });
-                }
-            },
             showDebugInfoPanel: () => {
                 const existing = this._dockview.getPanel("debugInfoPanel");
                 if (existing != null) {
@@ -244,30 +241,6 @@ export class Main implements Component {
                         component: "DebugInfoPanel",
                         renderer: "always",
                         title: this._ui.T(StringId.DebugInfoPanelTitle),
-                    });
-                }
-            },
-            showVirtualizedTreeTestPanel: () => {
-                const windowWidth: number = window.innerWidth;
-                const windowHeight: number = window.innerHeight;
-                const panelWidth: number = 500;
-                const panelHeight: number = 400;
-                const panelX: number = windowWidth / 2 - panelWidth / 2;
-                const panelY: number = windowHeight / 2 - panelHeight / 2;
-                const existing = this._dockview.getPanel("virtualizedTreeTestPanel");
-                if (existing != null) {
-                    existing.api.setActive();
-                } else {
-                    this._dockview.addPanel({
-                        id: "virtualizedTreeTestPanel",
-                        component: "VirtualizedTreeTestPanel",
-                        renderer: "always",
-                        title: "Virtualized Tree Test",
-                        floating: {
-                            position: { left: panelX, top: panelY },
-                            width: panelWidth,
-                            height: panelHeight,
-                        },
                     });
                 }
             },
@@ -362,9 +335,12 @@ export class Main implements Component {
                 label: "Tests" as StringId,
                 children: [
                     {
+                        label: "Virtualized list test" as StringId,
+                        onClick: () => { this._app.showVirtualizedListTestDialog(); },
+                    },
+                    {
                         label: "Virtualized tree test" as StringId,
-                        getCheckedStatus: () => this._dockview.getPanel("virtualizedTreeTestPanel") != null,
-                        onClick: () => { this._app.showVirtualizedTreeTestPanel(); },
+                        onClick: () => { this._app.showVirtualizedTreeTestDialog(); },
                     },
                 ],
             },
@@ -373,8 +349,7 @@ export class Main implements Component {
                 children: [
                     {
                         label: StringId.HelpMenuAbout,
-                        getCheckedStatus: () => this._dockview.getPanel("aboutPanel") != null,
-                        onClick: () => { this._app.showAboutPanel(); },
+                        onClick: () => { this._app.showAboutDialog(); },
                     },
                 ],
             },
@@ -383,6 +358,7 @@ export class Main implements Component {
         this.element.appendChild(this._dockviewContainer);
         this.element.appendChild(this._commandPaletteContainer);
         this.element.appendChild(this._menuContainer);
+        this.element.appendChild(this._ui.dialogManager.container);
 
         this._dockview = createDockview(this._dockviewContainer, {
             disableTabsOverflowList: true,
@@ -394,9 +370,6 @@ export class Main implements Component {
             theme: themeVisualStudio,
             defaultTabComponent: "DockablePanelTab",
             createTabComponent: (options) => {
-                switch (options.name) {
-                    case "PopupTab": return new PopupTab();
-                }
                 return new DockablePanelTab();
             },
 
@@ -404,9 +377,6 @@ export class Main implements Component {
                 let panel: IContentRenderer | null = null;
 
                 switch (options.name) {
-                    case "AboutPanel": { panel = new AboutPanel(); } break;
-                    case "VirtualizedListTestPanel": { panel = new VirtualizedListTestPanel(this._ui); } break;
-                    case "VirtualizedTreeTestPanel": { panel = new VirtualizedTreeTestPanel(this._ui); } break;
                     case "TimelinePanel": { panel = new TimelinePanel(this._ui, this._doc); } break;
                     case "PianoRollPanel": { panel = new PianoRollPanel(this._app, this._doc); } break;
                     case "TransportPanel": { panel = new TransportPanel(this._ui, this._doc); } break;
@@ -572,6 +542,7 @@ export class Main implements Component {
         });
 
         window.addEventListener("resize", this._onWindowResize);
+        window.addEventListener("keydown", this._handleKeyDown);
     }
 
     public dispose(): void {
@@ -579,6 +550,8 @@ export class Main implements Component {
             this._mounted = false;
             this._ui.inputManager.unregisterListeners();
         }
+        window.removeEventListener("resize", this._onWindowResize);
+        window.removeEventListener("keydown", this._handleKeyDown);
         this._doc.destroyAudioContext();
         this._commandPalette.dispose();
         this._menuBar.dispose();
@@ -617,11 +590,12 @@ export class Main implements Component {
         }
 
         this._commandPalette.render();
+
+        this._ui.dialogManager.render();
     }
 
     private _shouldBlockActions = (): boolean => {
-        // @TODO: true if any dialog is open
-        return false;
+        return this._ui.dialogManager.hasDialogsOpen();
     };
 
     private _onGlobalAction = (kind: ActionKind, operationContext: OperationContext): ActionResponse => {
@@ -643,7 +617,7 @@ export class Main implements Component {
                 return ActionResponse.Done;
             };
             case ActionKind.About: {
-                this._app.showAboutPanel();
+                this._app.showAboutDialog();
                 return ActionResponse.Done;
             };
             case ActionKind.ShowDebugInfoPanel: {
@@ -684,6 +658,19 @@ export class Main implements Component {
     }
 
     private _onWindowResize = (): void => {};
+
+    // @TODO: I'm not really sure what to do with this. This maybe should be
+    // somewhere inside the input manager but it's awkward to pass this there.
+    private _handleKeyDown = (event: KeyboardEvent): void => {
+        if (this._ui.dialogManager.hasDialogsOpen()) {
+            switch (event.key) {
+                case "Escape": {
+                    this._ui.dialogManager.closeTopmostDialog();
+                    this._ui.scheduleMainRender();
+                } break;
+            }
+        }
+    };
 
     private _onProjectChanged = (): void => {
         this._ui.scheduleMainRender();
