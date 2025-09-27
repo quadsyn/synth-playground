@@ -841,10 +841,15 @@ export function drawNoteVolumeEnvelopePoints(
         const hovering: boolean = pointIndex === hoveringPointIndex;
         const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
         const pointTime: number = point.time;
+        const absolutePointTime: number = note.start + pointTime;
 
         // @TODO: Hmm, should this be >=?
-        if (note.start + pointTime > note.end) {
+        if (absolutePointTime > note.end) {
             break;
+        }
+
+        if (absolutePointTime < note.start) {
+            continue;
         }
 
         const pitchIndex1: number = Breakpoint.findIndex(note.pitchEnvelope, pointTime);
@@ -1002,9 +1007,14 @@ export function drawNotePitchEnvelopePoints(
         const hovering: boolean = pointIndex === hoveringPointIndex;
         const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
         const pointTime: number = point.time;
+        const absolutePointTime: number = note.start + pointTime;
 
-        if (note.start + pointTime > note.end) {
+        if (absolutePointTime > note.end) {
             break;
+        }
+
+        if (absolutePointTime < note.start) {
+            continue;
         }
 
         const pointValue: number = point.value;

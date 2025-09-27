@@ -4,6 +4,7 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
+import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import { type Operation } from "../Operation.js";
 import { OperationKind } from "../OperationKind.js";
 import { type OperationState } from "../OperationState.js";
@@ -44,6 +45,24 @@ export class LeftStretchNote implements Operation {
 
             transform.newStart = note.start + cursorPpqnDelta;
 
+            {
+                const pointCount: number = note.pitchEnvelope != null ? note.pitchEnvelope.length : 0;
+                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+                    const point: Breakpoint.Type = note.pitchEnvelope![pointIndex];
+                    const transformedPoint: Breakpoint.Type = transform.newPitchEnvelope![pointIndex];
+                    transformedPoint.time = point.time - cursorPpqnDelta;
+                }
+            }
+
+            {
+                const pointCount: number = note.volumeEnvelope != null ? note.volumeEnvelope.length : 0;
+                for (let pointIndex: number = 0; pointIndex < pointCount; pointIndex++) {
+                    const point: Breakpoint.Type = note.volumeEnvelope![pointIndex];
+                    const transformedPoint: Breakpoint.Type = transform.newVolumeEnvelope![pointIndex];
+                    transformedPoint.time = point.time - cursorPpqnDelta;
+                }
+            }
+
             // We only have one note to process.
             break;
         }
@@ -61,13 +80,12 @@ export class LeftStretchNote implements Operation {
             for (let [note, transform] of this.notes.entries()) {
                 const newStart: number = clamp(transform.newStart, 0, pattern.duration - 1);
 
-                this._operationState.lastCommittedNoteDuration = note.end - newStart;
+                this._doc.changeNote(pattern, note, newStart, note.end, note.pitch);
+                this._operationState.lastCommittedNoteDuration = note.end - note.start;
                 this._operationState.lastCommittedNoteVolumeEnvelope = note.volumeEnvelope;
                 this._operationState.lastCommittedNotePitchEnvelope = note.pitchEnvelope;
                 this._operationState.selectedNotes = [note];
                 this._operationState.selectionOverlayIsDirty = true;
-
-                this._doc.changeNote(pattern, note, newStart, note.end, note.pitch);
 
                 // We only have one note to process.
                 break;

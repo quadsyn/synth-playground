@@ -21,9 +21,9 @@ import { tickToX, pitchToY } from "./common.js";
  * Two extra segments are materialized, anchored to the note's start and end.
  *
  * It should work correctly for pitch envelope points that come after the note's
- * end (i.e. `point.time > (note.end - note.start)`) - you will get interpolated
- * pitches as necessary - but not for points that come before the start of the
- * note (i.e. `point.time < 0`).
+ * end (i.e. `point.time > (note.end - note.start)`), and also for points that
+ * come before the start of the note (i.e. `point.time < 0`) - you will get
+ * interpolated pitches as necessary.
  */
 export interface Type {
     /**
@@ -51,6 +51,9 @@ export interface Type {
     /**
      * Pitch number (relative to the note's base pitch) at the start of the
      * current segment.
+     *
+     * If the segment starts before the note, this is a value between `pitch0`
+     * and `pitch1`, linearly interpolated.
      */
     adjustedPitch0: number;
 
@@ -187,10 +190,6 @@ export function setup(
             // If there's at least 1 pitch envelope point, we materialize a
             // segment that goes from the start of the note to wherever that
             // pitch envelope point is.
-            // At least with this current implementation, it's not okay for
-            // envelope points to be positioned before the start of the note
-            // (i.e. negative `time`).
-            // @TODO: I should look at exactly why the above is true.
             const next: Breakpoint.Type = it.pitchEnvelope![it.pitchIndex++];
             it.pitch0 = next.value;
             it.pitch1 = it.pitch0;
@@ -242,8 +241,14 @@ export function computeSegment(
     it.adjustedPitch0 = it.pitch0;
     it.adjustedPitch1 = it.pitch1;
     if (segmentDuration > 0 && adjustedDuration < segmentDuration) {
-        // Segment ends earlier if clamped, so find a new ending pitch value.
-        it.adjustedPitch1 = lerp(adjustedDuration / segmentDuration, it.pitch0, it.pitch1);
+        // Segment has a different duration when clamped, so find new pitch
+        // values for the start and end.
+        // In order to deal with points that fall before the note's start, we
+        // need to figure out how far away the adjusted start time is from the
+        // original, after doing the clamping above.
+        const startOffset: number = it.adjustedPitchTime0 - it.pitchTime0;
+        it.adjustedPitch0 = lerp(startOffset / segmentDuration, it.pitch0, it.pitch1);
+        it.adjustedPitch1 = lerp((startOffset + adjustedDuration) / segmentDuration, it.pitch0, it.pitch1);
     }
 
     // @TODO: Maybe remove these from the iterator? If that's done, then

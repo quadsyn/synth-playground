@@ -184,3 +184,76 @@ export function cloneArray(source: Type[]): Type[] {
 
     return destination;
 }
+
+export function shiftedAndTruncated(
+    source: Type[],
+    noteStart: number,
+    noteEnd: number,
+    ppqnDelta: number,
+): Type[] | null {
+    const destination: Type[] = [];
+
+    const duration: number = noteEnd - noteStart;
+
+    const srcPointCount: number = source.length;
+    for (let pointIndex: number = 0; pointIndex < srcPointCount; pointIndex++) {
+        const srcPoint: Type = source[pointIndex];
+        const srcTime: number = srcPoint.time - ppqnDelta;
+        const srcValue: number = srcPoint.value;
+        const hasPrevSrcPoint: boolean = pointIndex > 0;
+        const prevSrcTime: number = hasPrevSrcPoint ? (source[pointIndex - 1].time - ppqnDelta) : 0;
+        const prevSrcValue: number = hasPrevSrcPoint ? source[pointIndex - 1].value : 0;
+        if (srcTime >= 0) {
+            if (hasPrevSrcPoint && prevSrcTime < 0) {
+                // This segment crosses the start of the note, so make an
+                // interpolated point there.
+                const t: number = (0 - prevSrcTime) / (srcTime - prevSrcTime); // unlerp
+                const value: number = prevSrcValue * (1.0 - t) + srcValue * t; // lerp
+                destination.push(make(0, value));
+            }
+            if (srcTime <= duration) {
+                // Source point falls within the note after transformation, so
+                // insert it as is.
+                destination.push(make(srcTime, srcValue));
+            } else {
+                // Source point is entirely to the right of the note.
+                if (!hasPrevSrcPoint) {
+                    // The envelope is entirely to the right of the note, so
+                    // make two points with the first value.
+                    destination.push(make(0, srcValue));
+                    destination.push(make(duration, srcValue));
+                } else {
+                    if (prevSrcTime < duration) {
+                        // This segment crosses the end of the note, so make an
+                        // interpolated point there.
+                        const t: number = (duration - prevSrcTime) / (srcTime - prevSrcTime); // unlerp
+                        const value: number = prevSrcValue * (1.0 - t) + srcValue * t; // lerp
+                        destination.push(make(duration, value));
+                    }
+
+                    // We're done early.
+                    break;
+                }
+            }
+        }
+    }
+
+    if (destination.length === 0) {
+        if (
+            srcPointCount > 0
+            && (source[srcPointCount - 1].time - ppqnDelta) < 0
+        ) {
+            // The envelope is entirely to the left of the note, so make two
+            // points with the last value.
+            const value: number = source[srcPointCount - 1].value;
+            destination.push(make(0, value));
+            destination.push(make(duration, value));
+        } else {
+            // As an optimization we return null here since there's no
+            // difference between an envelope with no points and null.
+            return null;
+        }
+    }
+
+    return destination;
+}

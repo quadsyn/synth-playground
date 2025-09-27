@@ -62,13 +62,12 @@ export class RightStretchNote implements Operation {
             for (let [note, transform] of this.notes.entries()) {
                 const newEnd: number = clamp(transform.newEnd, 1, pattern.duration);
 
-                this._operationState.lastCommittedNoteDuration = newEnd - note.start;
+                this._doc.changeNote(pattern, note, note.start, newEnd, note.pitch);
+                this._operationState.selectedNotes = [note];
+                this._operationState.lastCommittedNoteDuration = note.end - note.start;
                 this._operationState.lastCommittedNoteVolumeEnvelope = note.volumeEnvelope;
                 this._operationState.lastCommittedNotePitchEnvelope = note.pitchEnvelope;
-                this._operationState.selectedNotes = [note];
                 this._operationState.selectionOverlayIsDirty = true;
-
-                this._doc.changeNote(pattern, note, note.start, newEnd, note.pitch);
 
                 // We only have one note to process.
                 break;

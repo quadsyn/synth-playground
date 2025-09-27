@@ -1923,8 +1923,8 @@ export class PianoRoll implements Component {
                             newStart: note.start,
                             newEnd: note.end,
                             newPitch: note.pitch,
-                            newPitchEnvelope: note.pitchEnvelope,
-                            newVolumeEnvelope: note.volumeEnvelope,
+                            newPitchEnvelope: note.pitchEnvelope != null ? Breakpoint.cloneArray(note.pitchEnvelope) : null,
+                            newVolumeEnvelope: note.volumeEnvelope != null ? Breakpoint.cloneArray(note.volumeEnvelope) : null,
                         }]]),
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);

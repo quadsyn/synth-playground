@@ -662,10 +662,42 @@ export class SongDocument {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
         const oldPitch: number = note.pitch;
+        const oldDuration: number = note.end - note.start;
+        const duration: number = newEnd - newStart;
+        const ppqnDelta: number = newStart - note.start;
 
         note.start = newStart;
         note.end = newEnd;
         note.pitch = newPitch;
+
+        if (ppqnDelta !== 0 || duration !== oldDuration) {
+            // The start position or the duration changed, so we need to adjust
+            // the pins, as they're stored relative to the start, but we want
+            // them to behave as if they were positioned absolutely (i.e.
+            // relative to the pattern start). In either case we get rid of the
+            // points that fall entirely outside of the note.
+            // (i.e. point.time < note.start && point.time > note.end)
+            note.pitchEnvelope = (
+                note.pitchEnvelope != null
+                ? Breakpoint.shiftedAndTruncated(
+                    note.pitchEnvelope,
+                    newStart,
+                    newEnd,
+                    ppqnDelta,
+                )
+                : null
+            );
+            note.volumeEnvelope = (
+                note.volumeEnvelope != null
+                ? Breakpoint.shiftedAndTruncated(
+                    note.volumeEnvelope,
+                    newStart,
+                    newEnd,
+                    ppqnDelta,
+                )
+                : null
+            );
+        }
 
         let cachedInfo: PatternInfo | undefined = this.patternInfoCache.get(pattern);
         if (cachedInfo == null) {
