@@ -4,6 +4,9 @@ import { UIContext } from "../UIContext.js";
 import { BrowserSlider } from "../basic/BrowserSlider.js";
 import * as Lane from "./Lane.js";
 
+// @TODO:
+// - For event handling I'll need to record the track index here.
+
 export class TrackOutlinerLane implements Component {
     public element: HTMLDivElement;
 

@@ -8,6 +8,7 @@ import { unlerp, remap, clamp, insideRange } from "@synth-playground/common/math
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
+import * as Constants from "@synth-playground/synthesizer/data/Constants.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Song from "@synth-playground/synthesizer/data/Song.js";
@@ -650,8 +651,6 @@ export class Timeline implements Component {
 
         const song: Song.Type = this._doc.project.song;
         const tempoEnvelope: Breakpoint.Type[] | null = song.tempoEnvelope;
-        const minTempo: number = 1; // @TODO: Constant
-        const maxTempo: number = 1000; // @TODO: Constant
         const lanes: Lane.Type[] = this._laneManager.getLanes();
         const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
@@ -687,7 +686,7 @@ export class Timeline implements Component {
 
             if (kind === Lane.Kind.TempoAutomation) {
                 if (tempoEnvelope == null || tempoEnvelope.length === 0) {
-                    const y = remap(song.tempo, minTempo, maxTempo, bottom, top);
+                    const y = remap(song.tempo, Constants.TempoMin, Constants.TempoMax, bottom, top);
                     context.beginPath();
                     context.moveTo(0, y);
                     context.lineTo(width, y);
@@ -701,7 +700,13 @@ export class Timeline implements Component {
                         const pointIndex: number = startIndex <= 0 ? 0 : startIndex - 1;
                         const point: Breakpoint.Type = tempoEnvelope[pointIndex];
                         const tempo: number = point.value;
-                        const y = remap(clamp(tempo, minTempo, maxTempo), minTempo, maxTempo, bottom, top);
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            bottom,
+                            top
+                        );
                         prevY = y;
                         context.moveTo(0, y);
                     }
@@ -710,7 +715,13 @@ export class Timeline implements Component {
                         const point: Breakpoint.Type = tempoEnvelope[pointIndex];
                         const tempo: number = point.value;
                         const tempoTime: number = point.time;
-                        const y = remap(clamp(tempo, minTempo, maxTempo), minTempo, maxTempo, bottom, top);
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            bottom,
+                            top
+                        );
                         const x = (tempoTime - viewportX0) * pixelsPerTick;
                         lastIndex = pointIndex;
                         context.lineTo(x, prevY);
@@ -723,7 +734,13 @@ export class Timeline implements Component {
                     {
                         const point: Breakpoint.Type = tempoEnvelope[lastIndex];
                         const tempo: number = point.value;
-                        const y: number = remap(clamp(tempo, minTempo, maxTempo), minTempo, maxTempo, bottom, top);
+                        const y: number = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            bottom,
+                            top
+                        );
                         context.lineTo(width, y);
                     }
                     context.stroke();
