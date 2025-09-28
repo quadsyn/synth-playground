@@ -681,7 +681,7 @@ export class PianoRoll implements Component {
                         this._playheadIsVisible = true;
                     } else {
                         this._playheadIsVisible = false;
-                        targetPlayhead = 0;
+                        targetPlayhead = this._doc.timeCursor;
                     }
                 }
 
@@ -704,7 +704,7 @@ export class PianoRoll implements Component {
             //     insideRange(this._playhead, this._viewportX0, this._viewportX1)
             // );
         } else {
-            this._playhead = 0;
+            this._playhead = this._doc.timeCursor;
             this._playheadIsVisible = false;
         }
 

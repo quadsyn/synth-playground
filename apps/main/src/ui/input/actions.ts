@@ -66,6 +66,7 @@ export const enum ActionKind {
     TimelineZoomOutAroundMouseHorizontally,
     OpenPatternFromClip,
     TimelineQuantize,
+    TimelineSeek,
 }
 
 export const enum ActionTags {
@@ -526,6 +527,14 @@ type ActionTableEntry = [
         [GestureKind.Press | Key.Q],
         <ActionId>"timeline.quantize",
         StringId.TimelineActionQuantize,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.TimelineSeek,
+        AreaKind.Timeline,
+        [GestureKind.Press | MouseButton.Left],
+        <ActionId>"timeline.seek",
+        StringId.TimelineActionSeek,
     ],
 ]).forEach(([tags, action, area, defaultShortcuts, id, labelId]) => {
     registerAction(tags, action, area, defaultShortcuts, id, labelId);

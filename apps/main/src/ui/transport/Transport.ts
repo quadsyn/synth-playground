@@ -80,22 +80,18 @@ export class Transport implements Component {
         this._playButton.render();
 
         let elapsedSeconds: number = 0;
+        const timeCursor: number = this._doc.timeCursor;
+        let elapsedTicks: number = timeCursor;
 
         if (this._doc.playing) {
             const playhead: number | null = this._doc.getPlayheadInTicks(this._ui.frame);
-
-            const elapsedTicks: number = (
-                playhead != null
-                ? playhead
-                // @TODO: I guess this has to be reset to the time cursor when
-                // it exists?
-                : 0
-            );
-            const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
-            const sections: TempoMap.Section[] = tempoMap.sections;
-            const sectionIndex: number = TempoMap.findSectionIndexByTick(sections, elapsedTicks);
-            elapsedSeconds = TempoMap.computeSecondsFromTick(sections, sectionIndex, elapsedTicks) | 0;
+            elapsedTicks = playhead != null ? playhead : timeCursor;
         }
+
+        const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
+        const sections: TempoMap.Section[] = tempoMap.sections;
+        const sectionIndex: number = TempoMap.findSectionIndexByTick(sections, elapsedTicks);
+        elapsedSeconds = TempoMap.computeSecondsFromTick(sections, sectionIndex, elapsedTicks) | 0;
 
         if (elapsedSeconds !== this._renderedElapsedSeconds) {
             this._elapsedTimeDisplay.textContent = secondsToHHMMSS(elapsedSeconds);

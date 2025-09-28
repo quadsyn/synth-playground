@@ -345,7 +345,7 @@ export class Timeline implements Component {
                 && insideRange(this._playhead, this._state.viewport.x0, this._state.viewport.x1)
             );
         } else {
-            this._playhead = 0;
+            this._playhead = this._doc.timeCursor;
             this._playheadIsVisible = false;
         }
 
@@ -857,8 +857,20 @@ export class Timeline implements Component {
         context.clearRect(0, 0, width, height);
 
         context.fillStyle = "rgba(255, 255, 255, 0.8)";
-        context.strokeStyle = "#ffffff";
+
+        context.lineWidth = 1;
+        context.strokeStyle = "rgba(255, 255, 255, 0.5)";
+
+        {
+            const x: number = (this._doc.timeCursor - viewportX0) * pixelsPerTick;
+            context.beginPath();
+            context.moveTo(x, 0);
+            context.lineTo(x, height);
+            context.stroke();
+        }
+
         context.lineWidth = 2;
+        context.strokeStyle = "#ffffff";
 
         for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
             const lane: Lane.Type = lanes[laneIndex];
@@ -895,8 +907,8 @@ export class Timeline implements Component {
                         continue;
                     }
 
-                    const x0: number = ((clip.start - viewportX0) * pixelsPerTick);
-                    const x1: number = ((clip.end - viewportX0) * pixelsPerTick);
+                    const x0: number = (clip.start - viewportX0) * pixelsPerTick;
+                    const x1: number = (clip.end - viewportX0) * pixelsPerTick;
                     const w: number = Math.max(1, x1 - x0);
                     const x: number = x0;
                     const y: number = top;
@@ -1143,13 +1155,16 @@ export class Timeline implements Component {
                         const ticksPerBar: number = 1 * this._doc.project.song.beatsPerBar * this._doc.project.song.ppqn;
 
                         const pattern: Pattern.Type = this._doc.insertPattern();
-                        this._doc.insertClip(
+                        const start: number = this._doc.timeCursor;
+                        const end: number = start + ticksPerBar * 4;
+                        const clip: Clip.Type = this._doc.insertClip(
                             this._state.selectedTrackIndex,
-                            ticksPerBar * 0,
-                            ticksPerBar * 4,
+                            start,
+                            end,
                             pattern.idLo,
                             pattern.idHi,
                         );
+                        this._doc.timeCursor = clip.end;
 
                         // this._clearHoverState();
                         this._state.selectedClipsByTrackIndex.clear();
@@ -1351,6 +1366,11 @@ export class Timeline implements Component {
                 const mouseX: number = context.x0 - bounds.left;
                 const mouseY: number = context.y0 - bounds.top;
 
+                const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                const cursorPpqn: number = (
+                    this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                ) | 0;
+
                 this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
                 const clipIndex: number = this._hoverQueryResult.clipIndex;
                 const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
@@ -1381,6 +1401,7 @@ export class Timeline implements Component {
                             }
                         }
                     }
+                    this._doc.timeCursor = cursorPpqn;
                     this._state.selectedClipsByTrackIndex.clear();
                     this._state.selectionOverlayIsDirty = true;
 
@@ -1393,6 +1414,7 @@ export class Timeline implements Component {
                     const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
                     const clip: Clip.Type = track.clips[clipIndex];
 
+                    this._doc.timeCursor = cursorPpqn;
                     this._state.selectedTrackIndex = clipTrackIndex;
                     this._state.selectedClipsByTrackIndex.clear();
                     this._state.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);
@@ -1518,6 +1540,28 @@ export class Timeline implements Component {
                 this._zoomAroundMouseHorizontally(/* zoomIn */ false, context.x1);
 
                 return ActionResponse.Done;
+            };
+            case ActionKind.TimelineSeek: {
+                if (mouseIsInside(context, this._timeRuler.element)) {
+                    const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                    const width: number = bounds.width;
+                    const mouseX: number = context.x0 - bounds.left;
+
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const cursorPpqn: number = (
+                        this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                    ) | 0;
+
+                    this._doc.timeCursor = cursorPpqn;
+                    this._doc.seek(this._doc.timeCursor);
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
             };
         }
 

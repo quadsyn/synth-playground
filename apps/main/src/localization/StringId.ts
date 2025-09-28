@@ -51,6 +51,7 @@ export const enum StringId {
     TimelineActionZoomOutAroundMouseHorizontally = "actions.timeline.zoomOutAroundMouseHorizontally",
     TimelineActionOpenPatternFromClip = "actions.timeline.openPatternFromClip",
     TimelineActionQuantize = "actions.timeline.quantize",
+    TimelineActionSeek = "actions.timeline.seek",
     TimelinePanelTitle = "panelTitles.timeline",
     PianoRollPanelTitle = "panelTitles.pianoRoll",
     TransportPanelTitle = "panelTitles.transport",

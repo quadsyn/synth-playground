@@ -55,7 +55,8 @@
             "zoomInAroundMouseHorizontally": "Zoom in around mouse horizontally",
             "zoomOutAroundMouseHorizontally": "Zoom out around mouse horizontally",
             "openPatternFromClip": "Open pattern from clip",
-            "quantize": "Quantizar"
+            "quantize": "Quantizar",
+            "seek": "Seek"
         }
     },
     "panelTitles": {

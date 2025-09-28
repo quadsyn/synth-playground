@@ -22,7 +22,7 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
                 this.synthesizer.loadSong(event.data["song"]);
             } break;
             case MessageKind.Play: {
-                this.synthesizer.goToStart();
+                this.synthesizer.seek(event.data["from"]);
                 this.synthesizer.play();
             } break;
             case MessageKind.Pause: {
@@ -30,6 +30,9 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
             } break;
             case MessageKind.Stop: {
                 this.synthesizer.stop();
+            } break;
+            case MessageKind.Seek: {
+                this.synthesizer.seek(event.data["to"]);
             } break;
             case MessageKind.Quit: {
                 this._quit = true;

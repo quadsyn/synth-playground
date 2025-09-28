@@ -3,6 +3,8 @@ export const enum MessageKind {
     Pause,
     Stop,
 
+    Seek,
+
     LoadSong,
 
     PlayPianoNote,

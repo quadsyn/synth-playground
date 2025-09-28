@@ -1,3 +1,4 @@
+import { clamp } from "@synth-playground/common/math.js";
 import * as LongId from "@synth-playground/common/LongId.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { ValueAnalyser } from "@synth-playground/browser/ValueAnalyser.js";
@@ -78,6 +79,7 @@ export class SongDocument {
     public pianoRollPatternIndex: number;
     public pianoRollTrackIndex: number;
     public pianoRollClipIndex: number;
+    public timeCursor: number;
 
     constructor() {
         this.patternInfoCache = new WeakMap();
@@ -140,6 +142,7 @@ export class SongDocument {
         this.pianoRollPatternIndex = 0;
         this.pianoRollTrackIndex = 0;
         this.pianoRollClipIndex = 0;
+        this.timeCursor = 0;
 
         this.onProjectChanged = new Emitter();
         this.onStartedPlaying = new Emitter();
@@ -164,11 +167,20 @@ export class SongDocument {
         this.outputAnalyserTimeCounter = null;
         this.playheadAnalyser = new ValueAnalyser(buffer => {
             if (buffer == null || !this.playing) {
-                return null;
+                return this.timeCursor;
             }
 
-            return buffer[0];
-            // return buffer[buffer.length - 1];
+            const count: number = buffer.length;
+            let playhead: number = this.timeCursor;
+            for (let index: number = 0; index < count; index++) {
+                const value: number = buffer[index];
+                if (value !== 0) {
+                    const disambiguator: number = 1;
+                    playhead = value - disambiguator;
+                    break;
+                }
+            }
+            return playhead;
         });
         this.timeTakenAnalyser = new ValueAnalyser(buffer => {
             if (buffer == null || (!this.playing && !this.playingPianoNote)) {
@@ -176,11 +188,16 @@ export class SongDocument {
             }
 
             const count: number = buffer.length;
-            let max: number = 0.0;
+            let timeTaken: number = 0.0;
             for (let index: number = 0; index < count; index++) {
-                max = Math.max(max, buffer[index]);
+                const value: number = buffer[index];
+                if (value !== 0) {
+                    const disambiguator: number = 1;
+                    timeTaken = value - disambiguator;
+                    break;
+                }
             }
-            return max;
+            return timeTaken;
         });
         this.audioWorkletNode = null;
         this.sentSongForTheFirstTime = false;
@@ -274,6 +291,7 @@ export class SongDocument {
         }
         this.audioWorkletNode.port.postMessage({
             kind: MessageKind.Play,
+            from: clamp(this.timeCursor, 0, this.project.song.duration),
         });
 
         this.playing = true;
@@ -313,6 +331,23 @@ export class SongDocument {
             await this.startPlaying();
         } else {
             await this.stopPlaying();
+        }
+    }
+
+    public async seek(to: number): Promise<void> {
+        if (!this.playing) {
+            return;
+        }
+
+        if (this.audioContext == null) {
+            return;
+        }
+
+        if (this.audioWorkletNode != null) {
+            this.audioWorkletNode.port.postMessage({
+                kind: MessageKind.Seek,
+                to: to,
+            });
         }
     }
 
@@ -410,7 +445,7 @@ export class SongDocument {
         end: number,
         patternIdLo: number,
         patternIdHi: number,
-    ): void {
+    ): Clip.Type {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
         const track: Track.Type = song.tracks[trackIndex];
@@ -428,6 +463,7 @@ export class SongDocument {
         LongId.increment(idGenerator);
         track.clips.push(clip);
         this.markTrackAsDirty(track);
+        return clip;
     }
 
     public insertClip(
@@ -436,8 +472,13 @@ export class SongDocument {
         end: number,
         patternIdLo: number,
         patternIdHi: number,
-    ): void {
-        this._insertClip(
+    ): Clip.Type {
+        // @TODO: Check if the duration is 0 and don't insert if so?
+
+        start = clamp(start, 0, this.project.song.duration - 1);
+        end = clamp(end, 1, this.project.song.duration);
+
+        const clip: Clip.Type = this._insertClip(
             trackIndex,
             start,
             end,
@@ -445,6 +486,8 @@ export class SongDocument {
             patternIdHi,
         );
         this.markProjectAsDirty();
+
+        return clip;
     }
 
     public removeClips(trackIndex: number, clips: Clip.Type[]): void {

@@ -1,6 +1,4 @@
 import * as IITree from "@synth-playground/common/iitree.js";
-// import { splitmix32 } from "@synth-playground/common/splitmix32.js";
-// import { clamp, unlerp } from "@synth-playground/common/math.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import * as Breakpoint from "./data/Breakpoint.js";
 import * as Note from "./data/Note.js";
@@ -245,6 +243,13 @@ export class Synthesizer {
 
     public goToStart(): void {
         this.tick = 0;
+        this.tickSampleCountdown = 0;
+        this.isAtStartOfTick = true;
+    }
+
+    public seek(tick: number): void {
+        const duration: number = this.song.duration;
+        this.tick = ((tick | 0) % duration + duration) % duration;
         this.tickSampleCountdown = 0;
         this.isAtStartOfTick = true;
     }
@@ -716,15 +721,15 @@ export class Synthesizer {
             const samplesPerTick: number = this.samplesPerTick;
             const invSamplesPerTick: number = 1 / samplesPerTick;
             const fraction: number = ((samplesPerTick - previousTickSampleCountdown) + (size - 1)) * invSamplesPerTick;
-            // @TODO: Only set the latest value here, and rely on the main thread
-            // doing a search for non-zero values instead (add 1 to disambiguate).
-            playheadBuffer.fill(previousTick + fraction);
+            const disambiguator: number = 1;
+            playheadBuffer[playheadBuffer.length - 1] = (previousTick + fraction) + disambiguator;
         }
 
         const timeTakenEnd: number = Date.now();
-        // @TODO: Only set the latest value here, and rely on the main thread
-        // doing a search for non-zero values instead (add 1 to disambiguate).
-        if (timeTakenBuffer != null) timeTakenBuffer.fill(timeTakenEnd - timeTakenStart);
+        if (timeTakenBuffer != null) {
+            const disambiguator: number = 1;
+            timeTakenBuffer[timeTakenBuffer.length - 1] = (timeTakenEnd - timeTakenStart) + disambiguator;
+        }
     }
 
     public playPianoNote(pitch: number): void {
