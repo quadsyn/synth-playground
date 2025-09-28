@@ -612,6 +612,16 @@ export class Main implements Component {
                 this._doc.stopPlaying();
                 return ActionResponse.Done;
             };
+            case ActionKind.SeekToStart: {
+                this._doc.seekAndMoveTimeCursor(0);
+                this._ui.scheduleMainRender();
+                return ActionResponse.Done;
+            };
+            case ActionKind.SeekToEnd: {
+                this._doc.seekAndMoveTimeCursor(this._doc.project.song.duration - 1);
+                this._ui.scheduleMainRender();
+                return ActionResponse.Done;
+            };
             case ActionKind.OpenCommandPalette: {
                 this._app.showCommandPalette();
                 return ActionResponse.Done;

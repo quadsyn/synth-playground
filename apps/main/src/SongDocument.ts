@@ -60,6 +60,7 @@ export class SongDocument {
     public onStartedPlayingPianoNote: Emitter;
     public onStoppedPlayingPianoNote: Emitter;
     public onChangedPianoRollPattern: Emitter;
+    public onSeekAndMoveTimeCursor: Emitter;
     public playing: boolean; // @TODO: Use a bitfield for this?
     public playingPianoNote: boolean;
     public stopPianoNoteTimeout: number;
@@ -150,6 +151,7 @@ export class SongDocument {
         this.onStartedPlayingPianoNote = new Emitter();
         this.onStoppedPlayingPianoNote = new Emitter();
         this.onChangedPianoRollPattern = new Emitter();
+        this.onSeekAndMoveTimeCursor = new Emitter();
 
         this.playing = false;
         this.playingPianoNote = false;
@@ -349,6 +351,14 @@ export class SongDocument {
                 to: to,
             });
         }
+    }
+
+    public async seekAndMoveTimeCursor(to: number): Promise<void> {
+        const duration: number = this.project.song.duration;
+        to = ((to | 0) % duration + duration) % duration;
+        this.timeCursor = to;
+        this.seek(to);
+        this.onSeekAndMoveTimeCursor.notifyListeners();
     }
 
     public getOutputTimeDomainData(frame: number): Float32Array | null {

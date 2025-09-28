@@ -94,6 +94,7 @@ export class Timeline implements Component {
         const song: Song.Type = this._doc.project.song;
 
         this._doc.onProjectChanged.addListener(this._onProjectChanged);
+        this._doc.onSeekAndMoveTimeCursor.addListener(this._onSeekAndMoveTimeCursor);
 
         this._laneManager = new LaneManager(
             this._ui,
@@ -1598,6 +1599,11 @@ export class Timeline implements Component {
         this._state.selectionOverlayIsDirty = true;
         this._renderedEnvelopesDirty = true;
         this._tempoEnvelopeIsDirty = true;
+    };
+
+    private _onSeekAndMoveTimeCursor = (): void => {
+        // @TODO: Scroll if time cursor isn't in view?
+        this._state.selectionOverlayIsDirty = true;
     };
 }
 
