@@ -52,7 +52,7 @@ import {
     drawNoteBottomHandle,
     drawNotePitchEnvelopePoints,
 } from "./notePainting.js";
-import { tickToX, noteIsFlat } from "./common.js";
+import { tickToX, pitchToY, noteIsFlat } from "./common.js";
 import { type PatternInfo } from "../../data/PatternInfo.js";
 import {
     gridBackgroundColor,
@@ -981,11 +981,12 @@ export class PianoRoll implements Component {
                     note.volumeEnvelope,
                 );
 
-                const noteIsVisible: boolean = (
-                    noteIsFlat(this._state.noteDrawingStyle, note)
-                    ? insideRange(note.pitch, viewportY0, viewportY1)
-                    : backgroundIsVisible
-                );
+                let noteIsVisible: boolean = backgroundIsVisible;
+                if (noteIsFlat(this._state.noteDrawingStyle, note)) {
+                    const noteY0: number = pitchToY(height, this._state.viewport, pixelsPerPitch, maxPitch, note.pitch);
+                    const noteY1: number = noteY0 + pixelsPerPitch;
+                    noteIsVisible = rangesOverlap(noteY0, noteY1, 0, height);
+                }
 
                 if (!noteIsVisible) {
                     offscreenNotesContext.fillStyle = noteForegroundColor;
