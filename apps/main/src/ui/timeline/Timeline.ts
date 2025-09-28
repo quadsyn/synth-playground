@@ -1542,10 +1542,10 @@ export class Timeline implements Component {
                 return ActionResponse.Done;
             };
             case ActionKind.TimelineSeek: {
-                if (mouseIsInside(context, this._timeRuler.element)) {
+                if (mouseStartedInside(context, this._timeRuler.element)) {
                     const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
                     const width: number = bounds.width;
-                    const mouseX: number = context.x0 - bounds.left;
+                    const mouseX: number = context.x1 - bounds.left;
 
                     const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
                     const cursorPpqn: number = (

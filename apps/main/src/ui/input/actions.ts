@@ -532,7 +532,7 @@ type ActionTableEntry = [
         ActionTags.None,
         ActionKind.TimelineSeek,
         AreaKind.Timeline,
-        [GestureKind.Press | MouseButton.Left],
+        [GestureKind.Press | MouseButton.Left, GestureKind.Drag | MouseButton.Left],
         <ActionId>"timeline.seek",
         StringId.TimelineActionSeek,
     ],
