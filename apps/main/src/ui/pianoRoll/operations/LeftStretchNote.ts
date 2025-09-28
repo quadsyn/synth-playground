@@ -59,6 +59,7 @@ export class LeftStretchNote implements Operation {
         if (isReleasing(context)) {
             // @TODO: Skip committing if the note properties didn't change.
             for (let [note, transform] of this.notes.entries()) {
+                // @TODO: Make sure duration can't end up as 0.
                 const newStart: number = clamp(transform.newStart, 0, pattern.duration - 1);
 
                 this._operationState.lastCommittedNoteDuration = note.end - newStart;

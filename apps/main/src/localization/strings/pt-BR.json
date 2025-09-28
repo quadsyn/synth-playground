@@ -44,6 +44,17 @@
             "quantize": "Quantizar"
         },
         "timeline": {
+            "createClipAndPattern": "Create clip and pattern",
+            "removeClip": "Remove clip",
+            "leftStretchClip": "Stretch clip from the left",
+            "rightStretchClip": "Stretch clip from the right",
+            "moveClips": "Move clips",
+            "selectClip": "Select clip",
+            "selectBox": "Start box selection",
+            "selectAll": "Select all",
+            "zoomInAroundMouseHorizontally": "Zoom in around mouse horizontally",
+            "zoomOutAroundMouseHorizontally": "Zoom out around mouse horizontally",
+            "openPatternFromClip": "Open pattern from clip",
             "quantize": "Quantizar"
         }
     },

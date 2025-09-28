@@ -447,11 +447,28 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
-    public removeClip(trackIndex: number, index: number): void {
+    public removeClips(trackIndex: number, clips: Clip.Type[]): void {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
         const track: Track.Type = song.tracks[trackIndex];
-        track.clips.splice(index, 1);
+
+        // @TODO: It may be better to take a map of notes.
+        const clipSet: Set<Clip.Type> = new Set(clips);
+
+        const clipCount: number = track.clips.length;
+        for (let clipIndex: number = clipCount - 1; clipIndex >= 0; clipIndex--) {
+            const clip: Clip.Type = track.clips[clipIndex];
+            if (clipSet.has(clip)) {
+                const otherClip: Clip.Type = track.clips[track.clips.length - 1];
+                track.clips[clipIndex] = otherClip;
+                track.clips[track.clips.length - 1] = clip;
+                track.clips.pop();
+            }
+        }
+
+        // @TODO: Remove the associated patterns as well if they end up unused?
+        // Probably should be configurable.
+
         this.markTrackAsDirty(track);
         this.markProjectAsDirty();
     }
@@ -480,6 +497,36 @@ export class SongDocument {
             this.markTrackAsDirty(newTrack);
         } else {
             this.markTrackAsDirty(newTrack);
+        }
+        this.markProjectAsDirty();
+    }
+
+    public changeClips(
+        clipsAndTrackIndices: [Clip.Type, number][],
+        timeDelta: number,
+    ): void {
+        // @TODO: I need to check if the clip is still in the song.
+
+        const project: Project.Type = this.project;
+        const song: Song.Type = project.song;
+
+        for (let index: number = 0; index < clipsAndTrackIndices.length; index++) {
+            const entry: [Clip.Type, number] = clipsAndTrackIndices[index];
+            const clip: Clip.Type = entry[0];
+
+            const oldStart: number = clip.start;
+            const oldEnd: number = clip.end;
+            const newStart: number = oldStart + timeDelta;
+            const newEnd: number = oldEnd + timeDelta;
+
+            clip.start = newStart;
+            clip.end = newEnd;
+        }
+
+        for (let index: number = 0; index < clipsAndTrackIndices.length; index++) {
+            const entry: [Clip.Type, number] = clipsAndTrackIndices[index];
+            const trackIndex: number = entry[1];
+            this.markTrackAsDirty(song.tracks[trackIndex]);
         }
         this.markProjectAsDirty();
     }

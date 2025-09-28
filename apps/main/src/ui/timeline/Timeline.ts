@@ -4,7 +4,7 @@ import { type PatternInfo } from "../../data/PatternInfo.js";
 import { NotePitchBoundsTracker } from "../../data/NotePitchBoundsTracker.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
-import { unlerp, remap, clamp, insideRange } from "@synth-playground/common/math.js";
+import { unlerp, remap, clamp, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
@@ -17,13 +17,26 @@ import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import { ActionKind, ActionResponse } from "../input/actions.js";
-import { type OperationContext } from "../input/operations.js";
+import { isKeyboardGesture } from "../input/gestures.js";
+import {
+    OperationResponse,
+    type OperationContext,
+    mouseStartedInside,
+    mouseIsInside,
+} from "../input/operations.js";
 import * as Viewport from "../common/Viewport.js";
 import * as Lane from "./Lane.js";
 import { type LaneLayout } from "./LaneLayout.js";
 import { TimeRuler } from "./TimeRuler.js";
 import { TrackOutliner } from "./TrackOutliner.js";
 import { LaneManager } from "./LaneManager.js";
+import { OperationKind } from "./OperationKind.js";
+import { type OperationState } from "./OperationState.js";
+import { type Operation } from "./Operation.js";
+import { type ClipTransform } from "./ClipTransform.js";
+import { LeftStretchClip } from "./operations/LeftStretchClip.js";
+import { RightStretchClip } from "./operations/RightStretchClip.js";
+import { MoveClips } from "./operations/MoveClips.js";
 
 export class Timeline implements Component {
     public element: HTMLDivElement;
@@ -54,32 +67,20 @@ export class Timeline implements Component {
     private _canvasesContainer: HTMLDivElement;
     private _timeRuler: TimeRuler;
     private _trackOutliner: TrackOutliner;
-    private _viewport: Viewport.Type;
-    private _hoveredClipIndex: number;
-    private _hoveredClipTrackIndex: number;
-    private _selectedClipIndex: number;
-    private _selectedClipTrackIndex: number;
-    private _movingClip: boolean;
-    private _movingStartOfClip: boolean;
-    private _movingEndOfClip: boolean;
-    private _clipStretchHandleSize: number; // In pixels.
-    private _hoveringOverStartOfClip: boolean;
-    private _hoveringOverEndOfClip: boolean;
-    private _pointerIsDown: boolean;
-    private _pointerX0: number;
-    // private _pointerY0: number;
-    private _tentativeClipStart: number;
-    private _tentativeClipEnd: number;
+    private _hoverQueryResult: HoverQueryResult;
+    private _state: OperationState;
+    private _activeOperation: Operation | null;
     private _playhead: number;
     private _playheadIsVisible: boolean;
+    private _cursor: string;
 
     private _renderedEnvelopesDirty: boolean;
     private _renderedClipsDirty: boolean;
-    private _renderedSelectionOverlayDirty: boolean;
     private _renderedViewport: Viewport.Type | null;
     private _renderedPlayhead: number | null;
     private _renderedPlayheadIsVisible: boolean;
     private _tempoEnvelopeIsDirty: boolean;
+    private _renderedCursor: string | null;
 
     constructor(
         ui: UIContext,
@@ -106,45 +107,61 @@ export class Timeline implements Component {
         const ppqn: number = song.ppqn;
         const songDuration: number = song.duration;
 
-        this._viewport = Viewport.make(
-            /* x0 */ 0,
-            /* y0 */ 0,
-            /* x1 */ beatsPerBar * ppqn,
-            /* y1 */ 0,
-            /* minWidth */ 1,
-            /* maxWidth */ Math.max(1, songDuration),
-            /* minHeight */ 0,
-            /* maxHeight */ 0,
-        );
+        // @TODO: It's not really nice to have this, as it inhibits reentrancy,
+        // but it saves doing allocations every time we use it.
+        this._hoverQueryResult = {
+            clipIndex: -1,
+            clipTrackIndex: -1,
+            clipHit: ClipHit.None,
+        };
 
-        this._hoveredClipIndex = -1;
-        this._hoveredClipTrackIndex = -1;
-        this._selectedClipIndex = -1;
-        this._selectedClipTrackIndex = -1;
-        this._movingClip = false;
-        this._movingStartOfClip = false;
-        this._movingEndOfClip = false;
-        this._clipStretchHandleSize = 4;
-        this._hoveringOverStartOfClip = false;
-        this._hoveringOverEndOfClip = false;
+        this._state = {
+            viewport: Viewport.make(
+                /* x0 */ 0,
+                /* y0 */ 0,
+                /* x1 */ beatsPerBar * ppqn,
+                /* y1 */ 0,
+                /* minWidth */ 1,
+                /* maxWidth */ Math.max(1, songDuration),
+                /* minHeight */ 0,
+                /* maxHeight */ 0,
+            ),
+            clipStretchHandleSize: 4,
+            boxSelectionActive: false,
+            boxSelectionX0: 0,
+            boxSelectionX1: 0,
+            boxSelectionY0: 0,
+            boxSelectionY1: 0,
+            selectionOverlayIsDirty: true,
+            selectedClipsByTrackIndex: new Map(),
+            selectedTrackIndex: 0,
+            mouseToPpqn: (clientX: number): number => {
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const mouseX: number = clientX - bounds.left;
+                const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                return this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+            },
+            getCanvasBounds: (): DOMRect => {
+                return this._canvasesContainer.getBoundingClientRect();
+            },
+        };
+        this._activeOperation = null;
 
         this._playhead = 0;
         this._playheadIsVisible = false;
         this._renderedPlayhead = null;
         this._renderedPlayheadIsVisible = false;
 
-        this._tempoEnvelopeIsDirty = true;
+        this._cursor = "default";
 
-        this._pointerIsDown = false;
-        this._pointerX0 = 0;
-        // this._pointerY0 = 0;
-        this._tentativeClipStart = 0;
-        this._tentativeClipEnd = 0;
+        this._tempoEnvelopeIsDirty = true;
 
         this._renderedEnvelopesDirty = true;
         this._renderedClipsDirty = true;
-        this._renderedSelectionOverlayDirty = true;
+        this._state.selectionOverlayIsDirty = true;
         this._renderedViewport = null;
+        this._renderedCursor = null;
 
         const initialTrackZoom: number = 1;
         const initialTrackPan: number = 0;
@@ -154,8 +171,8 @@ export class Timeline implements Component {
             /* vertical */ false,
             /* flip */ false,
             /* initialLongSideSize */ this._width,
-            Viewport.getXZoom(this._viewport),
-            Viewport.getXPan(this._viewport),
+            Viewport.getXZoom(this._state.viewport),
+            Viewport.getXPan(this._state.viewport),
             this._onTimeScrollBarChange,
             /* onRenderOverlay */ null,
         );
@@ -257,8 +274,8 @@ export class Timeline implements Component {
         this._timeRuler = new TimeRuler(
             this._ui,
             /* initialWidth */ this._width,
-            this._viewport.x0,
-            this._viewport.x1,
+            this._state.viewport.x0,
+            this._state.viewport.x1,
             this._doc.project.song.ppqn,
             this._doc.project.song.beatsPerBar,
         );
@@ -268,7 +285,7 @@ export class Timeline implements Component {
             this._laneManager,
             /* size */ 250,
             /* initialHeight */ this._height,
-            this._viewport.y0,
+            this._state.viewport.y0,
         );
         this.element = H("div", {
             style: `
@@ -295,21 +312,10 @@ export class Timeline implements Component {
             ),
             this._trackScrollBar.element,
         );
-
-        this._canvasesContainer.addEventListener("mousedown", this._onPointerDown);
-        window.addEventListener("mousemove", this._onPointerMove);
-        window.addEventListener("mouseup", this._onPointerUp);
-        this._canvasesContainer.addEventListener("dblclick", this._onDoubleClick);
-        this._canvasesContainer.addEventListener("wheel", this._onWheel);
     }
 
     public dispose(): void {
         this._doc.onProjectChanged.removeListener(this._onProjectChanged);
-        this._canvasesContainer.removeEventListener("mousedown", this._onPointerDown);
-        window.removeEventListener("mousemove", this._onPointerMove);
-        window.removeEventListener("mouseup", this._onPointerUp);
-        this._canvasesContainer.removeEventListener("dblclick", this._onDoubleClick);
-        this._canvasesContainer.removeEventListener("wheel", this._onWheel);
 
         this._timeScrollBar.dispose();
         this._trackScrollBar.dispose();
@@ -336,11 +342,23 @@ export class Timeline implements Component {
 
             this._playheadIsVisible = (
                 this._playhead != null
-                && insideRange(this._playhead, this._viewport.x0, this._viewport.x1)
+                && insideRange(this._playhead, this._state.viewport.x0, this._state.viewport.x1)
             );
         } else {
             this._playhead = 0;
             this._playheadIsVisible = false;
+        }
+
+        if (this._activeOperation instanceof LeftStretchClip) {
+            this._cursor = "w-resize";
+        } else if (this._activeOperation instanceof RightStretchClip) {
+            this._cursor = "e-resize";
+        } else {
+            this._cursor = "default";
+        }
+        if (this._cursor !== this._renderedCursor) {
+            this.element.style.cursor = this._cursor;
+            this._renderedCursor = this._cursor;
         }
 
         this._renderGrid();
@@ -350,18 +368,19 @@ export class Timeline implements Component {
         this._renderPlayhead();
         this._timeScrollBar.render();
         this._trackScrollBar.render();
-        this._timeRuler.setViewport(this._viewport);
+        this._timeRuler.setViewport(this._state.viewport);
         this._timeRuler.setPpqn(this._doc.project.song.ppqn);
         this._timeRuler.setBeatsPerBar(this._doc.project.song.beatsPerBar);
         this._timeRuler.setTempoEnvelope(this._doc.project.song.tempoEnvelope);
         this._timeRuler.setTempoEnvelopeIsDirty(this._tempoEnvelopeIsDirty);
         this._timeRuler.render();
-        this._trackOutliner.setViewport(this._viewport);
+        this._trackOutliner.setViewport(this._state.viewport);
+        this._trackOutliner.setSelectedTrackIndex(this._state.selectedTrackIndex);
         this._trackOutliner.render();
 
         this._renderedClipsDirty = false;
-        this._renderedSelectionOverlayDirty = false;
-        this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
+        this._state.selectionOverlayIsDirty = false;
+        this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._state.viewport);
         this._renderedPlayhead = this._playhead;
         this._renderedPlayheadIsVisible = this._playheadIsVisible;
         this._renderedEnvelopesDirty = false;
@@ -370,7 +389,7 @@ export class Timeline implements Component {
 
     private _renderGrid(): void {
         if (
-            !Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Both)
+            !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._gridCanvasResized
         ) {
             return;
@@ -393,9 +412,9 @@ export class Timeline implements Component {
         const context: CanvasRenderingContext2D = this._gridContext;
         const width: number = this._width;
         const height: number = this._height;
-        const viewportX0: number = this._viewport.x0;
-        const viewportX1: number = this._viewport.x1;
-        const viewportY0: number = this._viewport.y0;
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
+        const viewportY0: number = this._state.viewport.y0;
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
         const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
@@ -449,7 +468,7 @@ export class Timeline implements Component {
     private _renderClips(): void {
         if (
             !this._renderedClipsDirty
-            && !Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Both)
+            && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._clipsCanvasResized
         ) return;
 
@@ -468,14 +487,17 @@ export class Timeline implements Component {
         const context: CanvasRenderingContext2D = this._clipsContext;
         const width: number = this._width;
         const height: number = this._height;
-        const viewportX0: number = this._viewport.x0;
-        const viewportX1: number = this._viewport.x1;
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        const viewportY0: number = this._viewport.y0;
-        const selectedClipIndex: number = this._selectedClipIndex;
-        const selectedClipTrackIndex: number = this._selectedClipTrackIndex;
+        const viewportY0: number = this._state.viewport.y0;
         const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+
+        let selectedClips: Map<Clip.Type, ClipTransform> | undefined = undefined;
+        if (this._activeOperation != null && this._activeOperation.kind === OperationKind.Clip) {
+            selectedClips = this._activeOperation.clips;
+        }
 
         context.clearRect(0, 0, width, height);
 
@@ -503,38 +525,52 @@ export class Timeline implements Component {
                     viewportX0,
                     viewportX1,
                     (clip: Clip.Type, index: number) => {
-                        if (index === selectedClipIndex && trackIndex === selectedClipTrackIndex) return;
-                        this._renderClip(
-                            context,
-                            clip,
-                            clip.start,
-                            clip.end,
-                            viewportX0,
-                            viewportY0,
-                            pixelsPerTick,
-                            top,
-                            laneHeight,
-                        );
+                        // @TODO: One annoying thing about doing this is that when we're moving
+                        // a clip, it won't show up on top of all the others on the same track.
+                        // Normally, I'd draw the transformed clips afterwards, but here it's
+                        // awkward because for every transformed clip we have to find its lane,
+                        // which is not 1:1 with tracks. Maybe the cheapest thing to do is to
+                        // iterate over the visible lanes again, and find the transformed clips
+                        // by storing whatever other information is necessary in the operations.
+                        const transform: ClipTransform | undefined = selectedClips?.get(clip);
+                        if (transform != null) {
+                            this._renderClip(
+                                width,
+                                height,
+                                context,
+                                clip,
+                                transform.newStart,
+                                transform.newEnd,
+                                viewportX0,
+                                viewportY0,
+                                pixelsPerTick,
+                                top,
+                                laneHeight,
+                            );
+                        } else {
+                            this._renderClip(
+                                width,
+                                height,
+                                context,
+                                clip,
+                                clip.start,
+                                clip.end,
+                                viewportX0,
+                                viewportY0,
+                                pixelsPerTick,
+                                top,
+                                laneHeight,
+                            );
+                        }
                     },
                 );
-                if (selectedClipIndex !== -1 && trackIndex === selectedClipTrackIndex) {
-                    this._renderClip(
-                        context,
-                        tracks[selectedClipTrackIndex].clips[selectedClipIndex],
-                        this._tentativeClipStart,
-                        this._tentativeClipEnd,
-                        viewportX0,
-                        viewportY0,
-                        pixelsPerTick,
-                        top,
-                        laneHeight,
-                    );
-                }
             }
         }
     }
 
     public _renderClip(
+        canvasWidth: number,
+        canvasHeight: number,
         context: CanvasRenderingContext2D,
         clip: Clip.Type,
         start: number,
@@ -545,6 +581,23 @@ export class Timeline implements Component {
         trackTop: number,
         trackHeight: number,
     ): void {
+        const duration: number = end - start;
+
+        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
+        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+            patternsById,
+            clip.patternIdLo,
+            clip.patternIdHi,
+        );
+        if (patternTableIndex === -1) {
+            throw new Error("Couldn't find pattern index");
+        }
+        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
+        const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
+        const patternDuration: number = pattern.duration;
+
+        const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
+
         const headerHeight: number = 14;
         const bodyHeight: number = (trackHeight - 1) - headerHeight;
         const x0: number = ((start - viewportX0) * pixelsPerTick);
@@ -565,17 +618,6 @@ export class Timeline implements Component {
         context.fillStyle = "#ffffff";
         context.font = "8pt sans-serif";
         context.textBaseline = "top";
-        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
-        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-            patternsById,
-            clip.patternIdLo,
-            clip.patternIdHi,
-        );
-        if (patternTableIndex === -1) {
-            throw new Error("Couldn't find pattern index");
-        }
-        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-        const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
         // @TODO: Maybe use the ID instead. Although this probably should just
         // be an user-defined name.
         const title: string = `Pattern ${patternIndex}`;
@@ -599,13 +641,13 @@ export class Timeline implements Component {
         if (w >= 4) {
             const notes: Note.Type[] = pattern.notes;
             const noteCount: number = notes.length;
-            // @TODO: Loops
+
             // @TODO: startOffset
             if (noteCount > 0) {
                 const patternInfo: PatternInfo = this._doc.patternInfoCache.get(pattern)!;
                 const pitchBounds: NotePitchBoundsTracker = patternInfo.pitchBounds;
                 const minPosition: number = 0;
-                const maxPosition: number = minPosition + end - start;
+                const maxPosition: number = minPosition + (end - start);
                 let minNotePitch: number = pitchBounds.getMin() - 1;
                 let maxNotePitch: number = pitchBounds.getMax();
 
@@ -622,12 +664,45 @@ export class Timeline implements Component {
                     const noteStart: number = note.start;
                     const noteEnd: number = note.end;
                     const notePitch: number = note.pitch;
-                    const noteX0: number = clamp(remap(noteStart, 0, maxPosition, 0, w), 0, w - 1);
-                    const noteX1: number = clamp(remap(noteEnd, 0, maxPosition, 0, w), 0, w - 1);
-                    const noteX: number = x + noteX0;
-                    const noteW: number = noteX1 - noteX0;
                     const noteY: number = y + headerHeight + remap(notePitch, minNotePitch, maxNotePitch, bodyHeight - 4, 2);
-                    context.fillRect(noteX, noteY, noteW, noteH);
+                    for (let loopIndex: number = 0; loopIndex < loopCount; loopIndex++) {
+                        const loopNoteStart: number = noteStart + patternDuration * loopIndex;
+                        const loopNoteEnd: number = noteEnd + patternDuration * loopIndex;
+                        const noteX0: number = clamp(remap(loopNoteStart, 0, maxPosition, 0, w), 0, w - 1);
+                        const noteX1: number = clamp(remap(loopNoteEnd, 0, maxPosition, 0, w), 0, w - 1);
+                        const noteX: number = x + noteX0;
+                        const noteW: number = noteX1 - noteX0;
+                        if (
+                            rangesOverlap(noteX, noteX + noteW, 0, canvasWidth)
+                            && rangesOverlap(noteY, noteY + noteH, 0, canvasHeight)
+                        ) {
+                            context.fillRect(noteX, noteY, noteW, noteH);
+                        }
+                        if (loopNoteStart > duration) {
+                            break;
+                        }
+                    }
+                    if (noteStart > duration) {
+                        break;
+                    }
+                }
+            }
+            for (let loopIndex: number = 1; loopIndex < loopCount; loopIndex++) {
+                const seamTick: number = patternDuration * loopIndex;
+                const seamX: number = x + remap(seamTick, 0, duration, 0, w);
+                if (seamX > x1) {
+                    break;
+                }
+                const dashCount: number = 5;
+                const dashH: number = h / dashCount;
+                const dashGap: number = 2;
+                for (let dashIndex: number = 0; dashIndex < dashCount; dashIndex++) {
+                    const y0: number = dashIndex * dashH + dashGap;
+                    const y1: number = (dashIndex + 1) * dashH - dashGap * 2;
+                    context.beginPath();
+                    context.moveTo(seamX, y0);
+                    context.lineTo(seamX, y1);
+                    context.stroke();
                 }
             }
             context.strokeRect(x, y, w, h);
@@ -637,7 +712,7 @@ export class Timeline implements Component {
     private _renderEnvelopes(): void {
         if (
             !this._renderedEnvelopesDirty
-            && !Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Both)
+            && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._envelopesCanvasResized
         ) {
             return;
@@ -659,11 +734,11 @@ export class Timeline implements Component {
         const context: CanvasRenderingContext2D = this._envelopesContext;
         const width: number = this._width;
         const height: number = this._height;
-        const viewportX0: number = this._viewport.x0;
-        const viewportX1: number = this._viewport.x1;
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        const viewportY0: number = this._viewport.y0;
+        const viewportY0: number = this._state.viewport.y0;
         const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
         context.clearRect(0, 0, width, height);
@@ -751,8 +826,8 @@ export class Timeline implements Component {
 
     private _renderSelectionOverlay(): void {
         if (
-            !this._renderedSelectionOverlayDirty
-            && !Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Both)
+            !this._state.selectionOverlayIsDirty
+            && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._selectionOverlayCanvasResized
         ) {
             return;
@@ -764,68 +839,79 @@ export class Timeline implements Component {
             this._selectionOverlayCanvas.height = this._height;
         }
 
+        const lanes: Lane.Type[] = this._laneManager.getLanes();
+        const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+        const laneCount: number = lanes.length;
+        // const lanesVersion: number = this._laneManager.getLanesVersion();
         // const canvas: HTMLCanvasElement = this._selectionOverlayCanvas;
         const context: CanvasRenderingContext2D = this._selectionOverlayContext;
         const width: number = this._width;
         const height: number = this._height;
-        // const viewportX0: number = this._viewport.x0;
-        // const viewportX1: number = this._viewport.x1;
-        // const viewportWidth: number = viewportX1 - viewportX0;
-        // const pixelsPerTick: number = width / viewportWidth;
-        // const ticksPerPixel: number = viewportWidth / width;
-        // const viewportY0: number = this._viewport.y0;
-        // const hoveredClipIndex: number = this._hoveredClipIndex;
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
+        const viewportWidth: number = viewportX1 - viewportX0;
+        const pixelsPerTick: number = width / viewportWidth;
+        const viewportY0: number = this._state.viewport.y0;
+        const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
 
         context.clearRect(0, 0, width, height);
-
-        // if (this._selectedClipIndex !== -1) return;
-        // if (hoveredClipIndex === -1) return;
 
         context.fillStyle = "rgba(255, 255, 255, 0.8)";
         context.strokeStyle = "#ffffff";
         context.lineWidth = 2;
 
-        // const hoveredClipTrackIndex: number = this._hoveredClipTrackIndex;
-        // const project: Project = this._doc.project;
-        // const song: Song = project.song;
-        // const tracks: Track[] = song.tracks;
-        // const clips: Clip[] = tracks[hoveredClipTrackIndex].clips;
+        for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+            const lane: Lane.Type = lanes[laneIndex];
+            const laneLayout: LaneLayout = laneLayouts[laneIndex];
+            const laneHeight: number = lane.height;
+            const kind: Lane.Kind = lane.kind;
+            const top: number = laneLayout.y0 - viewportY0 + 2;
+            // const bottom: number = top + laneHeight - 2;
 
-        // {
-        //     const clipIndex: number = hoveredClipIndex;
-        //     const clip: Clip = clips[clipIndex];
-        //     const x0: number = ((clip.start - viewportX0) * pixelsPerTick);
-        //     const x1: number = ((clip.end - viewportX0) * pixelsPerTick);
-        //     let w: number = x1 - x0;
-        //     if (w <= 1) w = 1;
-        //     const x: number = x0;
-        //     const y: number = ((hoveredClipTrackIndex - viewportY0) * trackHeight);
-        //     const h: number = trackHeight;
-        //     if (this._hoveringOverStartOfClip) {
-        //         const hX0: number = x0;
-        //         const hX1: number = x0 + this._clipStretchHandleSize;
-        //         const hX: number = hX0;
-        //         let hW: number = hX1 - hX0;
-        //         if (hW <= 1) hW = 1;
-        //         context.fillRect(hX, y, hW, h);
-        //     } else if (this._hoveringOverEndOfClip) {
-        //         const hX0: number = x1 - this._clipStretchHandleSize;
-        //         const hX1: number = x1;
-        //         const hX: number = hX0;
-        //         let hW: number = hX1 - hX0;
-        //         if (hW <= 1) hW = 1;
-        //         context.fillRect(hX, y, hW, h);
-        //     } else {
-        //         context.strokeRect(x + 0.5, y + 0.5, w, h);
-        //     }
-        // }
+            if (top > height) {
+                break;
+            }
+
+            if (kind === Lane.Kind.Track) {
+                const trackIndex: number = lane.trackIndex;
+                if (trackIndex === -1) {
+                    continue;
+                }
+
+                const selectedClips: Clip.Type[] | undefined = this._state.selectedClipsByTrackIndex.get(trackIndex);
+                if (selectedClips == null) {
+                    continue;
+                }
+
+                const clipCount: number = selectedClips.length;
+                for (let clipIndex: number = 0; clipIndex < clipCount; clipIndex++) {
+                    const clip: Clip.Type = selectedClips[clipIndex];
+
+                    if (
+                        this._activeOperation != null
+                        && this._activeOperation.clips != null
+                        && this._activeOperation.clips.has(clip)
+                    ) {
+                        continue;
+                    }
+
+                    const x0: number = ((clip.start - viewportX0) * pixelsPerTick);
+                    const x1: number = ((clip.end - viewportX0) * pixelsPerTick);
+                    const w: number = Math.max(1, x1 - x0);
+                    const x: number = x0;
+                    const y: number = top;
+                    const h: number = laneHeight;
+                    context.strokeRect(x + 0.5, y + 0.5, w, h);
+                }
+            }
+        }
     }
 
     private _renderPlayhead(): void {
         if (
             this._renderedPlayheadIsVisible === this._playheadIsVisible
             && this._renderedPlayhead === this._playhead
-            && !Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Both)
+            && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._playheadOverlayCanvasResized
         ) {
             return;
@@ -838,18 +924,14 @@ export class Timeline implements Component {
         }
 
         // const song: Song = this._doc.song;
-        // const ppqn: number = song.ppqn;
-        // const beatsPerBar: number = song.beatsPerBar;
         // const canvas: HTMLCanvasElement = this._playheadOverlayCanvas;
         const context: CanvasRenderingContext2D = this._playheadOverlayContext;
         const width: number = this._width;
         const height: number = this._height;
-        const viewportX0: number = this._viewport.x0;
-        const viewportX1: number = this._viewport.x1;
+        const viewportX0: number = this._state.viewport.x0;
+        const viewportX1: number = this._state.viewport.x1;
         const viewportWidth: number = viewportX1 - viewportX0;
         const pixelsPerTick: number = width / viewportWidth;
-        // const pixelsPerBeat: number = pixelsPerTick * ppqn;
-        // const ticksPerPixel: number = viewportWidth / width;
         const playhead: number | null = this._playhead;
 
         context.clearRect(0, 0, width, height);
@@ -881,17 +963,17 @@ export class Timeline implements Component {
         const newClipAreaHeight: number = Math.max(1, newHeight - topRightGapH - bottomRightGapH);
 
         Viewport.resizeWithUnzoomableY(
-            this._viewport,
+            this._state.viewport,
             oldWidth,
             oldHeight,
             newClipAreaWidth,
             newClipAreaHeight,
             lanesTotalHeight,
         );
-        this._timeScrollBar.setZoom(Viewport.getXZoom(this._viewport));
-        this._timeScrollBar.setPan(Viewport.getXPan(this._viewport));
+        this._timeScrollBar.setZoom(Viewport.getXZoom(this._state.viewport));
+        this._timeScrollBar.setPan(Viewport.getXPan(this._state.viewport));
         this._trackScrollBar.setZoom(Viewport.computeYZoomWithUnzoomableY(newClipAreaHeight, lanesTotalHeight));
-        this._trackScrollBar.setPan(Viewport.getYPanWithUnzoomableY(this._viewport, newClipAreaHeight, lanesTotalHeight));
+        this._trackScrollBar.setPan(Viewport.getYPanWithUnzoomableY(this._state.viewport, newClipAreaHeight, lanesTotalHeight));
 
         // @TODO: I probably should really be driving this mostly from CSS.
 
@@ -912,7 +994,7 @@ export class Timeline implements Component {
         this._selectionOverlayCanvasResized = true;
         this._playheadOverlayCanvasResized = true;
         this._renderedClipsDirty = true;
-        this._renderedSelectionOverlayDirty = true;
+        this._state.selectionOverlayIsDirty = true;
         Viewport.clearRendered(this._renderedViewport);
 
         this._ui.scheduleMainRender();
@@ -923,275 +1005,35 @@ export class Timeline implements Component {
     }
 
     private _onTimeScrollBarChange = (zoom: number, pan: number): void => {
-        Viewport.zoomAndPanX(this._viewport, zoom, pan);
+        Viewport.zoomAndPanX(this._state.viewport, zoom, pan);
         this._ui.scheduleMainRender();
     };
 
     private _onTrackScrollBarChange = (zoom: number, pan: number): void => {
-        Viewport.panYWithUnzoomableY(this._viewport, this._height, this._laneManager.getTotalHeight(), pan);
+        Viewport.panYWithUnzoomableY(this._state.viewport, this._height, this._laneManager.getTotalHeight(), pan);
         this._ui.scheduleMainRender();
     };
 
-    private _onPointerDown = (event: MouseEvent): void => {
-        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
-        const width: number = bounds.width;
-        // const height: number = bounds.height;
-        const mouseX: number = event.clientX - bounds.left;
-        // const mouseY: number = event.clientY - bounds.top;
-
-        this._pointerX0 = mouseX;
-        // this._pointerY0 = mouseY;
-
-        if (this._hoveredClipIndex !== -1) {
-            this._selectedClipIndex = this._hoveredClipIndex;
-            this._selectedClipTrackIndex = this._hoveredClipTrackIndex;
-
-            this._hoveredClipIndex = -1;
-            this._hoveredClipTrackIndex = -1;
-
-            const project: Project.Type = this._doc.project;
-            const song: Song.Type = project.song;
-            const tracks: Track.Type[] = song.tracks;
-            const clips: Clip.Type[] = tracks[this._selectedClipTrackIndex].clips;
-            const clip: Clip.Type = clips[this._selectedClipIndex];
-
-            const viewportWidth: number = this._viewport.x1 - this._viewport.x0;
-            // const viewportHeight: number = this._viewportY1 - this._viewportY0;
-
-            const cursorPpqn0: number = (
-                this._viewport.x0 + remap(this._pointerX0, 0, width, 0, viewportWidth)
-            ) | 0;
-            const cursorPpqn1: number = (
-                this._viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
-            ) | 0;
-
-            if (this._hoveringOverStartOfClip) {
-                const cursorPpqnDeltaMin: number = 0 - clip.start;
-                const cursorPpqnDeltaMax: number = ((clip.end - 1) - clip.start);
-                const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                this._movingStartOfClip = true;
-                this._tentativeClipStart = clip.start + cursorPpqnDelta;
-                this._tentativeClipEnd = clip.end;
-            } else if (this._hoveringOverEndOfClip) {
-                const cursorPpqnDeltaMin: number = 0 - clip.start;
-                const cursorPpqnDeltaMax: number = song.duration - clip.end;
-                const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                this._movingEndOfClip = true;
-                this._tentativeClipStart = clip.start;
-                this._tentativeClipEnd = clip.end + cursorPpqnDelta;
-            } else {
-                const cursorPpqnDeltaMin: number = 0 - clip.start;
-                const cursorPpqnDeltaMax: number = song.duration - clip.end;
-                const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                this._movingClip = true;
-                this._tentativeClipStart = clip.start + cursorPpqnDelta;
-                this._tentativeClipEnd = clip.end + cursorPpqnDelta;
-            }
-            this._hoveringOverStartOfClip = false;
-            this._hoveringOverEndOfClip = false;
-
-            this._renderedClipsDirty = true;
-            this._renderedSelectionOverlayDirty = true;
-        }
-
-        this._pointerIsDown = true;
-
-        this._ui.scheduleMainRender();
-    };
-
-    private _onPointerUp = (event: MouseEvent): void => {
-        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
-        const width: number = bounds.width;
-        const height: number = bounds.height;
-        const mouseX: number = event.clientX - bounds.left;
-        const mouseY: number = event.clientY - bounds.top;
-
-        if (this._selectedClipIndex !== -1) {
-            // @TODO: Skip committing if the clip properties didn't change.
-
-            const project: Project.Type = this._doc.project;
-            const song: Song.Type = project.song;
-            const tracks: Track.Type[] = song.tracks;
-            const clipIndex: number = this._selectedClipIndex;
-            const clip: Clip.Type = tracks[this._selectedClipTrackIndex].clips[clipIndex];
-            let newStart: number = clip.start;
-            let newEnd: number = clip.end;
-            let oldTrackIndex: number = this._selectedClipTrackIndex;
-            let newTrackIndex: number = this._selectedClipTrackIndex;
-            if (this._movingStartOfClip) {
-                newStart = clamp(this._tentativeClipStart, 0, song.duration - 1);
-            } else if (this._movingEndOfClip) {
-                newEnd = clamp(this._tentativeClipEnd, 1, song.duration);
-            } else {
-                newStart = clamp(this._tentativeClipStart, 0, song.duration - 1);
-                newEnd = clamp(this._tentativeClipEnd, 1, song.duration);
-            }
-            this._doc.changeClip(
-                clip,
-                clipIndex,
-                newStart,
-                newEnd,
-                oldTrackIndex,
-                newTrackIndex,
-            );
-
-            this._movingClip = false;
-            this._movingStartOfClip = false;
-            this._movingEndOfClip = false;
-            this._selectedClipIndex = -1;
-            this._selectedClipTrackIndex = -1;
-
-            this._renderedClipsDirty = true;
-        }
-
-        this._findHoveredClips(width, height, mouseX, mouseY, false);
-        this._renderedSelectionOverlayDirty = true;
-
-        this._pointerIsDown = false;
-
-        this._ui.scheduleMainRender();
-    };
-
-    private _onPointerMove = (event: MouseEvent): void => {
-        const canvasIsOccluded: boolean = (
-            event.target !== this._canvasesContainer
-            && event.target !== this._gridCanvas
-            && event.target !== this._clipsCanvas
-            && event.target !== this._envelopesCanvas
-            && event.target !== this._selectionOverlayCanvas
-            && event.target !== this._playheadOverlayCanvas
-        );
-
-        // @TODO: This is probably expensive to do every time the mouse moves.
-        // For the width and height, we can probably rely on the values queried
-        // at the point where resize is called. For the left and top, maybe
-        // dockview can inform us of something, in which case we should maybe
-        // add a move function that receives those values.
-        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
-        const width: number = bounds.width;
-        const height: number = bounds.height;
-        const mouseX: number = event.clientX - bounds.left;
-        const mouseY: number = event.clientY - bounds.top;
-        // const insideCanvas: boolean = insideRange(mouseX, 0, width) && insideRange(mouseY, 0, height);
-
-        if (this._pointerIsDown) {
-            if (this._selectedClipIndex !== -1) {
-                const project: Project.Type = this._doc.project;
-                const song: Song.Type = project.song;
-                const tracks: Track.Type[] = song.tracks;
-                const clips: Clip.Type[] = tracks[this._selectedClipTrackIndex].clips;
-                const clip: Clip.Type = clips[this._selectedClipIndex];
-
-                const viewportWidth: number = this._viewport.x1 - this._viewport.x0;
-                const cursorPpqn0: number = (
-                    this._viewport.x0 + remap(this._pointerX0, 0, width, 0, viewportWidth)
-                ) | 0;
-                const cursorPpqn1: number = (
-                    this._viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
-                ) | 0;
-
-                if (this._movingClip) {
-                    const cursorPpqnDeltaMin: number = 0 - clip.start;
-                    const cursorPpqnDeltaMax: number = song.duration - clip.end;
-                    const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                    this._tentativeClipStart = clip.start + cursorPpqnDelta;
-                    this._tentativeClipEnd = clip.end + cursorPpqnDelta;
-                } else if (this._movingStartOfClip) {
-                    const cursorPpqnDeltaMin: number = 0 - clip.start;
-                    const cursorPpqnDeltaMax: number = ((clip.end - 1) - clip.start);
-                    const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                    this._tentativeClipStart = clip.start + cursorPpqnDelta;
-                } else if (this._movingEndOfClip) {
-                    const cursorPpqnDeltaMin: number = -((clip.end - 1) - clip.start);
-                    const cursorPpqnDeltaMax: number = song.duration - clip.end;
-                    const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-                    this._tentativeClipEnd = clip.end + cursorPpqnDelta;
-                }
-
-                this._renderedClipsDirty = true;
-                this._renderedSelectionOverlayDirty = true;
-            }
-        } else {
-            const startingHoveredClipIndex: number = this._hoveredClipIndex;
-            const startingHoveredClipTrackIndex: number = this._hoveredClipTrackIndex;
-            const wasHoveringOverStartOfClip: boolean = this._hoveringOverStartOfClip;
-            const wasHoveringOverEndOfClip: boolean = this._hoveringOverEndOfClip;
-
-            this._findHoveredClips(width, height, mouseX, mouseY, canvasIsOccluded);
-
-            this._renderedSelectionOverlayDirty = (
-                startingHoveredClipIndex !== this._hoveredClipIndex
-                || startingHoveredClipTrackIndex !== this._hoveredClipTrackIndex
-                || wasHoveringOverStartOfClip !== this._hoveringOverStartOfClip
-                || wasHoveringOverEndOfClip !== this._hoveringOverEndOfClip
-            );
-        }
-
-        if (this._renderedClipsDirty || this._renderedSelectionOverlayDirty) {
-            this._ui.scheduleMainRender();
-        }
-    };
-
-    private _onDoubleClick = (event: MouseEvent): void => {
-        if (this._selectedClipIndex === -1 && this._hoveredClipIndex === -1) {
-        } else if (this._hoveredClipIndex !== -1) {
-            // Double clicked while hovering over a clip, remove it.
-            // this._doc.removeClip(this._hoveredClipTrackIndex, this._hoveredClipIndex);
-            // this._selectedClipIndex = -1;
-            // this._selectedClipTrackIndex = -1;
-            // this._hoveredClipIndex = -1;
-            // this._hoveredClipTrackIndex = -1;
-            // this._hoveringOverStartOfClip = false;
-            // this._hoveringOverEndOfClip = false;
-            // this._renderedClipsDirty = true;
-            // this._renderedSelectionOverlayDirty = true;
-            const track: Track.Type = this._doc.project.song.tracks[this._hoveredClipTrackIndex];
-            const clip: Clip.Type = track.clips[this._hoveredClipIndex];
-            const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
-            const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-                patternsById,
-                clip.patternIdLo,
-                clip.patternIdHi,
-            );
-            if (patternTableIndex === -1) {
-                throw new Error("Couldn't find pattern index");
-            }
-            const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-            this._doc.setCurrentPattern(patternIndex, this._hoveredClipTrackIndex, this._hoveredClipIndex);
-        }
-
-        this._ui.scheduleMainRender();
-    };
-
-    private _findHoveredClips(
-        width: number,
-        height: number,
+    private _findClipUnderMouse(
+        canvasWidth: number,
+        canvasHeight: number,
         mouseX: number,
         mouseY: number,
-        canvasIsOccluded: boolean
+        result: HoverQueryResult,
     ): void {
-        this._hoveredClipIndex = -1;
-        this._hoveredClipTrackIndex = -1;
-        this._hoveringOverStartOfClip = false;
-        this._hoveringOverEndOfClip = false;
+        result.clipIndex = -1;
+        result.clipTrackIndex = -1;
+        result.clipHit = ClipHit.None;
 
-        const outsideCanvas: boolean = canvasIsOccluded || (
-            !insideRange(mouseX, 0, width) || !insideRange(mouseY, 0, height)
-        );
+        const outsideCanvas: boolean = !insideRange(mouseX, 0, canvasWidth) || !insideRange(mouseY, 0, canvasHeight);
         if (!outsideCanvas) {
-            const viewportX0: number = this._viewport.x0;
-            const viewportX1: number = this._viewport.x1;
-            const viewportY0: number = this._viewport.y0;
+            const viewportX0: number = this._state.viewport.x0;
+            const viewportX1: number = this._state.viewport.x1;
+            const viewportY0: number = this._state.viewport.y0;
             const viewportWidth: number = viewportX1 - viewportX0;
-            const pixelsPerTick: number = width / viewportWidth;
+            const pixelsPerTick: number = canvasWidth / viewportWidth;
             const searchWindowStart: number = (
-                this._viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                this._state.viewport.x0 + remap(mouseX, 0, canvasWidth, 0, viewportWidth)
             ) | 0;
             const searchWindowEnd: number = searchWindowStart + 1;
 
@@ -1213,7 +1055,7 @@ export class Timeline implements Component {
                 const top: number = laneLayout.y0 - viewportY0 + 2;
                 const bottom: number = top + laneHeight - 2;
 
-                if (top > height) {
+                if (top > canvasHeight) {
                     break;
                 }
 
@@ -1229,8 +1071,9 @@ export class Timeline implements Component {
                         searchWindowStart,
                         searchWindowEnd,
                         (clip: Clip.Type, index: number) => {
-                            this._hoveredClipIndex = index;
-                            this._hoveredClipTrackIndex = trackIndex;
+                            result.clipIndex = index;
+                            result.clipTrackIndex = trackIndex;
+                            result.clipHit |= ClipHit.Inside;
                             found = true;
 
                             const clipX0: number = ((clip.start - viewportX0) * pixelsPerTick);
@@ -1238,18 +1081,23 @@ export class Timeline implements Component {
                             const clipY0: number = top - 1;
                             const clipY1: number = clipY0 + laneHeight;
                             const clipStartStretchHandleX0: number = clipX0;
-                            const clipStartStretchHandleX1: number = clamp(clipX0 + this._clipStretchHandleSize, clipX0, clipX1);
-                            const clipEndStretchHandleX0: number = clamp(clipX1 - this._clipStretchHandleSize, clipX0, clipX1);
+                            const clipStartStretchHandleX1: number = clamp(clipX0 + this._state.clipStretchHandleSize, clipX0, clipX1);
+                            const clipEndStretchHandleX0: number = clamp(clipX1 - this._state.clipStretchHandleSize, clipX0, clipX1);
                             const clipEndStretchHandleX1: number = clipX1;
 
-                            this._hoveringOverStartOfClip = (
+                            if (
                                 insideRange(mouseX, clipStartStretchHandleX0, clipStartStretchHandleX1)
                                 && insideRange(mouseY, clipY0, clipY1)
-                            );
-                            this._hoveringOverEndOfClip = (
+                            ) {
+                                result.clipHit |= ClipHit.Left;
+                            }
+
+                            if (
                                 insideRange(mouseX, clipEndStretchHandleX0, clipEndStretchHandleX1)
                                 && insideRange(mouseY, clipY0, clipY1)
-                            );
+                            ) {
+                                result.clipHit |= ClipHit.Right;
+                            }
                         },
                     );
                     if (found) {
@@ -1262,41 +1110,462 @@ export class Timeline implements Component {
 
     // @TODO: _onOutlinerWheel (based on PianoRoll._onPianoWheel)
 
-    private _onWheel = (event: WheelEvent): void => {
+    private _zoomAroundMouseHorizontally(zoomIn: boolean, clientX: number): void {
         const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
         const width: number = bounds.width;
-        const mouseX: number = event.clientX - bounds.left;
-
-        const zoomIn: boolean = event.deltaY < 0;
+        const mouseX: number = clientX - bounds.left;
 
         let factor: number = 1.25;
         if (zoomIn) {
             factor = 1.0 / factor;
         }
 
-        if (Viewport.zoomAroundPointX(this._viewport, unlerp(mouseX, 0, width), factor)) {
-            this._timeScrollBar.setZoom(Viewport.getXZoom(this._viewport));
-            this._timeScrollBar.setPan(Viewport.getXPan(this._viewport));
+        // @TODO: Maybe instead of making this a factor of the viewport width, it
+        // should be a fixed amount. Or maybe the factor should change for longer
+        // songs.
+        if (Viewport.zoomAroundPointX(this._state.viewport, unlerp(mouseX, 0, width), factor)) {
+            this._timeScrollBar.setZoom(Viewport.getXZoom(this._state.viewport));
+            this._timeScrollBar.setPan(Viewport.getXPan(this._state.viewport));
 
             this._renderedClipsDirty = true;
-            this._renderedSelectionOverlayDirty = true;
+            this._state.selectionOverlayIsDirty = true;
             Viewport.clearRendered(this._renderedViewport);
 
             this._ui.scheduleMainRender();
         }
     };
 
-    public onAction = (kind: ActionKind, operationContext: OperationContext): ActionResponse => {
-        // @TODO: Move all the mouse event stuff to actions here.
+    public onAction = (kind: ActionKind, context: OperationContext): ActionResponse => {
+        switch (kind) {
+            case ActionKind.CreateClipAndPattern: {
+                if (isKeyboardGesture(context.gesture1)) {
+                    if (insideRange(this._state.selectedTrackIndex, 0, this._doc.project.song.tracks.length - 1)) {
+                        const ticksPerBar: number = 1 * this._doc.project.song.beatsPerBar * this._doc.project.song.ppqn;
 
-        return ActionResponse.Done;
+                        const pattern: Pattern.Type = this._doc.insertPattern();
+                        this._doc.insertClip(
+                            this._state.selectedTrackIndex,
+                            ticksPerBar * 0,
+                            ticksPerBar * 4,
+                            pattern.idLo,
+                            pattern.idHi,
+                        );
+
+                        // this._clearHoverState();
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectionOverlayIsDirty = true;
+
+                        this._renderedClipsDirty = true;
+                        this._ui.scheduleMainRender();
+
+                        return ActionResponse.Done;
+                    }
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.LeftStretchClip: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if ((clipHit & ClipHit.Left) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const cursorPpqn0: number = (this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)) | 0;
+
+                    // this._clearHoverState();
+                    this._state.selectedTrackIndex = clipTrackIndex;
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._activeOperation = new LeftStretchClip(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        new Map([[clip, {
+                            newStart: clip.start,
+                            newEnd: clip.end,
+                            clipIndex: clipIndex,
+                            clipTrackIndex: clipTrackIndex,
+                        }]]),
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.RightStretchClip: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if ((clipHit & ClipHit.Right) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const cursorPpqn0: number = (this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)) | 0;
+
+                    // this._clearHoverState();
+                    this._state.selectedTrackIndex = clipTrackIndex;
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._activeOperation = new RightStretchClip(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        new Map([[clip, {
+                            newStart: clip.start,
+                            newEnd: clip.end,
+                            clipIndex: clipIndex,
+                            clipTrackIndex: clipTrackIndex,
+                        }]]),
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.MoveClips: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if (
+                    (clipHit & ClipHit.Inside) !== 0
+                    && (clipHit & ClipHit.Left) === 0
+                    && (clipHit & ClipHit.Right) === 0
+                ) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    let clipBoundsX0: number = clip.start;
+                    let clipBoundsX1: number = clip.end; // exclusive
+
+                    const clipMap: Map<Clip.Type, ClipTransform> = new Map();
+
+                    let clipToMoveWasSelected: boolean = false;
+
+                    // @TODO: Move selected clips if one of them was clicked on.
+
+                    if (!clipToMoveWasSelected) {
+                        clipMap.set(clip, {
+                            newStart: clip.start,
+                            newEnd: clip.end,
+                            clipIndex: clipIndex,
+                            clipTrackIndex: clipTrackIndex,
+                        });
+                    }
+
+                    const songDuration: number = this._doc.project.song.duration;
+
+                    const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                    const cursorPpqn0: number = (
+                        this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
+                    ) | 0;
+                    const timeDeltaMin: number = 0 - clipBoundsX0;
+                    const timeDeltaMax: number = songDuration - clipBoundsX1;
+
+                    // this._clearHoverState();
+                    if (clipMap.size === 1) {
+                        this._state.selectedTrackIndex = clipTrackIndex;
+                    } else {
+                        // @TODO: Select all the relevant tracks?
+                    }
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._activeOperation = new MoveClips(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        clipMap,
+                        timeDeltaMin,
+                        timeDeltaMax,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.SelectClip: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    // @TODO: This will conflict with the box selection operation,
+                    // so this should be removed once that's implemented.
+                    const viewportY0: number = this._state.viewport.y0;
+                    const lanes: Lane.Type[] = this._laneManager.getLanes();
+                    const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                    const laneCount: number = lanes.length;
+                    const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                    for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+                        const lane: Lane.Type = lanes[laneIndex];
+                        const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                        const laneHeight: number = lane.height;
+                        const kind: Lane.Kind = lane.kind;
+                        const top: number = laneLayout.y0 - viewportY0 + 2;
+                        const bottom: number = top + laneHeight - 2;
+                        if (top > height) {
+                            break;
+                        }
+                        if (kind === Lane.Kind.Track) {
+                            const trackIndex: number = lane.trackIndex;
+                            if (insideRange(mouseY, top, bottom)) {
+                                this._state.selectedTrackIndex = trackIndex;
+                                break;
+                            }
+                        }
+                    }
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                if ((clipHit & ClipHit.Inside) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    this._state.selectedTrackIndex = clipTrackIndex;
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.OpenPatternFromClip: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if ((clipHit & ClipHit.Inside) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+                    const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
+                    const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+                        patternsById,
+                        clip.patternIdLo,
+                        clip.patternIdHi,
+                    );
+                    if (patternTableIndex === -1) {
+                        throw new Error("Couldn't find pattern index");
+                    }
+                    const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
+                    this._doc.setCurrentPattern(patternIndex, clipTrackIndex, clipIndex);
+
+                    this._state.selectedTrackIndex = clipTrackIndex;
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.RemoveClip: {
+                if (isKeyboardGesture(context.gesture1)) {
+                    if (this._state.selectedClipsByTrackIndex.size > 0) {
+                        for (const [clipTrackIndex, selectedClips] of this._state.selectedClipsByTrackIndex.entries()) {
+                            this._doc.removeClips(clipTrackIndex, selectedClips);
+                        }
+
+                        // this._clearHoverState();
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectionOverlayIsDirty = true;
+
+                        this._renderedClipsDirty = true;
+                        this._ui.scheduleMainRender();
+
+                        return ActionResponse.Done;
+                    }
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.TimelineZoomInAroundMouseHorizontally: {
+                // To not conflict with the outliner scrolling.
+                if (
+                    !mouseIsInside(context, this._canvasesContainer)
+                    && !mouseIsInside(context, this._timeRuler.element)
+                ) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                // const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                // const width: number = bounds.width;
+                // const height: number = bounds.height;
+                // const mouseX: number = context.x1 - bounds.left;
+                // const mouseY: number = context.y1 - bounds.top;
+                // this._computeHoverState(width, height, mouseX, mouseY);
+                // if (this._hoverStateChanged()) {
+                //     this._state.selectionOverlayIsDirty = true;
+                //     this._ui.scheduleMainRender();
+                // }
+
+                this._zoomAroundMouseHorizontally(/* zoomIn */ true, context.x1);
+
+                return ActionResponse.Done;
+            };
+            case ActionKind.TimelineZoomOutAroundMouseHorizontally: {
+                // To not conflict with the outliner scrolling.
+                if (
+                    !mouseIsInside(context, this._canvasesContainer)
+                    && !mouseIsInside(context, this._timeRuler.element)
+                ) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                // const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                // const width: number = bounds.width;
+                // const height: number = bounds.height;
+                // const mouseX: number = context.x1 - bounds.left;
+                // const mouseY: number = context.y1 - bounds.top;
+                // this._computeHoverState(width, height, mouseX, mouseY);
+                // if (this._hoverStateChanged()) {
+                //     this._state.selectionOverlayIsDirty = true;
+                //     this._ui.scheduleMainRender();
+                // }
+
+                this._zoomAroundMouseHorizontally(/* zoomIn */ false, context.x1);
+
+                return ActionResponse.Done;
+            };
+        }
+
+        return ActionResponse.NotApplicable;
+    };
+
+    private _onUpdateOperation = (context: OperationContext): OperationResponse => {
+        if (this._activeOperation == null) {
+            return OperationResponse.Aborted;
+        }
+
+        let response: OperationResponse = OperationResponse.Aborted;
+        response = this._activeOperation.update(context);
+
+        // @TODO: Invalidate precisely.
+        if (this._activeOperation.kind === OperationKind.Clip) {
+            this._renderedClipsDirty = true;
+        }
+        this._state.selectionOverlayIsDirty = true;
+
+        if (response === OperationResponse.Done || response === OperationResponse.Aborted) {
+            // @TODO: Call _computeHoverState here.
+            this._activeOperation = null;
+        }
+
+        this._ui.scheduleMainRender();
+
+        return response;
     };
 
     private _onProjectChanged = (): void => {
         // @TODO: Invalidate precisely.
         this._renderedClipsDirty = true;
-        this._renderedSelectionOverlayDirty = true;
+        this._state.selectionOverlayIsDirty = true;
         this._renderedEnvelopesDirty = true;
         this._tempoEnvelopeIsDirty = true;
     };
+}
+
+const enum ClipHit {
+    None   = 0b0000,
+    Inside = 0b0001,
+    Left   = 0b0010,
+    Right  = 0b0100,
+}
+
+interface HoverQueryResult {
+    clipIndex: number;
+    clipTrackIndex: number;
+    clipHit: ClipHit;
 }

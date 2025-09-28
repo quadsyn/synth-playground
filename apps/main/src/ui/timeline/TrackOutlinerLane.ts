@@ -31,6 +31,7 @@ export class TrackOutlinerLane implements Component {
     private _top: number;
     private _left: number;
     private _hasTopBorder: boolean;
+    private _selected: boolean;
 
     private _renderedKind: Lane.Kind | null;
     private _renderedTrackName: string | null;
@@ -41,6 +42,7 @@ export class TrackOutlinerLane implements Component {
     private _renderedTop: number | null;
     private _renderedLeft: number | null;
     private _renderedHasTopBorder: boolean | null;
+    private _renderedSelected: boolean | null;
 
     constructor(ui: UIContext) {
         this._ui = ui;
@@ -56,6 +58,7 @@ export class TrackOutlinerLane implements Component {
         this._trackGain = 1;
         this._trackPan = 0;
         this._automationLabel = "";
+        this._selected = false;
 
         this._renderedKind = null;
         this._renderedTrackName = null;
@@ -66,6 +69,7 @@ export class TrackOutlinerLane implements Component {
         this._renderedTop = null;
         this._renderedLeft = null;
         this._renderedHasTopBorder = null;
+        this._renderedSelected = null;
 
         this._trackNameDisplay = H("div", {
             style: `
@@ -282,6 +286,11 @@ export class TrackOutlinerLane implements Component {
                     this._renderedTrackName = this._trackName;
                 }
 
+                if (this._renderedSelected !== this._selected) {
+                    this.element.style.backgroundColor = this._selected ? "#4e4e4e" : "#3e3e3e";
+                    this._renderedSelected = this._selected;
+                }
+
                 this._trackGainSlider.setValue(this._trackGain);
                 this._trackGainSlider.render();
 
@@ -343,5 +352,9 @@ export class TrackOutlinerLane implements Component {
 
     public setAutomationLabel(label: string): void {
         this._automationLabel = label;
+    }
+
+    public setSelected(selected: boolean): void {
+        this._selected = selected;
     }
 }

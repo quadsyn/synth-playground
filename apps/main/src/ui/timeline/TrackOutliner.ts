@@ -27,9 +27,11 @@ export class TrackOutliner implements Component {
     private _height: number;
     private _viewport: Viewport.Type;
     private _laneElements: TrackOutlinerLane[];
+    private _selectedTrackIndex: number;
 
     private _renderedViewport: Viewport.Type | null;
     // private _renderedLanesVersion: number | null;
+    private _renderedSelectedTrackIndex: number | null;
 
     constructor(
         ui: UIContext,
@@ -62,6 +64,7 @@ export class TrackOutliner implements Component {
 
         this._renderedViewport = null;
         // this._renderedLanesVersion = null;
+        this._renderedSelectedTrackIndex = null;
 
         this.element = H("div", {
             style: `
@@ -76,6 +79,7 @@ export class TrackOutliner implements Component {
         });
 
         this._laneElements = [];
+        this._selectedTrackIndex = -1;
     }
 
     public dispose(): void {}
@@ -95,6 +99,7 @@ export class TrackOutliner implements Component {
         const dirty: boolean = (
             Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Y)
             || visibleLaneCount !== this._laneElements.length
+            || this._selectedTrackIndex !== this._renderedSelectedTrackIndex
             // || lanesVersion !== this._renderedLanesVersion
         );
 
@@ -143,6 +148,7 @@ export class TrackOutliner implements Component {
                         laneElement.setTrackName(trackName);
                         laneElement.setTrackGain(trackGain);
                         laneElement.setTrackPan(trackPan);
+                        laneElement.setSelected(trackIndex === this._selectedTrackIndex);
                     } else if (kind === Lane.Kind.TempoAutomation) {
                         // @TODO: Cached localization.
                         laneElement.setAutomationLabel("Tempo");
@@ -165,6 +171,7 @@ export class TrackOutliner implements Component {
 
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
         // this._renderedLanesVersion = lanesVersion;
+        this._renderedSelectedTrackIndex = this._selectedTrackIndex;
     }
 
     public resize(size: number, height: number): void {
@@ -182,5 +189,9 @@ export class TrackOutliner implements Component {
 
     public setViewport(viewport: Viewport.Type): void {
         Viewport.copy(this._viewport, viewport);
+    }
+
+    public setSelectedTrackIndex(index: number): void {
+        this._selectedTrackIndex = index;
     }
 }
