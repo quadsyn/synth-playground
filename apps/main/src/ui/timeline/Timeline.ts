@@ -1553,7 +1553,8 @@ export class Timeline implements Component {
                         this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth)
                     ) | 0;
 
-                    this._doc.timeCursor = cursorPpqn;
+                    const duration: number = this._doc.project.song.duration;
+                    this._doc.timeCursor = clamp(cursorPpqn, 0, duration);
                     this._doc.seek(this._doc.timeCursor);
                     this._state.selectionOverlayIsDirty = true;
 
