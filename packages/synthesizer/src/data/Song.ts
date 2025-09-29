@@ -3,6 +3,7 @@ import * as Breakpoint from "./Breakpoint.js";
 import * as Track from "./Track.js";
 import * as Pattern from "./Pattern.js";
 import * as TempoMap from "./TempoMap.js";
+import * as Constants from "./Constants.js";
 
 export interface Type {
     // "Pulses per quarter note".
@@ -43,7 +44,7 @@ export function make(): Type {
     const pitchesPerOctave: number = 12;
     const octaves: number = 9;
     const maxPitch: number = pitchesPerOctave * octaves;
-    const tempo: number = 120;
+    const tempo: number = Constants.TempoDefault;
     const tempoEnvelope: Breakpoint.Type[] | null = null;
     // const tempoEnvelope: Breakpoint.Type[] | null = [makeBreakpoint(0, 10), makeBreakpoint(48, 120)];
     // const tempoEnvelope: Breakpoint.Type[] | null = [makeBreakpoint(0, 10)];

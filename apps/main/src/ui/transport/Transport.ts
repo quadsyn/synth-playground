@@ -117,8 +117,8 @@ export class Transport implements Component {
 }
 
 function secondsToHHMMSS(value: number): string {
-    const seconds: string = (((value % 60) | 0) + "").padStart(2, "0");
-    const minutes: string = ((((value / 60) % 60) | 0) + "").padStart(2, "0");
-    const hours: string = (((value / 3600) | 0) + "").padStart(2, "0");
+    const seconds: string = (Math.round(value % 60) + "").padStart(2, "0");
+    const minutes: string = (Math.round((value / 60) % 60) + "").padStart(2, "0");
+    const hours: string = (Math.round(value / 3600) + "").padStart(2, "0");
     return `${hours}:${minutes}:${seconds}`;
 }

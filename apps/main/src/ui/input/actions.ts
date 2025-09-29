@@ -67,6 +67,10 @@ export const enum ActionKind {
     OpenPatternFromClip,
     TimelineQuantize,
     TimelineSeek,
+    ToggleTempoEnvelope,
+    CreateTempoEnvelopePoint,
+    RemoveTempoEnvelopePoint,
+    MoveTempoEnvelopePointBounded,
 }
 
 export const enum ActionTags {
@@ -328,6 +332,12 @@ type ActionTableEntry = [
         ActionTags.None,
         ActionKind.CreateNoteVolumePoint,
         AreaKind.PianoRoll,
+        // Since this is a bit subtle: this only works together with removal if
+        // we start a move operation after creating the point. The move operation
+        // will eat the release event which otherwise would go to the removal
+        // action. If we didn't do that, then this would have to be mapped to
+        // release, so we could properly do either creation _or_ removal, but
+        // not one after the other.
         [GestureKind.Press | MouseButton.Left],
         <ActionId>"pianoRoll.createNoteVolumePoint",
         StringId.PianoRollActionCreateNoteVolumePoint,
@@ -336,6 +346,12 @@ type ActionTableEntry = [
         ActionTags.None,
         ActionKind.CreateNotePitchPoint,
         AreaKind.PianoRoll,
+        // Since this is a bit subtle: this only works together with removal if
+        // we start a move operation after creating the point. The move operation
+        // will eat the release event which otherwise would go to the removal
+        // action. If we didn't do that, then this would have to be mapped to
+        // release, so we could properly do either creation _or_ removal, but
+        // not one after the other.
         [GestureKind.Press | MouseButton.Left],
         <ActionId>"pianoRoll.createNotePitchPoint",
         StringId.PianoRollActionCreateNotePitchPoint,
@@ -535,6 +551,44 @@ type ActionTableEntry = [
         [GestureKind.Press | MouseButton.Left, GestureKind.Drag | MouseButton.Left],
         <ActionId>"timeline.seek",
         StringId.TimelineActionSeek,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.ToggleTempoEnvelope,
+        AreaKind.Timeline,
+        [],
+        <ActionId>"timeline.toggleTempoEnvelope",
+        StringId.TimelineActionToggleTempoEnvelope,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.CreateTempoEnvelopePoint,
+        AreaKind.Timeline,
+        // Since this is a bit subtle: this only works together with removal if
+        // we start a move operation after creating the point. The move operation
+        // will eat the release event which otherwise would go to the removal
+        // action. If we didn't do that, then this would have to be mapped to
+        // release, so we could properly do either creation _or_ removal, but
+        // not one after the other.
+        [GestureKind.Press | MouseButton.Left],
+        <ActionId>"timeline.createTempoEnvelopePoint",
+        StringId.TimelineActionCreateTempoEnvelopePoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.RemoveTempoEnvelopePoint,
+        AreaKind.Timeline,
+        [GestureKind.Release | MouseButton.Left],
+        <ActionId>"timeline.removeTempoEnvelopePoint",
+        StringId.TimelineActionRemoveTempoEnvelopePoint,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.MoveTempoEnvelopePointBounded,
+        AreaKind.Timeline,
+        [GestureKind.Drag | MouseButton.Left],
+        <ActionId>"timeline.moveTempoEnvelopePointBounded",
+        StringId.TimelineActionMoveTempoEnvelopePoint,
     ],
 ]).forEach(([tags, action, area, defaultShortcuts, id, labelId]) => {
     registerAction(tags, action, area, defaultShortcuts, id, labelId);

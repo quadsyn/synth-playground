@@ -30,7 +30,7 @@ export class TrackOutliner implements Component {
     private _selectedTrackIndex: number;
 
     private _renderedViewport: Viewport.Type | null;
-    // private _renderedLanesVersion: number | null;
+    private _renderedLanesVersion: number | null;
     private _renderedSelectedTrackIndex: number | null;
 
     constructor(
@@ -63,7 +63,7 @@ export class TrackOutliner implements Component {
         );
 
         this._renderedViewport = null;
-        // this._renderedLanesVersion = null;
+        this._renderedLanesVersion = null;
         this._renderedSelectedTrackIndex = null;
 
         this.element = H("div", {
@@ -91,7 +91,7 @@ export class TrackOutliner implements Component {
         const lanes: Lane.Type[] = this._laneManager.getLanes();
         const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
-        // const lanesVersion: number = this._laneManager.getLanesVersion();
+        const lanesVersion: number = this._laneManager.getLanesVersion();
 
         const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
         const visibleLaneCount: number = this._laneManager.computeVisibleLaneCount(firstLaneIndex, viewportY0, height);
@@ -100,7 +100,7 @@ export class TrackOutliner implements Component {
             Viewport.isDirty(this._renderedViewport, this._viewport, Viewport.DirtyCheckOptions.Y)
             || visibleLaneCount !== this._laneElements.length
             || this._selectedTrackIndex !== this._renderedSelectedTrackIndex
-            // || lanesVersion !== this._renderedLanesVersion
+            || lanesVersion !== this._renderedLanesVersion
         );
 
         // Allocate new lane elements if necessary.
@@ -152,6 +152,9 @@ export class TrackOutliner implements Component {
                     } else if (kind === Lane.Kind.TempoAutomation) {
                         // @TODO: Cached localization.
                         laneElement.setAutomationLabel("Tempo");
+                        laneElement.setSelected(false); // @TODO: Track this?
+                    } else if (kind === Lane.Kind.Automation) {
+                        laneElement.setSelected(false);
                     }
                     laneElement.render();
 
@@ -170,7 +173,7 @@ export class TrackOutliner implements Component {
         }
 
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
-        // this._renderedLanesVersion = lanesVersion;
+        this._renderedLanesVersion = lanesVersion;
         this._renderedSelectedTrackIndex = this._selectedTrackIndex;
     }
 

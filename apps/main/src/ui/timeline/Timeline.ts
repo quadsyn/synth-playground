@@ -37,6 +37,7 @@ import { type ClipTransform } from "./ClipTransform.js";
 import { LeftStretchClip } from "./operations/LeftStretchClip.js";
 import { RightStretchClip } from "./operations/RightStretchClip.js";
 import { MoveClips } from "./operations/MoveClips.js";
+import { MoveTempoEnvelopePointBounded } from "./operations/MoveTempoEnvelopePointBounded.js";
 
 export class Timeline implements Component {
     public element: HTMLDivElement;
@@ -74,13 +75,12 @@ export class Timeline implements Component {
     private _playheadIsVisible: boolean;
     private _cursor: string;
 
-    private _renderedEnvelopesDirty: boolean;
     private _renderedClipsDirty: boolean;
     private _renderedViewport: Viewport.Type | null;
     private _renderedPlayhead: number | null;
     private _renderedPlayheadIsVisible: boolean;
-    private _tempoEnvelopeIsDirty: boolean;
     private _renderedCursor: string | null;
+    private _renderedLanesVersion: number | null;
 
     constructor(
         ui: UIContext,
@@ -127,12 +127,15 @@ export class Timeline implements Component {
                 /* minHeight */ 0,
                 /* maxHeight */ 0,
             ),
-            clipStretchHandleSize: 4,
+            clipStretchHandleSize: 6,
+            tempoEnvelopePointSize: 6,
             boxSelectionActive: false,
             boxSelectionX0: 0,
             boxSelectionX1: 0,
             boxSelectionY0: 0,
             boxSelectionY1: 0,
+            envelopesAreDirty: true,
+            tempoEnvelopeIsDirty: true,
             selectionOverlayIsDirty: true,
             selectedClipsByTrackIndex: new Map(),
             selectedTrackIndex: 0,
@@ -142,6 +145,32 @@ export class Timeline implements Component {
                 const mouseX: number = clientX - bounds.left;
                 const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
                 return this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+            },
+            mouseToY: (clientY: number): number => {
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                // const height: number = bounds.height;
+                const mouseY: number = clientY - bounds.top;
+                // const viewportHeight: number = this._state.viewport.y1 - this._state.viewport.y0;
+                return mouseY;
+            },
+            getLaneY0: (laneIndex: number): number => {
+                // const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                // const lane: Lane.Type = lanes[laneIndex];
+                const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                // const laneHeight: number = lane.height;
+                const top: number = laneLayout.y0 - this._state.viewport.y0 + 2;
+                return top;
+            },
+            getLaneY1: (laneIndex: number): number => {
+                const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                const lane: Lane.Type = lanes[laneIndex];
+                const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                const laneHeight: number = lane.height;
+                const top: number = laneLayout.y0 - this._state.viewport.y0 + 2;
+                const bottom: number = top + laneHeight - 2;
+                return bottom;
             },
             getCanvasBounds: (): DOMRect => {
                 return this._canvasesContainer.getBoundingClientRect();
@@ -156,13 +185,11 @@ export class Timeline implements Component {
 
         this._cursor = "default";
 
-        this._tempoEnvelopeIsDirty = true;
-
-        this._renderedEnvelopesDirty = true;
         this._renderedClipsDirty = true;
         this._state.selectionOverlayIsDirty = true;
         this._renderedViewport = null;
         this._renderedCursor = null;
+        this._renderedLanesVersion = null;
 
         const initialTrackZoom: number = 1;
         const initialTrackPan: number = 0;
@@ -330,6 +357,13 @@ export class Timeline implements Component {
             this._onDidMount();
         }
 
+        if (this._renderedLanesVersion !== this._laneManager.getLanesVersion()) {
+            // @TODO: Is there a cheaper thing I can do here? I need to recompute
+            // the viewport (and thus the scrollbars), but the overall DOM element
+            // may not have changed sizes.
+            this.resize();
+        }
+
         if (this._doc.playing) {
             const targetPlayhead: number | null = this._doc.getPlayheadInTicks(this._ui.frame);
             if (targetPlayhead != null) {
@@ -372,8 +406,12 @@ export class Timeline implements Component {
         this._timeRuler.setViewport(this._state.viewport);
         this._timeRuler.setPpqn(this._doc.project.song.ppqn);
         this._timeRuler.setBeatsPerBar(this._doc.project.song.beatsPerBar);
-        this._timeRuler.setTempoEnvelope(this._doc.project.song.tempoEnvelope);
-        this._timeRuler.setTempoEnvelopeIsDirty(this._tempoEnvelopeIsDirty);
+        this._timeRuler.setTempoEnvelope(
+            this._activeOperation != null && this._activeOperation.kind === OperationKind.Tempo
+            ? this._activeOperation.newTempoEnvelope!
+            : this._doc.project.song.tempoEnvelope
+        );
+        this._timeRuler.setTempoEnvelopeIsDirty(this._state.tempoEnvelopeIsDirty);
         this._timeRuler.render();
         this._trackOutliner.setViewport(this._state.viewport);
         this._trackOutliner.setSelectedTrackIndex(this._state.selectedTrackIndex);
@@ -384,14 +422,16 @@ export class Timeline implements Component {
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._state.viewport);
         this._renderedPlayhead = this._playhead;
         this._renderedPlayheadIsVisible = this._playheadIsVisible;
-        this._renderedEnvelopesDirty = false;
-        this._tempoEnvelopeIsDirty = false;
+        this._state.envelopesAreDirty = false;
+        this._state.tempoEnvelopeIsDirty = false;
+        this._renderedLanesVersion = this._laneManager.getLanesVersion();
     }
 
     private _renderGrid(): void {
         if (
             !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._gridCanvasResized
+            && this._renderedLanesVersion === this._laneManager.getLanesVersion()
         ) {
             return;
         }
@@ -471,6 +511,7 @@ export class Timeline implements Component {
             !this._renderedClipsDirty
             && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._clipsCanvasResized
+            && this._renderedLanesVersion === this._laneManager.getLanesVersion()
         ) return;
 
         if (this._clipsCanvasResized) {
@@ -777,8 +818,8 @@ export class Timeline implements Component {
                 const dashH: number = h / dashCount;
                 const dashGap: number = 2;
                 for (let dashIndex: number = 0; dashIndex < dashCount; dashIndex++) {
-                    const y0: number = dashIndex * dashH + dashGap;
-                    const y1: number = (dashIndex + 1) * dashH - dashGap * 2;
+                    const y0: number = y + dashIndex * dashH + dashGap;
+                    const y1: number = y + (dashIndex + 1) * dashH - dashGap * 2;
                     context.beginPath();
                     context.moveTo(seamX, y0);
                     context.lineTo(seamX, y1);
@@ -791,9 +832,11 @@ export class Timeline implements Component {
 
     private _renderEnvelopes(): void {
         if (
-            !this._renderedEnvelopesDirty
+            !this._state.envelopesAreDirty
+            && !this._state.tempoEnvelopeIsDirty
             && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._envelopesCanvasResized
+            && this._renderedLanesVersion === this._laneManager.getLanesVersion()
         ) {
             return;
         }
@@ -805,7 +848,11 @@ export class Timeline implements Component {
         }
 
         const song: Song.Type = this._doc.project.song;
-        const tempoEnvelope: Breakpoint.Type[] | null = song.tempoEnvelope;
+        const tempoEnvelope: Breakpoint.Type[] | null = (
+            this._activeOperation != null && this._activeOperation.kind === OperationKind.Tempo
+            ? this._activeOperation.newTempoEnvelope!
+            : song.tempoEnvelope
+        );
         const lanes: Lane.Type[] = this._laneManager.getLanes();
         const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
         const laneCount: number = lanes.length;
@@ -825,7 +872,7 @@ export class Timeline implements Component {
 
         // context.strokeStyle = "#4090ca";
         context.strokeStyle = "#17d15b";
-        context.lineWidth = 2;
+        context.lineWidth = 1;
 
         for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
             const lane: Lane.Type = lanes[laneIndex];
@@ -848,8 +895,9 @@ export class Timeline implements Component {
                     context.stroke();
                 } else if (tempoEnvelope.length > 0) {
                     const pointCount: number = tempoEnvelope.length;
-                    context.beginPath();
                     const startIndex: number = Math.min(pointCount - 1, Breakpoint.findIndex(tempoEnvelope, viewportX0));
+
+                    context.beginPath();
                     let prevY: number = 0;
                     {
                         const pointIndex: number = startIndex <= 0 ? 0 : startIndex - 1;
@@ -899,6 +947,27 @@ export class Timeline implements Component {
                         context.lineTo(width, y);
                     }
                     context.stroke();
+
+                    const r: number = this._state.tempoEnvelopePointSize;
+                    for (let pointIndex: number = startIndex; pointIndex < pointCount; pointIndex++) {
+                        const point: Breakpoint.Type = tempoEnvelope[pointIndex];
+                        const tempo: number = point.value;
+                        const tempoTime: number = point.time;
+                        const x = (tempoTime - viewportX0) * pixelsPerTick;
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            bottom,
+                            top
+                        );
+                        if (x + r > width) {
+                            break;
+                        }
+                        context.beginPath();
+                        context.arc(x, y, r, 0, Math.PI * 2, false);
+                        context.stroke();
+                    }
                 }
             }
         }
@@ -909,6 +978,7 @@ export class Timeline implements Component {
             !this._state.selectionOverlayIsDirty
             && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._selectionOverlayCanvasResized
+            && this._renderedLanesVersion === this._laneManager.getLanesVersion()
         ) {
             return;
         }
@@ -1087,6 +1157,7 @@ export class Timeline implements Component {
         this._playheadOverlayCanvasResized = true;
         this._renderedClipsDirty = true;
         this._state.selectionOverlayIsDirty = true;
+        this._renderedLanesVersion = null;
         Viewport.clearRendered(this._renderedViewport);
 
         this._ui.scheduleMainRender();
@@ -1463,6 +1534,7 @@ export class Timeline implements Component {
                     const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
                     const laneCount: number = lanes.length;
                     const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                    let selectedATrack: boolean = false;
                     for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
                         const lane: Lane.Type = lanes[laneIndex];
                         const laneLayout: LaneLayout = laneLayouts[laneIndex];
@@ -1477,17 +1549,20 @@ export class Timeline implements Component {
                             const trackIndex: number = lane.trackIndex;
                             if (insideRange(mouseY, top, bottom)) {
                                 this._state.selectedTrackIndex = trackIndex;
+                                selectedATrack = true;
                                 break;
                             }
                         }
                     }
-                    this._doc.timeCursor = cursorPpqn;
-                    this._state.selectedClipsByTrackIndex.clear();
-                    this._state.selectionOverlayIsDirty = true;
+                    if (selectedATrack) {
+                        this._doc.timeCursor = cursorPpqn;
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectionOverlayIsDirty = true;
 
-                    this._ui.scheduleMainRender();
+                        this._ui.scheduleMainRender();
 
-                    return ActionResponse.Done;
+                        return ActionResponse.Done;
+                    }
                 }
 
                 if ((clipHit & ClipHit.Inside) !== 0) {
@@ -1558,6 +1633,9 @@ export class Timeline implements Component {
                     if (this._state.selectedClipsByTrackIndex.size > 0) {
                         for (const [clipTrackIndex, selectedClips] of this._state.selectedClipsByTrackIndex.entries()) {
                             this._doc.removeClips(clipTrackIndex, selectedClips);
+                            // @TODO: Also remove the patterns if their ref count goes to 0?
+                            // It's lossy compared to BeepBox but I have seen people complain
+                            // about clutter (in the context of other audio programs).
                         }
 
                         // this._clearHoverState();
@@ -1644,6 +1722,349 @@ export class Timeline implements Component {
 
                 return ActionResponse.NotApplicable;
             };
+            case ActionKind.ToggleTempoEnvelope: {
+                this._doc.toggleTempoEnvelope();
+                this._ui.scheduleMainRender();
+                return ActionResponse.Done;
+            };
+            case ActionKind.CreateTempoEnvelopePoint: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                const viewportX0: number = this._state.viewport.x0;
+                const viewportX1: number = this._state.viewport.x1;
+                const viewportWidth: number = viewportX1 - viewportX0;
+                const pixelsPerTick: number = width / viewportWidth;
+                const viewportY0: number = this._state.viewport.y0;
+                // const viewportY1: number = this._state.viewport.y1;
+                // const viewportHeight: number = viewportY1 - viewportY0;
+
+                // @TODO: Consider only creating an interpolated point if we're
+                // clicking on a line segment? That way, this wouldn't conflict
+                // with a box selection that started on this lane.
+
+                // @TODO: Move this hit testing to another file and generalize
+                // so the code can be reused in more places, similarly to how
+                // it was done for the piano roll.
+
+                let mouseIsInsideTempoAutomationLane: boolean = false;
+                let tempoAutomationLaneIndex: number = -1;
+                let laneY0: number = 0;
+                let laneY1: number = 0;
+
+                const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                const laneCount: number = lanes.length;
+                // @TODO: This could start searching closer to where  we clicked,
+                // but it's fine for now to search a bit more.
+                const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+                    const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                    const laneHeight: number = lane.height;
+                    const kind: Lane.Kind = lane.kind;
+                    const top: number = laneLayout.y0 - viewportY0 + 2;
+                    const bottom: number = top + laneHeight - 2;
+                    if (top > height) {
+                        break;
+                    }
+                    if (kind === Lane.Kind.TempoAutomation) {
+                        if (insideRange(mouseY, top, bottom)) {
+                            mouseIsInsideTempoAutomationLane = true;
+                            tempoAutomationLaneIndex = laneIndex;
+                            laneY0 = top;
+                            laneY1 = bottom;
+                            break;
+                        }
+                    }
+                }
+
+                if (mouseIsInsideTempoAutomationLane) {
+                    const tempoEnvelope: Breakpoint.Type[] | null = this._doc.project.song.tempoEnvelope;
+
+                    // In order to have this not interfere with the other actions,
+                    // here I test to see if the mouse is over an existing point.
+                    // If it is, then we really want to either move that or remove it.
+                    const pointCount: number = tempoEnvelope != null ? tempoEnvelope.length : 0;
+                    const r: number = this._state.tempoEnvelopePointSize;
+
+                    let overlappingPointIndex: number = -1;
+                    // @TODO: Use binary search here.
+                    for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+                        const point: Breakpoint.Type = tempoEnvelope![pointIndex];
+                        const tempo: number = point.value;
+                        const tempoTime: number = point.time;
+                        const x = (tempoTime - viewportX0) * pixelsPerTick;
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            laneY1,
+                            laneY0
+                        );
+                        const distanceX: number = mouseX - x;
+                        const distanceY: number = mouseY - y;
+                        const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+                        if (distanceSquared < r * r) {
+                            overlappingPointIndex = pointIndex;
+                            break;
+                        }
+                    }
+
+                    if (overlappingPointIndex !== -1) {
+                        return ActionResponse.NotApplicable;
+                    }
+
+                    const duration: number = this._doc.project.song.duration;
+                    const cursorPpqn: number = Math.round(this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth));
+                    const time: number = clamp(cursorPpqn, 0, duration);
+                    const existingTempoIndex: number = Breakpoint.findIndex(tempoEnvelope, time);
+                    const value: number = (
+                        existingTempoIndex !== -1
+                        ? Breakpoint.evaluateTempoEnvelope(tempoEnvelope!, time, existingTempoIndex, 1)
+                        : Constants.TempoDefault
+                    );
+
+                    // Creating and starting a move operation:
+                    const newPoint: Breakpoint.Type = this._doc.insertTempoEnvelopePoint(time, value);
+                    const newPointIndex: number = this._doc.project.song.tempoEnvelope!.indexOf(newPoint);
+                    if (newPointIndex === -1) {
+                        throw new Error("New point wasn't found in the volume envelope?");
+                    }
+                    const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+                    const cursorY: number = mouseY;
+                    this._activeOperation = new MoveTempoEnvelopePointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorY,
+                        newPointIndex,
+                        tempoAutomationLaneIndex,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+                    return ActionResponse.StartedOperation;
+
+                    // Creating without starting a move operation:
+                    // this._doc.insertTempoEnvelopePoint(time, value);
+                    // this._state.envelopesAreDirty = true;
+                    // this._state.tempoEnvelopeIsDirty = true;
+                    // // Note that we should re-render the clips too because this
+                    // // might change the peaks of an audio clip visually.
+                    // this._renderedClipsDirty = true;
+                    // this._state.selectedClipsByTrackIndex.clear();
+                    // this._state.selectionOverlayIsDirty = true;
+                    // this._ui.scheduleMainRender();
+                    // return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.RemoveTempoEnvelopePoint: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                const viewportX0: number = this._state.viewport.x0;
+                const viewportX1: number = this._state.viewport.x1;
+                const viewportWidth: number = viewportX1 - viewportX0;
+                const pixelsPerTick: number = width / viewportWidth;
+                const viewportY0: number = this._state.viewport.y0;
+
+                let mouseIsInsideTempoAutomationLane: boolean = false;
+                let laneY0: number = 0;
+                let laneY1: number = 0;
+
+                const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                const laneCount: number = lanes.length;
+                // @TODO: This could start searching closer to where  we clicked,
+                // but it's fine for now to search a bit more.
+                const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+                    const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                    const laneHeight: number = lane.height;
+                    const kind: Lane.Kind = lane.kind;
+                    const top: number = laneLayout.y0 - viewportY0 + 2;
+                    const bottom: number = top + laneHeight - 2;
+                    if (top > height) {
+                        break;
+                    }
+                    if (kind === Lane.Kind.TempoAutomation) {
+                        if (insideRange(mouseY, top, bottom)) {
+                            mouseIsInsideTempoAutomationLane = true;
+                            laneY0 = top;
+                            laneY1 = bottom;
+                            break;
+                        }
+                    }
+                }
+
+                if (mouseIsInsideTempoAutomationLane) {
+                    const tempoEnvelope: Breakpoint.Type[] | null = this._doc.project.song.tempoEnvelope;
+                    const pointCount: number = tempoEnvelope != null ? tempoEnvelope.length : 0;
+                    const r: number = this._state.tempoEnvelopePointSize;
+
+                    let overlappingPointIndex: number = -1;
+                    // @TODO: Use binary search here.
+                    for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+                        const point: Breakpoint.Type = tempoEnvelope![pointIndex];
+                        const tempo: number = point.value;
+                        const tempoTime: number = point.time;
+                        const x = (tempoTime - viewportX0) * pixelsPerTick;
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            laneY1,
+                            laneY0
+                        );
+                        const distanceX: number = mouseX - x;
+                        const distanceY: number = mouseY - y;
+                        const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+                        if (distanceSquared < r * r) {
+                            overlappingPointIndex = pointIndex;
+                            break;
+                        }
+                    }
+
+                    if (overlappingPointIndex === -1) {
+                        return ActionResponse.NotApplicable;
+                    }
+
+                    this._doc.removeTempoEnvelopePoint(overlappingPointIndex);
+
+                    this._state.envelopesAreDirty = true;
+                    this._state.tempoEnvelopeIsDirty = true;
+                    // Note that we should re-render the clips too because this
+                    // might change the peaks of an audio clip visually.
+                    this._renderedClipsDirty = true;
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+
+                    this._ui.scheduleMainRender();
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.MoveTempoEnvelopePointBounded: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                const viewportX0: number = this._state.viewport.x0;
+                const viewportX1: number = this._state.viewport.x1;
+                const viewportWidth: number = viewportX1 - viewportX0;
+                const pixelsPerTick: number = width / viewportWidth;
+                const viewportY0: number = this._state.viewport.y0;
+                // const viewportY1: number = this._state.viewport.y1;
+                // const viewportHeight: number = viewportY1 - viewportY0;
+
+                let mouseIsInsideTempoAutomationLane: boolean = false;
+                let tempoAutomationLaneIndex: number = -1;
+                let laneY0: number = 0;
+                let laneY1: number = 0;
+
+                const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                const laneCount: number = lanes.length;
+                // @TODO: This could start searching closer to where  we clicked,
+                // but it's fine for now to search a bit more.
+                const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+                    const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                    const laneHeight: number = lane.height;
+                    const kind: Lane.Kind = lane.kind;
+                    const top: number = laneLayout.y0 - viewportY0 + 2;
+                    const bottom: number = top + laneHeight - 2;
+                    if (top > height) {
+                        break;
+                    }
+                    if (kind === Lane.Kind.TempoAutomation) {
+                        if (insideRange(mouseY, top, bottom)) {
+                            mouseIsInsideTempoAutomationLane = true;
+                            tempoAutomationLaneIndex = laneIndex;
+                            laneY0 = top;
+                            laneY1 = bottom;
+                            break;
+                        }
+                    }
+                }
+
+                if (mouseIsInsideTempoAutomationLane) {
+                    const tempoEnvelope: Breakpoint.Type[] | null = this._doc.project.song.tempoEnvelope;
+
+                    // In order to have this not interfere with the other actions,
+                    // here I test to see if the mouse is over an existing point.
+                    // If it is, then we really want to either move that or remove it.
+                    const pointCount: number = tempoEnvelope != null ? tempoEnvelope.length : 0;
+                    const r: number = this._state.tempoEnvelopePointSize;
+
+                    let overlappingPointIndex: number = -1;
+                    // @TODO: Use binary search here.
+                    for (let pointIndex: number = pointCount - 1; pointIndex >= 0; pointIndex--) {
+                        const point: Breakpoint.Type = tempoEnvelope![pointIndex];
+                        const tempo: number = point.value;
+                        const tempoTime: number = point.time;
+                        const x = (tempoTime - viewportX0) * pixelsPerTick;
+                        const y = remap(
+                            clamp(tempo, Constants.TempoMin, Constants.TempoMax),
+                            Constants.TempoMin,
+                            Constants.TempoMax,
+                            laneY1,
+                            laneY0
+                        );
+                        const distanceX: number = mouseX - x;
+                        const distanceY: number = mouseY - y;
+                        const distanceSquared: number = distanceX * distanceX + distanceY * distanceY;
+                        if (distanceSquared < r * r) {
+                            overlappingPointIndex = pointIndex;
+                            break;
+                        }
+                    }
+
+                    if (overlappingPointIndex === -1) {
+                        return ActionResponse.NotApplicable;
+                    }
+
+                    const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+                    const cursorY: number = mouseY;
+                    this._activeOperation = new MoveTempoEnvelopePointBounded(
+                        this._state,
+                        this._doc,
+                        cursorPpqn0,
+                        cursorY,
+                        overlappingPointIndex,
+                        tempoAutomationLaneIndex,
+                    );
+                    this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+                    return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
         }
 
         return ActionResponse.NotApplicable;
@@ -1677,8 +2098,8 @@ export class Timeline implements Component {
         // @TODO: Invalidate precisely.
         this._renderedClipsDirty = true;
         this._state.selectionOverlayIsDirty = true;
-        this._renderedEnvelopesDirty = true;
-        this._tempoEnvelopeIsDirty = true;
+        this._state.envelopesAreDirty = true;
+        this._state.tempoEnvelopeIsDirty = true;
     };
 
     private _onSeekAndMoveTimeCursor = (): void => {

@@ -9,6 +9,7 @@ import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
+import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 import { makeIdGenerator } from "@synth-playground/synthesizer/data/common.js";
 // import audioWorkletCode from "inlineworker!@synth-playground/main-audio-worklet";
 import audioWorkletUrl from "inlineworker!@synth-playground/main-audio-worklet";
@@ -61,6 +62,7 @@ export class SongDocument {
     public onStoppedPlayingPianoNote: Emitter;
     public onChangedPianoRollPattern: Emitter;
     public onSeekAndMoveTimeCursor: Emitter;
+    public onTracksChanged: Emitter;
     public playing: boolean; // @TODO: Use a bitfield for this?
     public playingPianoNote: boolean;
     public stopPianoNoteTimeout: number;
@@ -81,6 +83,7 @@ export class SongDocument {
     public pianoRollTrackIndex: number;
     public pianoRollClipIndex: number;
     public timeCursor: number;
+    public shouldShowTempoEnvelope: boolean;
 
     constructor() {
         this.patternInfoCache = new WeakMap();
@@ -144,6 +147,7 @@ export class SongDocument {
         this.pianoRollTrackIndex = 0;
         this.pianoRollClipIndex = 0;
         this.timeCursor = 0;
+        this.shouldShowTempoEnvelope = false;
 
         this.onProjectChanged = new Emitter();
         this.onStartedPlaying = new Emitter();
@@ -152,6 +156,7 @@ export class SongDocument {
         this.onStoppedPlayingPianoNote = new Emitter();
         this.onChangedPianoRollPattern = new Emitter();
         this.onSeekAndMoveTimeCursor = new Emitter();
+        this.onTracksChanged = new Emitter();
 
         this.playing = false;
         this.playingPianoNote = false;
@@ -361,6 +366,11 @@ export class SongDocument {
         this.onSeekAndMoveTimeCursor.notifyListeners();
     }
 
+    public toggleTempoEnvelope(): void {
+        this.shouldShowTempoEnvelope = !this.shouldShowTempoEnvelope;
+        this.onTracksChanged.notifyListeners();
+    }
+
     public getOutputTimeDomainData(frame: number): Float32Array | null {
         if (
             this.audioContext == null
@@ -414,6 +424,58 @@ export class SongDocument {
         this.pianoRollTrackIndex = trackIndex;
         this.pianoRollClipIndex = clipIndex;
         this.onChangedPianoRollPattern.notifyListeners();
+    }
+
+    public insertTempoEnvelopePoint(pointTime: number, pointValue: number): Breakpoint.Type {
+        if (this.project.song.tempoEnvelope == null) {
+            this.project.song.tempoEnvelope = [];
+        }
+        // @TODO: Constrain time and value.
+        const newPoint: Breakpoint.Type = Breakpoint.make(pointTime, pointValue);
+        this.project.song.tempoEnvelope.push(newPoint);
+        this.project.song.tempoEnvelope.sort(Breakpoint.byTimeAscending);
+
+        this.computeTempoMap();
+        this.markProjectAsDirty();
+
+        return newPoint;
+    }
+
+    public removeTempoEnvelopePoint(pointIndex: number): void {
+        if (this.project.song.tempoEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        if (this.project.song.tempoEnvelope.length === 1) {
+            this.project.song.tempoEnvelope = null;
+        } else {
+            this.project.song.tempoEnvelope.splice(pointIndex, 1);
+            this.project.song.tempoEnvelope.sort(Breakpoint.byTimeAscending);
+        }
+
+        this.computeTempoMap();
+        this.markProjectAsDirty();
+    }
+
+    public changeTempoEnvelopePoint(
+        pointIndex: number,
+        pointTime: number,
+        pointValue: number,
+    ): void {
+        if (this.project.song.tempoEnvelope == null) {
+            // @TODO: Hmm.
+            return;
+        }
+
+        // @TODO: Constrain time and value.
+        this.project.song.tempoEnvelope![pointIndex].time = pointTime;
+        this.project.song.tempoEnvelope![pointIndex].value = pointValue;
+        // @TODO: Skip this when the move is bounded.
+        this.project.song.tempoEnvelope!.sort(Breakpoint.byTimeAscending);
+
+        this.computeTempoMap();
+        this.markProjectAsDirty();
     }
 
     public insertPattern(): Pattern.Type {
@@ -882,6 +944,8 @@ export class SongDocument {
             return;
         }
 
+        // @TODO: If .length === 1, I can just set this to null.
+
         note.volumeEnvelope.splice(pointIndex, 1);
         note.volumeEnvelope.sort(Breakpoint.byTimeAscending);
 
@@ -902,6 +966,8 @@ export class SongDocument {
             // @TODO: Hmm.
             return;
         }
+
+        // @TODO: If .length === 1, I can just set this to null.
 
         note.pitchEnvelope.splice(pointIndex, 1);
         note.pitchEnvelope.sort(Breakpoint.byTimeAscending);
@@ -973,6 +1039,16 @@ export class SongDocument {
         };
         this.patternInfoCache.set(pattern, patternInfo);
         patternInfo.pitchBounds.populate(pattern.notes);
+    }
+
+    public computeTempoMap(): void {
+        TempoMap.update(
+            this.project.song.tempoMap,
+            this.project.song.ppqn,
+            this.project.song.duration,
+            this.project.song.tempo,
+            this.project.song.tempoEnvelope,
+        );
     }
 
     public markPatternAsDirty(pattern: Pattern.Type): void {

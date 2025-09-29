@@ -9,11 +9,19 @@ export interface OperationState {
      */
     clipStretchHandleSize: number;
 
+    /**
+     * In pixels.
+     */
+    tempoEnvelopePointSize: number;
+
     boxSelectionActive: boolean;
     boxSelectionX0: number;
     boxSelectionX1: number;
     boxSelectionY0: number;
     boxSelectionY1: number;
+
+    envelopesAreDirty: boolean;
+    tempoEnvelopeIsDirty: boolean;
 
     selectionOverlayIsDirty: boolean;
 
@@ -21,7 +29,10 @@ export interface OperationState {
     selectedTrackIndex: number;
 
     mouseToPpqn: (clientX: number) => number;
-    // ppqnToMouse: (ppqn: number) => number;
+    mouseToY: (clientY: number) => number;
+
+    getLaneY0: (laneIndex: number) => number;
+    getLaneY1: (laneIndex: number) => number;
 
     getCanvasBounds: () => DOMRect;
 }

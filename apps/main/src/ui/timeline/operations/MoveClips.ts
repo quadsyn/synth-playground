@@ -3,6 +3,7 @@ import { clamp } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
+import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import { type Operation } from "../Operation.js";
 import { OperationKind } from "../OperationKind.js";
 import { type OperationState } from "../OperationState.js";
@@ -11,6 +12,7 @@ import { type ClipTransform } from "../ClipTransform.js";
 export class MoveClips implements Operation {
     public kind: OperationKind;
     public clips: Map<Clip.Type, ClipTransform> | undefined;
+    public newTempoEnvelope: Breakpoint.Type[] | undefined;
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -35,6 +37,7 @@ export class MoveClips implements Operation {
         this._timeDelta = 0;
         this._timeDeltaMin = timeDeltaMin;
         this._timeDeltaMax = timeDeltaMax;
+        this.newTempoEnvelope = undefined;
     }
 
     private _move(x1: number): void {

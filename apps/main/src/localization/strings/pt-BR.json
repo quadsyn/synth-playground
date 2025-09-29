@@ -56,7 +56,11 @@
             "zoomOutAroundMouseHorizontally": "Zoom out around mouse horizontally",
             "openPatternFromClip": "Open pattern from clip",
             "quantize": "Quantizar",
-            "seek": "Seek"
+            "seek": "Seek",
+            "toggleTempoEnvelope": "Toggle tempo envelope",
+            "createTempoEnvelopePoint": "Create tempo envelope point",
+            "removeTempoEnvelopePoint": "Remove tempo envelope point",
+            "moveTempoEnvelopePoint": "Move tempo envelope point"
         }
     },
     "panelTitles": {

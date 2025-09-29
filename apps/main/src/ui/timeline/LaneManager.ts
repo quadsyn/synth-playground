@@ -24,8 +24,7 @@ export class LaneManager {
         this._totalHeight = 0;
         this._lanesAreDirty = true;
 
-        // @TODO: Listen to track-related events emitted by the document, and
-        // call _markLanesAsDirty.
+        this._doc.onTracksChanged.addListener(this._onTracksChanged);
     }
 
     public dispose(): void {}
@@ -110,15 +109,18 @@ export class LaneManager {
         return visibleLaneCount;
     }
 
-    // private _markLanesAsDirty(): void {
-    //     this._lanesAreDirty = true;
-    // }
+    private _onTracksChanged = (): void => {
+        this._markLanesAsDirty();
+    };
+
+    private _markLanesAsDirty(): void {
+        this._lanesAreDirty = true;
+    }
 
     private _determineVisibleLanes(): void {
         const tracks: Track.Type[] = this._doc.project.song.tracks;
         const tracksMetadata: TrackMetadata.Type[] = this._doc.project.tracksMetadata;
         const trackCount: number = tracks.length;
-        const shouldShowTempoAutomation: boolean = false;
 
         let laneCount: number = trackCount;
         // @TODO: Use this first pass to determine dirtiness as well?
@@ -126,7 +128,7 @@ export class LaneManager {
             // @TODO: Increment laneCount if there are any automation subtracks.
             // Also, if tracks can be hidden, decrement.
         }
-        if (shouldShowTempoAutomation) {
+        if (this._doc.shouldShowTempoEnvelope) {
             laneCount++;
         }
 
@@ -154,7 +156,7 @@ export class LaneManager {
         // Update lane objects.
         let laneIndex: number = 0;
         // Per-song lanes go first.
-        if (shouldShowTempoAutomation) {
+        if (this._doc.shouldShowTempoEnvelope) {
             const lane: Lane.Type = this._lanes[laneIndex];
             lane.kind = Lane.Kind.TempoAutomation;
             lane.trackIndex = -1;

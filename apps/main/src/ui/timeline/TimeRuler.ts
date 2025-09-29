@@ -188,9 +188,12 @@ export class TimeRuler implements Component {
                 context.moveTo(x, 0);
                 context.lineTo(x, 10);
                 context.stroke();
-                if (Math.abs(x - nextX) > 30) context.fillText(value + "", x + 5, 1);
+                if (pointIndex === pointCount - 1 || Math.abs(x - nextX) > 30) {
+                    context.fillText(value + "", x + 5, 1);
+                }
             }
         }
+        // @TODO: Draw the tempo if the tempo envelope doesn't exist?
 
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
         this._renderedPpqn = ppqn;

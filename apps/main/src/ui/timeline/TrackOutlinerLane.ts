@@ -280,15 +280,15 @@ export class TrackOutlinerLane implements Component {
                 this._renderedHasTopBorder = this._hasTopBorder;
             }
 
+            if (this._renderedSelected !== this._selected) {
+                this.element.style.backgroundColor = this._selected ? "#4e4e4e" : "#3e3e3e";
+                this._renderedSelected = this._selected;
+            }
+
             if (this._kind === Lane.Kind.Track) {
                 if (this._renderedTrackName !== this._trackName) {
                     this._trackNameDisplay.textContent = this._trackName;
                     this._renderedTrackName = this._trackName;
-                }
-
-                if (this._renderedSelected !== this._selected) {
-                    this.element.style.backgroundColor = this._selected ? "#4e4e4e" : "#3e3e3e";
-                    this._renderedSelected = this._selected;
                 }
 
                 this._trackGainSlider.setValue(this._trackGain);
