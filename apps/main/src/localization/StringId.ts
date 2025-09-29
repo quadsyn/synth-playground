@@ -55,7 +55,7 @@ export const enum StringId {
     TimelineActionToggleTempoEnvelope = "actions.timeline.toggleTempoEnvelope",
     TimelineActionCreateTempoEnvelopePoint = "actions.timeline.createTempoEnvelopePoint",
     TimelineActionRemoveTempoEnvelopePoint = "actions.timeline.removeTempoEnvelopePoint",
-    TimelineActionMoveTempoEnvelopePoint = "actions.timeline.moveTempoEnvelopePoint",
+    TimelineActionMoveTempoEnvelopePointBounded = "actions.timeline.moveTempoEnvelopePointBounded",
     TimelinePanelTitle = "panelTitles.timeline",
     PianoRollPanelTitle = "panelTitles.pianoRoll",
     TransportPanelTitle = "panelTitles.transport",

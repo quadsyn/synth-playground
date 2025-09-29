@@ -588,7 +588,7 @@ type ActionTableEntry = [
         AreaKind.Timeline,
         [GestureKind.Drag | MouseButton.Left],
         <ActionId>"timeline.moveTempoEnvelopePointBounded",
-        StringId.TimelineActionMoveTempoEnvelopePoint,
+        StringId.TimelineActionMoveTempoEnvelopePointBounded,
     ],
 ]).forEach(([tags, action, area, defaultShortcuts, id, labelId]) => {
     registerAction(tags, action, area, defaultShortcuts, id, labelId);

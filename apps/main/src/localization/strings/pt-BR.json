@@ -60,7 +60,7 @@
             "toggleTempoEnvelope": "Toggle tempo envelope",
             "createTempoEnvelopePoint": "Create tempo envelope point",
             "removeTempoEnvelopePoint": "Remove tempo envelope point",
-            "moveTempoEnvelopePoint": "Move tempo envelope point"
+            "moveTempoEnvelopePointBounded": "Move tempo envelope point (bounded)"
         }
     },
     "panelTitles": {
