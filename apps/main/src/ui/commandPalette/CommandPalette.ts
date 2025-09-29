@@ -194,11 +194,11 @@ export class CommandPalette implements Component {
                 score = results.score;
                 highlightRanges = results.ranges;
             }
-            if (action === this._app.ui.inputManager.getLastExecutedAction()) {
-                score = Infinity;
-            }
             if (score === 0) {
                 continue;
+            }
+            if (action === this._app.ui.inputManager.getLastExecutedAction()) {
+                score = Infinity;
             }
             this._filteredActions.push({
                 kind: action,
