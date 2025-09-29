@@ -565,6 +565,45 @@ export class Timeline implements Component {
                         }
                     },
                 );
+
+                IITree.findOverlapping(
+                    track.clips,
+                    track.clipsMaxLevel,
+                    viewportX0,
+                    viewportX1,
+                    (clip: Clip.Type, index: number) => {
+                        const transform: ClipTransform | undefined = selectedClips?.get(clip);
+                        if (transform != null) {
+                            this._renderClipInside(
+                                width,
+                                height,
+                                context,
+                                clip,
+                                transform.newStart,
+                                transform.newEnd,
+                                viewportX0,
+                                viewportY0,
+                                pixelsPerTick,
+                                top,
+                                laneHeight,
+                            );
+                        } else {
+                            this._renderClipInside(
+                                width,
+                                height,
+                                context,
+                                clip,
+                                clip.start,
+                                clip.end,
+                                viewportX0,
+                                viewportY0,
+                                pixelsPerTick,
+                                top,
+                                laneHeight,
+                            );
+                        }
+                    },
+                );
             }
         }
     }
@@ -582,7 +621,7 @@ export class Timeline implements Component {
         trackTop: number,
         trackHeight: number,
     ): void {
-        const duration: number = end - start;
+        // const duration: number = end - start;
 
         const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
         const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
@@ -594,10 +633,10 @@ export class Timeline implements Component {
             throw new Error("Couldn't find pattern index");
         }
         const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-        const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
-        const patternDuration: number = pattern.duration;
+        // const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
+        // const patternDuration: number = pattern.duration;
 
-        const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
+        // const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
 
         const headerHeight: number = 14;
         const bodyHeight: number = (trackHeight - 1) - headerHeight;
@@ -638,6 +677,46 @@ export class Timeline implements Component {
         if (w > titleWidthEstimate + titleGapX) {
             context.fillText(title, titleX, y + 2);
         }
+    }
+
+    public _renderClipInside(
+        canvasWidth: number,
+        canvasHeight: number,
+        context: CanvasRenderingContext2D,
+        clip: Clip.Type,
+        start: number,
+        end: number,
+        viewportX0: number,
+        viewportY0: number,
+        pixelsPerTick: number,
+        trackTop: number,
+        trackHeight: number,
+    ): void {
+        const duration: number = end - start;
+
+        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
+        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+            patternsById,
+            clip.patternIdLo,
+            clip.patternIdHi,
+        );
+        if (patternTableIndex === -1) {
+            throw new Error("Couldn't find pattern index");
+        }
+        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
+        const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
+        const patternDuration: number = pattern.duration;
+
+        const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
+
+        const headerHeight: number = 14;
+        const bodyHeight: number = (trackHeight - 1) - headerHeight;
+        const x0: number = ((start - viewportX0) * pixelsPerTick);
+        const x1: number = ((end - viewportX0) * pixelsPerTick);
+        const w: number = Math.max(1, x1 - x0);
+        const x: number = x0;
+        const y: number = trackTop - 1;
+        const h: number = headerHeight + bodyHeight;
 
         if (w >= 4) {
             const notes: Note.Type[] = pattern.notes;
