@@ -3,16 +3,13 @@ import { clamp } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
-import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
 
-export class LeftStretchClip implements Operation {
-    public kind: OperationKind;
-    public clips: Map<Clip.Type, ClipTransform> | undefined;
-    public newTempoEnvelope: Breakpoint.Type[] | undefined;
+export class LeftStretchClip implements ClipOperation {
+    public kind: OperationKind.Clip;
+    public data: { clips: Map<Clip.Type, ClipTransform> };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -25,19 +22,14 @@ export class LeftStretchClip implements Operation {
         clips: Map<Clip.Type, ClipTransform>,
     ) {
         this.kind = OperationKind.Clip;
-        this.clips = clips;
+        this.data = { clips: clips };
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
-        this.newTempoEnvelope = undefined;
     }
 
     private _move(x1: number): void {
-        if (this.clips == null) {
-            return;
-        }
-
-        for (let [clip, transform] of this.clips.entries()) {
+        for (let [clip, transform] of this.data.clips.entries()) {
             const cursorPpqn0: number = this._cursorPpqn0 | 0;
             const cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
             const cursorPpqnDeltaMin: number = 0 - clip.start;
@@ -54,15 +46,11 @@ export class LeftStretchClip implements Operation {
     }
 
     public update(context: OperationContext): OperationResponse {
-        if (this.clips == null) {
-            return OperationResponse.Aborted;
-        }
-
         if (isReleasing(context)) {
             const songDuration: number = this._doc.project.song.duration;
 
             // @TODO: Skip committing if the clip properties didn't change.
-            for (let [clip, transform] of this.clips.entries()) {
+            for (let [clip, transform] of this.data.clips.entries()) {
                 const newStart: number = clamp(transform.newStart, 0, songDuration - 1);
                 const clipIndex: number = transform.clipIndex;
                 const clipTrackIndex: number = transform.clipTrackIndex;

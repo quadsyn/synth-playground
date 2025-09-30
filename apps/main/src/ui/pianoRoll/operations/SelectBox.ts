@@ -3,18 +3,15 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type SelectionOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
-import { type NoteTransform } from "../NoteTransform.js";
 import { tickToX, pitchToY } from "../common.js";
 import * as BentNoteIterator from "../BentNoteIterator.js";
 import { NoteHit, rectOverlapsNote } from "../noteHitTesting.js";
 import { SongDocument } from "../../../SongDocument.js";
 
-export class SelectBox implements Operation {
-    public kind: OperationKind;
-    public notes: Map<Note.Type, NoteTransform> | undefined;
+export class SelectBox implements SelectionOperation {
+    public kind: OperationKind.Selection;
 
     private _doc: SongDocument;
     private _operationState: OperationState;
@@ -32,7 +29,6 @@ export class SelectBox implements Operation {
     ) {
         this._doc = doc;
         this.kind = OperationKind.Selection;
-        this.notes = undefined;
         this._operationState = operationState;
         this._cursorPpqn0 = cursorPpqn0;
         this._cursorPitch0 = cursorPitch0;

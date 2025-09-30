@@ -2,18 +2,14 @@ import { SongDocument } from "../../../SongDocument.js";
 import { clamp, remap } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
-import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Constants from "@synth-playground/synthesizer/data/Constants.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type TempoEnvelopeOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
-import { type ClipTransform } from "../ClipTransform.js";
 
-export class MoveTempoEnvelopePointBounded implements Operation {
-    public kind: OperationKind;
-    public clips: Map<Clip.Type, ClipTransform> | undefined;
-    public newTempoEnvelope: Breakpoint.Type[];
+export class MoveTempoEnvelopePointBounded implements TempoEnvelopeOperation {
+    public kind: OperationKind.TempoEnvelope;
+    public data: { newTempoEnvelope: Breakpoint.Type[] };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -30,8 +26,7 @@ export class MoveTempoEnvelopePointBounded implements Operation {
         pointIndex: number,
         laneIndex: number,
     ) {
-        this.kind = OperationKind.Tempo;
-        this.clips = undefined;
+        this.kind = OperationKind.TempoEnvelope;
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
@@ -39,7 +34,7 @@ export class MoveTempoEnvelopePointBounded implements Operation {
         this._pointIndex = pointIndex;
         this._laneIndex = laneIndex;
         // @TODO: I should check that this actually exists.
-        this.newTempoEnvelope = Breakpoint.cloneArray(this._doc.project.song.tempoEnvelope!);
+        this.data = { newTempoEnvelope: Breakpoint.cloneArray(this._doc.project.song.tempoEnvelope!) };
     }
 
     private _move(x1: number, y1: number): void {
@@ -58,7 +53,7 @@ export class MoveTempoEnvelopePointBounded implements Operation {
         const remappedDelta: number = remappedY1 - remappedY0;
 
         const srcPoint: Breakpoint.Type = this._doc.project.song.tempoEnvelope![this._pointIndex];
-        const dstPoint: Breakpoint.Type = this.newTempoEnvelope[this._pointIndex];
+        const dstPoint: Breakpoint.Type = this.data.newTempoEnvelope[this._pointIndex];
 
         let minTime: number = 0;
         let maxTime: number = this._doc.project.song.duration;
@@ -82,7 +77,7 @@ export class MoveTempoEnvelopePointBounded implements Operation {
     public update(context: OperationContext): OperationResponse {
         if (isReleasing(context)) {
             const pointIndex: number = this._pointIndex;
-            const dstPoint: Breakpoint.Type = this.newTempoEnvelope![pointIndex];
+            const dstPoint: Breakpoint.Type = this.data.newTempoEnvelope![pointIndex];
 
             this._operationState.envelopesAreDirty = true;
             this._operationState.tempoEnvelopeIsDirty = true;

@@ -30,9 +30,8 @@ import { type LaneLayout } from "./LaneLayout.js";
 import { TimeRuler } from "./TimeRuler.js";
 import { TrackOutliner } from "./TrackOutliner.js";
 import { LaneManager } from "./LaneManager.js";
-import { OperationKind } from "./OperationKind.js";
 import { type OperationState } from "./OperationState.js";
-import { type Operation } from "./Operation.js";
+import { OperationKind, type Operation } from "./Operation.js";
 import { type ClipTransform } from "./ClipTransform.js";
 import { LeftStretchClip } from "./operations/LeftStretchClip.js";
 import { RightStretchClip } from "./operations/RightStretchClip.js";
@@ -407,8 +406,8 @@ export class Timeline implements Component {
         this._timeRuler.setPpqn(this._doc.project.song.ppqn);
         this._timeRuler.setBeatsPerBar(this._doc.project.song.beatsPerBar);
         this._timeRuler.setTempoEnvelope(
-            this._activeOperation != null && this._activeOperation.kind === OperationKind.Tempo
-            ? this._activeOperation.newTempoEnvelope!
+            this._activeOperation != null && this._activeOperation.kind === OperationKind.TempoEnvelope
+            ? this._activeOperation.data.newTempoEnvelope
             : this._doc.project.song.tempoEnvelope
         );
         this._timeRuler.setTempoEnvelopeIsDirty(this._state.tempoEnvelopeIsDirty);
@@ -538,7 +537,7 @@ export class Timeline implements Component {
 
         let selectedClips: Map<Clip.Type, ClipTransform> | undefined = undefined;
         if (this._activeOperation != null && this._activeOperation.kind === OperationKind.Clip) {
-            selectedClips = this._activeOperation.clips;
+            selectedClips = this._activeOperation.data.clips;
         }
 
         context.clearRect(0, 0, width, height);
@@ -849,8 +848,8 @@ export class Timeline implements Component {
 
         const song: Song.Type = this._doc.project.song;
         const tempoEnvelope: Breakpoint.Type[] | null = (
-            this._activeOperation != null && this._activeOperation.kind === OperationKind.Tempo
-            ? this._activeOperation.newTempoEnvelope!
+            this._activeOperation != null && this._activeOperation.kind === OperationKind.TempoEnvelope
+            ? this._activeOperation.data.newTempoEnvelope
             : song.tempoEnvelope
         );
         const lanes: Lane.Type[] = this._laneManager.getLanes();
@@ -1051,8 +1050,8 @@ export class Timeline implements Component {
 
                     if (
                         this._activeOperation != null
-                        && this._activeOperation.clips != null
-                        && this._activeOperation.clips.has(clip)
+                        && this._activeOperation.kind === OperationKind.Clip
+                        && this._activeOperation.data.clips.has(clip)
                     ) {
                         continue;
                     }

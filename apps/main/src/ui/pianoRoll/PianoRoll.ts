@@ -21,9 +21,8 @@ import {
 import * as Viewport from "../common/Viewport.js";
 import { TimeRuler } from "./TimeRuler.js";
 import { Piano } from "./Piano.js";
-import { type Operation } from "./Operation.js";
+import { OperationKind, type Operation } from "./Operation.js";
 import { type OperationState } from "./OperationState.js";
-import { OperationKind } from "./OperationKind.js";
 import { type NoteTransform } from "./NoteTransform.js";
 import { PaintFlatNote } from "./operations/PaintFlatNote.js";
 import { LeftStretchNote } from "./operations/LeftStretchNote.js";
@@ -923,7 +922,7 @@ export class PianoRoll implements Component {
 
         let selectedNotes: Map<Note.Type, NoteTransform> | undefined = undefined;
         if (this._activeOperation != null && this._activeOperation.kind === OperationKind.Note) {
-            selectedNotes = this._activeOperation.notes;
+            selectedNotes = this._activeOperation.data.notes;
         }
 
         offscreenNotesContext.clearRect(0, 0, width, this._timeRuler.size + this._height + this._timeScrollBar.size);
@@ -1091,8 +1090,8 @@ export class PianoRoll implements Component {
 
                 if (
                     this._activeOperation != null
-                    && this._activeOperation.notes != null
-                    && this._activeOperation.notes.has(note)
+                    && this._activeOperation.kind === OperationKind.Note
+                    && this._activeOperation.data.notes.has(note)
                 ) {
                     continue;
                 }

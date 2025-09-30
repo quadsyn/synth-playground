@@ -4,14 +4,13 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type NoteOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type NoteTransform } from "../NoteTransform.js";
 
-export class MoveNotes implements Operation {
-    public kind: OperationKind;
-    public notes: Map<Note.Type, NoteTransform> | undefined;
+export class MoveNotes implements NoteOperation {
+    public kind: OperationKind.Note;
+    public data: { notes: Map<Note.Type, NoteTransform> };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -36,7 +35,7 @@ export class MoveNotes implements Operation {
         pitchDeltaMax: number,
     ) {
         this.kind = OperationKind.Note;
-        this.notes = notes;
+        this.data = { notes: notes };
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
@@ -50,10 +49,6 @@ export class MoveNotes implements Operation {
     }
 
     private _move(pattern: Pattern.Type, x1: number, y1: number): void {
-        if (this.notes == null) {
-            return;
-        }
-
         const cursorPpqn0: number = this._cursorPpqn0 | 0;
         const cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
         const cursorPitch0: number = this._cursorPitch0 | 0;
@@ -62,7 +57,7 @@ export class MoveNotes implements Operation {
         this._timeDelta = clamp(cursorPpqn1 - cursorPpqn0, this._timeDeltaMin, this._timeDeltaMax);
         this._pitchDelta = clamp(cursorPitch1 - cursorPitch0, this._pitchDeltaMin, this._pitchDeltaMax);
 
-        for (const [note, transform] of this.notes.entries()) {
+        for (const [note, transform] of this.data.notes.entries()) {
             transform.newStart = note.start + this._timeDelta;
             transform.newEnd = note.end + this._timeDelta;
             transform.newPitch = note.pitch + this._pitchDelta;
@@ -72,13 +67,13 @@ export class MoveNotes implements Operation {
     }
 
     public update(context: OperationContext, pattern: Pattern.Type): OperationResponse {
-        if (this.notes == null) {
+        if (this.data.notes == null) {
             return OperationResponse.Aborted;
         }
 
         if (isReleasing(context)) {
             // @TODO: Skip committing if the note properties didn't change.
-            const notes: Note.Type[] = Array.from(this.notes.keys());
+            const notes: Note.Type[] = Array.from(this.data.notes.keys());
             if (notes.length === 1) {
                 this._operationState.lastCommittedNoteDuration = notes[0].end - notes[0].start;
                 this._operationState.lastCommittedNoteVolumeEnvelope = notes[0].volumeEnvelope;

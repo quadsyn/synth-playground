@@ -5,14 +5,13 @@ import { OperationResponse, type OperationContext, isReleasing } from "../../inp
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type NoteOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type NoteTransform } from "../NoteTransform.js";
 
-export class MoveNotePitchPointBounded implements Operation {
-    public kind: OperationKind;
-    public notes: Map<Note.Type, NoteTransform> | undefined;
+export class MoveNotePitchPointBounded implements NoteOperation {
+    public kind: OperationKind.Note;
+    public data: { notes: Map<Note.Type, NoteTransform> };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -31,7 +30,7 @@ export class MoveNotePitchPointBounded implements Operation {
         pointIndex: number,
     ) {
         this.kind = OperationKind.Note;
-        this.notes = notes;
+        this.data = { notes: notes };
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
@@ -42,11 +41,7 @@ export class MoveNotePitchPointBounded implements Operation {
     }
 
     private _move(pattern: Pattern.Type, x1: number, y1: number): void {
-        if (this.notes == null) {
-            return;
-        }
-
-        for (let [note, transform] of this.notes.entries()) {
+        for (let [note, transform] of this.data.notes.entries()) {
             const cursorPpqn0: number = this._cursorPpqn0;
             const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
             let ppqnDelta: number = cursorPpqn1 - cursorPpqn0;
@@ -92,10 +87,6 @@ export class MoveNotePitchPointBounded implements Operation {
     }
 
     public update(context: OperationContext, pattern: Pattern.Type): OperationResponse {
-        if (this.notes == null) {
-            return OperationResponse.Aborted;
-        }
-
         if (context.gesture1 === (GestureKind.Press | Key.H)) {
             this._constraint = switchConstraint(this._constraint, ConstraintMode.Horizontal);
         } else if (context.gesture1 === (GestureKind.Press | Key.V)) {
@@ -106,7 +97,7 @@ export class MoveNotePitchPointBounded implements Operation {
 
         if (isReleasing(context)) {
             // @TODO: Skip committing if the note properties didn't change.
-            for (let [note, transform] of this.notes.entries()) {
+            for (let [note, transform] of this.data.notes.entries()) {
                 const pointIndex: number = this._pointIndex;
                 const dstPoint: Breakpoint.Type = transform.newPitchEnvelope![pointIndex];
 

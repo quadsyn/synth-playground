@@ -3,16 +3,13 @@ import { clamp } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
-import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
 
-export class MoveClips implements Operation {
-    public kind: OperationKind;
-    public clips: Map<Clip.Type, ClipTransform> | undefined;
-    public newTempoEnvelope: Breakpoint.Type[] | undefined;
+export class MoveClips implements ClipOperation {
+    public kind: OperationKind.Clip;
+    public data: { clips: Map<Clip.Type, ClipTransform> };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -30,27 +27,22 @@ export class MoveClips implements Operation {
         timeDeltaMax: number,
     ) {
         this.kind = OperationKind.Clip;
-        this.clips = clips;
+        this.data = { clips: clips };
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
         this._timeDelta = 0;
         this._timeDeltaMin = timeDeltaMin;
         this._timeDeltaMax = timeDeltaMax;
-        this.newTempoEnvelope = undefined;
     }
 
     private _move(x1: number): void {
-        if (this.clips == null) {
-            return;
-        }
-
         const cursorPpqn0: number = this._cursorPpqn0 | 0;
         const cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
 
         this._timeDelta = clamp(cursorPpqn1 - cursorPpqn0, this._timeDeltaMin, this._timeDeltaMax);
 
-        for (const [clip, transform] of this.clips.entries()) {
+        for (const [clip, transform] of this.data.clips.entries()) {
             transform.newStart = clip.start + this._timeDelta;
             transform.newEnd = clip.end + this._timeDelta;
         }
@@ -59,22 +51,18 @@ export class MoveClips implements Operation {
     }
 
     public update(context: OperationContext): OperationResponse {
-        if (this.clips == null) {
-            return OperationResponse.Aborted;
-        }
-
         if (isReleasing(context)) {
             // @TODO: Skip committing if the clip properties didn't change.
             const timeDelta: number = this._timeDelta;
 
             const clipsAndTrackIndices: [Clip.Type, number][] = [];
-            for (const [clip, transform] of this.clips.entries()) {
+            for (const [clip, transform] of this.data.clips.entries()) {
                 clipsAndTrackIndices.push([clip, transform.clipTrackIndex]);
             }
             this._doc.changeClips(clipsAndTrackIndices, timeDelta);
 
             this._operationState.selectedClipsByTrackIndex.clear();
-            for (const [clip, transform] of this.clips.entries()) {
+            for (const [clip, transform] of this.data.clips.entries()) {
                 let selectedClips: Clip.Type[] | undefined = this._operationState.selectedClipsByTrackIndex.get(transform.clipTrackIndex);
                 if (selectedClips == null) {
                     selectedClips = [];

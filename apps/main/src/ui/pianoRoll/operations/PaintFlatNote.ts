@@ -4,14 +4,13 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
-import { type Operation } from "../Operation.js";
-import { OperationKind } from "../OperationKind.js";
+import { OperationKind, type NoteOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type NoteTransform } from "../NoteTransform.js";
 
-export class PaintFlatNote implements Operation {
-    public kind: OperationKind;
-    public notes: Map<Note.Type, NoteTransform> | undefined;
+export class PaintFlatNote implements NoteOperation {
+    public kind: OperationKind.Note;
+    public data: { notes: Map<Note.Type, NoteTransform> };
 
     private _operationState: OperationState;
     private _doc: SongDocument;
@@ -24,18 +23,14 @@ export class PaintFlatNote implements Operation {
         notes: Map<Note.Type, NoteTransform>,
     ) {
         this.kind = OperationKind.Note;
-        this.notes = notes;
+        this.data = { notes: notes };
         this._operationState = operationState;
         this._doc = doc;
         this._cursorPpqn0 = cursorPpqn0;
     }
 
     private _move(pattern: Pattern.Type, x1: number): void {
-        if (this.notes == null) {
-            return;
-        }
-
-        for (let [_, transform] of this.notes.entries()) {
+        for (let [_, transform] of this.data.notes.entries()) {
             let cursorPpqn0: number = this._cursorPpqn0 | 0;
             let cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
 
@@ -61,12 +56,8 @@ export class PaintFlatNote implements Operation {
     }
 
     public update(context: OperationContext, pattern: Pattern.Type): OperationResponse {
-        if (this.notes == null) {
-            return OperationResponse.Aborted;
-        }
-
         if (isReleasing(context)) {
-            for (let [note, transform] of this.notes.entries()) {
+            for (let [note, transform] of this.data.notes.entries()) {
                 const newStart: number = transform.newStart;
                 const newEnd: number = transform.newEnd;
                 const newDuration: number = newEnd - newStart;

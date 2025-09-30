@@ -245,6 +245,7 @@ export class Synthesizer {
         this.tick = 0;
         this.tickSampleCountdown = 0;
         this.isAtStartOfTick = true;
+        this.assumptionsAreInvalid = true;
     }
 
     public seek(tick: number): void {
@@ -252,6 +253,7 @@ export class Synthesizer {
         this.tick = ((tick | 0) % duration + duration) % duration;
         this.tickSampleCountdown = 0;
         this.isAtStartOfTick = true;
+        this.assumptionsAreInvalid = true;
     }
 
     public play(): void {
