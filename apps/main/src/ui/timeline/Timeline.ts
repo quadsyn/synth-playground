@@ -894,13 +894,12 @@ export class Timeline implements Component {
                     context.stroke();
                 } else if (tempoEnvelope.length > 0) {
                     const pointCount: number = tempoEnvelope.length;
-                    const startIndex: number = Math.min(pointCount - 1, Breakpoint.findIndex(tempoEnvelope, viewportX0));
+                    const startIndex: number = Math.max(0, Math.min(pointCount - 1, Breakpoint.findIndex(tempoEnvelope, viewportX0) - 1));
 
                     context.beginPath();
                     let prevY: number = 0;
                     {
-                        const pointIndex: number = startIndex <= 0 ? 0 : startIndex - 1;
-                        const point: Breakpoint.Type = tempoEnvelope[pointIndex];
+                        const point: Breakpoint.Type = tempoEnvelope[startIndex];
                         const tempo: number = point.value;
                         const y = remap(
                             clamp(tempo, Constants.TempoMin, Constants.TempoMax),
