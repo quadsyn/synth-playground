@@ -573,7 +573,7 @@ export class Synthesizer {
                     fractionalTick,
                 );
 
-                absoluteSongTimeInSamples = Math.floor(absoluteSongTimeInSeconds * this.samplesPerSecond);
+                absoluteSongTimeInSamples = absoluteSongTimeInSeconds * this.samplesPerSecond;
             }
 
             if (this.playing)
@@ -612,7 +612,7 @@ export class Synthesizer {
                                 ),
                                 startTick,
                             );
-                            const absoluteStartTimeInSamples: number = Math.floor(absoluteStartTimeInSeconds * this.samplesPerSecond);
+                            const absoluteStartTimeInSamples: number = absoluteStartTimeInSeconds * this.samplesPerSecond;
                             activeClip.absoluteStartTimeInSamples = absoluteStartTimeInSamples;
                         }
                     }
@@ -697,9 +697,15 @@ export class Synthesizer {
                             const speed: number = 1;
                             let t: number = ((absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples) * speed) % soundLength;
                             for (let i: number = 0; i < runLength; i++) {
-                                const sampleIndex: number = t | 0;
-                                const outSampleL: number = dataL[sampleIndex];
-                                const outSampleR: number = dataR[sampleIndex];
+                                const sampleIndex0: number = Math.floor(t);
+                                const sampleFract: number = t - sampleIndex0;
+                                const sampleIndex1: number = (sampleIndex0 + 1) % soundLength;
+                                const sampleL0: number = dataL[sampleIndex0];
+                                const sampleL1: number = dataL[sampleIndex1];
+                                const sampleR0: number = dataR[sampleIndex0];
+                                const sampleR1: number = dataR[sampleIndex1];
+                                const outSampleL: number = sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract;
+                                const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
                                 outL[bufferIndex + i] += outSampleL;
                                 outR[bufferIndex + i] += outSampleR;
                                 t = (t + speed) % soundLength;
