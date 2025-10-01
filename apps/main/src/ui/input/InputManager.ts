@@ -39,6 +39,9 @@ import { AreaKind } from "./areas.js";
 //   - What about this "active panel" logic? Maybe we can just keep it.
 //   - What about dialogs/modals/etc? I may need to register those as a special
 //     case, so I can stop iterating when reaching them if necessary.
+// - Introduce a callback that runs before trying to execute actions? That way
+//   I would have a predictable point where I can compute information that's
+//   shared by the action execution attempts (e.g. hit testing).
 // - Remember to consult shaktool's EasyPointers thing.
 // - Detect things like Ctrl+R/reload and don't allow consuming those events?
 //   - Also, what about Tab/Shift-Tab?

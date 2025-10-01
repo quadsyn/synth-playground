@@ -122,11 +122,10 @@ export function getIndexFromKey(table: Type, key: number): number {
     const mask: number = table.capacity - 1;
     let newIndex: number = hash32(key) & mask;
     let existingKey: number = buckets[newIndex];
-    if (existingKey === key) return newIndex;
     while (existingKey !== C.EMPTY_SENTINEL) {
+        if (existingKey === key) return newIndex;
         newIndex = (newIndex + 1) & mask;
         existingKey = buckets[newIndex];
-        if (existingKey === key) return newIndex;
     }
     return -1;
 }

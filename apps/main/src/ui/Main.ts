@@ -17,7 +17,7 @@ import { DialogManager } from "./dialog/DialogManager.js";
 import { AboutDialog } from "./dialogs/AboutDialog.js";
 import { VirtualizedListTestDialog } from "./dialogs/VirtualizedListTestDialog.js";
 import { VirtualizedTreeTestDialog } from "./dialogs/VirtualizedTreeTestDialog.js";
-import { type AppContext } from "../AppContext.js";
+import { type AppContext, type LoadedSample } from "../AppContext.js";
 import { MenuBar } from "./basic/MenuBar.js";
 import { CommandPalette } from "./commandPalette/CommandPalette.js";
 import { DockablePanelTab } from "./dockable/DockablePanelTab.js";
@@ -254,6 +254,45 @@ export class Main implements Component {
                     this._ui.scheduleMainRender();
                 }
             },
+            importSample: async (): Promise<LoadedSample> => {
+                return new Promise(async (resolve, reject) => {
+                    if (this._doc.audioContext == null) {
+                        await this._doc.createAudioContext();
+                    }
+
+                    if (this._doc.audioContext == null) {
+                        throw new Error("Audio context is not available");
+                    }
+
+                    const fileInput: HTMLInputElement = H("input", { type: "file", style: "display: none;" });
+                    document.body.appendChild(fileInput);
+                    fileInput.addEventListener("input", async () => {
+                        if (fileInput.files == null || fileInput.files.length < 1) {
+                            return;
+                        }
+
+                        const file: File = fileInput.files[0];
+                        const buffer: ArrayBuffer = await file.arrayBuffer();
+                        const audioBuffer: AudioBuffer = await this._doc.audioContext!.decodeAudioData(buffer);
+                        const dataL: Float32Array = audioBuffer.getChannelData(0);
+                        const dataR: Float32Array = (
+                            audioBuffer.numberOfChannels > 1
+                            ? audioBuffer.getChannelData(1)
+                            : dataL
+                        );
+                        const samplesPerSecond: number = (
+                            this._doc.audioContext != null
+                            ? this._doc.audioContext.sampleRate
+                            : this._doc.samplesPerSecond
+                        );
+
+                        fileInput.remove();
+
+                        resolve({ samplesPerSecond, dataL, dataR });
+                    }, { once: true });
+                    fileInput.click();
+                });
+            },
         };
 
         this._menuContainer = H("div", {
@@ -280,6 +319,15 @@ export class Main implements Component {
         });
         this._commandPalette = new CommandPalette(this._app, this._commandPaletteContainer);
         this._menuBar = new MenuBar(this._ui, this._menuContainer, [
+            {
+                label: StringId.FileMenu,
+                children: [
+                    {
+                        label: StringId.FileMenuImportSample,
+                        onClick: () => { this._ui.inputManager.executeAction(ActionKind.TimelineImportSample); },
+                    },
+                ],
+            },
             {
                 label: StringId.ViewMenu,
                 children: [
@@ -377,7 +425,7 @@ export class Main implements Component {
                 let panel: IContentRenderer | null = null;
 
                 switch (options.name) {
-                    case "TimelinePanel": { panel = new TimelinePanel(this._ui, this._doc); } break;
+                    case "TimelinePanel": { panel = new TimelinePanel(this._app, this._doc); } break;
                     case "PianoRollPanel": { panel = new PianoRollPanel(this._app, this._doc); } break;
                     case "TransportPanel": { panel = new TransportPanel(this._ui, this._doc); } break;
                     case "OscilloscopePanel": { panel = new OscilloscopePanel(this._ui, this._doc); } break;

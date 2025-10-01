@@ -1,5 +1,6 @@
 import { Synthesizer } from "@synth-playground/synthesizer/index.js";
 import { MessageKind } from "./MessageKind.js";
+import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
 
 class SynthesizerAudioWorklet extends AudioWorkletProcessor {
     public synthesizer: Synthesizer;
@@ -20,6 +21,18 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
         switch (event.data["kind"] as MessageKind) {
             case MessageKind.LoadSong: {
                 this.synthesizer.loadSong(event.data["song"]);
+                if (event.data["clearSounds"]) {
+                    this.synthesizer.clearSounds();
+                }
+            } break;
+            case MessageKind.LoadSound: {
+                const sound: Sound.Type = event.data["sound"] as Sound.Type;
+                this.synthesizer.loadSound(sound);
+                this.port.postMessage({
+                    kind: MessageKind.ReceivedSound,
+                    id: sound.id,
+                    version: sound.version,
+                });
             } break;
             case MessageKind.Play: {
                 this.synthesizer.seek(event.data["from"]);

@@ -17,4 +17,11 @@ export interface AppContext {
     showDebugInfoPanel: () => void;
     showCommandPalette: () => void;
     changeLanguage: (language: LanguageId) => Promise<void>;
+    importSample: () => Promise<LoadedSample>;
+}
+
+export interface LoadedSample {
+    samplesPerSecond: number;
+    dataL: Float32Array;
+    dataR: Float32Array;
 }

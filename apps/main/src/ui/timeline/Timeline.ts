@@ -1,21 +1,19 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../../SongDocument.js";
-import { type PatternInfo } from "../../data/PatternInfo.js";
-import { NotePitchBoundsTracker } from "../../data/NotePitchBoundsTracker.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
-import { unlerp, remap, clamp, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
+import { unlerp, remap, clamp, insideRange } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
 import * as Constants from "@synth-playground/synthesizer/data/Constants.js";
-import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Song from "@synth-playground/synthesizer/data/Song.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
+import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
 import { ActionKind, ActionResponse } from "../input/actions.js";
 import { isKeyboardGesture } from "../input/gestures.js";
 import {
@@ -37,10 +35,13 @@ import { LeftStretchClip } from "./operations/LeftStretchClip.js";
 import { RightStretchClip } from "./operations/RightStretchClip.js";
 import { MoveClips } from "./operations/MoveClips.js";
 import { MoveTempoEnvelopePointBounded } from "./operations/MoveTempoEnvelopePointBounded.js";
+import { drawClip, drawClipContents } from "./clipPainting.js";
+import { type AppContext } from "../../AppContext.js";
 
 export class Timeline implements Component {
     public element: HTMLDivElement;
 
+    private _app: AppContext;
     private _ui: UIContext;
     private _mounted: boolean;
     private _doc: SongDocument;
@@ -82,10 +83,11 @@ export class Timeline implements Component {
     private _renderedLanesVersion: number | null;
 
     constructor(
-        ui: UIContext,
+        app: AppContext,
         doc: SongDocument,
     ) {
-        this._ui = ui;
+        this._app = app;
+        this._ui = app.ui;
 
         this._mounted = false;
 
@@ -574,35 +576,19 @@ export class Timeline implements Component {
                         // iterate over the visible lanes again, and find the transformed clips
                         // by storing whatever other information is necessary in the operations.
                         const transform: ClipTransform | undefined = selectedClips?.get(clip);
-                        if (transform != null) {
-                            this._renderClip(
-                                width,
-                                height,
-                                context,
-                                clip,
-                                transform.newStart,
-                                transform.newEnd,
-                                viewportX0,
-                                viewportY0,
-                                pixelsPerTick,
-                                top,
-                                laneHeight,
-                            );
-                        } else {
-                            this._renderClip(
-                                width,
-                                height,
-                                context,
-                                clip,
-                                clip.start,
-                                clip.end,
-                                viewportX0,
-                                viewportY0,
-                                pixelsPerTick,
-                                top,
-                                laneHeight,
-                            );
-                        }
+                        drawClip(
+                            width,
+                            height,
+                            context,
+                            this._doc.project,
+                            clip,
+                            transform != null ? transform.newStart : clip.start,
+                            transform != null ? transform.newEnd : clip.end,
+                            this._state.viewport,
+                            pixelsPerTick,
+                            top,
+                            laneHeight,
+                        );
                     },
                 );
 
@@ -613,219 +599,25 @@ export class Timeline implements Component {
                     viewportX1,
                     (clip: Clip.Type, index: number) => {
                         const transform: ClipTransform | undefined = selectedClips?.get(clip);
-                        if (transform != null) {
-                            this._renderClipInside(
-                                width,
-                                height,
-                                context,
-                                clip,
-                                transform.newStart,
-                                transform.newEnd,
-                                viewportX0,
-                                viewportY0,
-                                pixelsPerTick,
-                                top,
-                                laneHeight,
-                            );
-                        } else {
-                            this._renderClipInside(
-                                width,
-                                height,
-                                context,
-                                clip,
-                                clip.start,
-                                clip.end,
-                                viewportX0,
-                                viewportY0,
-                                pixelsPerTick,
-                                top,
-                                laneHeight,
-                            );
-                        }
+                        drawClipContents(
+                            width,
+                            height,
+                            context,
+                            this._doc.project,
+                            this._doc.patternInfoCache,
+                            this._doc.project.song.tempoMap,
+                            this._doc.samplesPerSecond,
+                            clip,
+                            transform != null ? transform.newStart : clip.start,
+                            transform != null ? transform.newEnd : clip.end,
+                            this._state.viewport,
+                            pixelsPerTick,
+                            top,
+                            laneHeight,
+                        );
                     },
                 );
             }
-        }
-    }
-
-    public _renderClip(
-        canvasWidth: number,
-        canvasHeight: number,
-        context: CanvasRenderingContext2D,
-        clip: Clip.Type,
-        start: number,
-        end: number,
-        viewportX0: number,
-        viewportY0: number,
-        pixelsPerTick: number,
-        trackTop: number,
-        trackHeight: number,
-    ): void {
-        // const duration: number = end - start;
-
-        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
-        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-            patternsById,
-            clip.patternIdLo,
-            clip.patternIdHi,
-        );
-        if (patternTableIndex === -1) {
-            throw new Error("Couldn't find pattern index");
-        }
-        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-        // const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
-        // const patternDuration: number = pattern.duration;
-
-        // const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
-
-        const headerHeight: number = 14;
-        const bodyHeight: number = (trackHeight - 1) - headerHeight;
-        const x0: number = ((start - viewportX0) * pixelsPerTick);
-        const x1: number = ((end - viewportX0) * pixelsPerTick);
-        const w: number = Math.max(1, x1 - x0);
-        const x: number = x0;
-        const y: number = trackTop - 1;
-        const h: number = headerHeight + bodyHeight;
-
-        // Draw clip background.
-        // context.fillStyle = "#3090d0";
-        context.fillStyle = "#0c6735";
-        context.strokeStyle = "#000000";
-        context.lineWidth = 1;
-        context.fillRect(x, y, w, h);
-
-        // Draw clip title.
-        context.fillStyle = "#ffffff";
-        context.font = "8pt sans-serif";
-        context.textBaseline = "top";
-        // @TODO: Maybe use the ID instead. Although this probably should just
-        // be an user-defined name.
-        const title: string = `Pattern ${patternIndex}`;
-        const titleLength: number = title.length;
-        // Actually measuring this is too slow, so I'll just pretend this is
-        // monospace. In this case there's no problem, we'll just start moving
-        // the text back earlier.
-        // @TODO: A remaining problem with this is that it will be incorrect for
-        // fonts that are wider than they are tall. I could maybe try doing some
-        // measuring for it first, trying to figure out if a larger width factor
-        // would help.
-        const titleWidthEstimate: number = titleLength * 8;
-        const titleGapX: number = 2;
-        const titleMinX: number = titleGapX;
-        const titleMaxX: number = x + w - titleWidthEstimate;
-        const titleX: number = Math.min(Math.max(titleMinX, x + titleGapX), titleMaxX);
-        if (w > titleWidthEstimate + titleGapX) {
-            context.fillText(title, titleX, y + 2);
-        }
-    }
-
-    public _renderClipInside(
-        canvasWidth: number,
-        canvasHeight: number,
-        context: CanvasRenderingContext2D,
-        clip: Clip.Type,
-        start: number,
-        end: number,
-        viewportX0: number,
-        viewportY0: number,
-        pixelsPerTick: number,
-        trackTop: number,
-        trackHeight: number,
-    ): void {
-        const duration: number = end - start;
-
-        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
-        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-            patternsById,
-            clip.patternIdLo,
-            clip.patternIdHi,
-        );
-        if (patternTableIndex === -1) {
-            throw new Error("Couldn't find pattern index");
-        }
-        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-        const pattern: Pattern.Type = this._doc.project.song.patterns[patternIndex];
-        const patternDuration: number = pattern.duration;
-
-        const loopCount: number = Math.max(1, Math.ceil(duration / patternDuration));
-
-        const headerHeight: number = 14;
-        const bodyHeight: number = (trackHeight - 1) - headerHeight;
-        const x0: number = ((start - viewportX0) * pixelsPerTick);
-        const x1: number = ((end - viewportX0) * pixelsPerTick);
-        const w: number = Math.max(1, x1 - x0);
-        const x: number = x0;
-        const y: number = trackTop - 1;
-        const h: number = headerHeight + bodyHeight;
-
-        if (w >= 4) {
-            const notes: Note.Type[] = pattern.notes;
-            const noteCount: number = notes.length;
-
-            // @TODO: startOffset
-            if (noteCount > 0) {
-                const patternInfo: PatternInfo = this._doc.patternInfoCache.get(pattern)!;
-                const pitchBounds: NotePitchBoundsTracker = patternInfo.pitchBounds;
-                const minPosition: number = 0;
-                const maxPosition: number = minPosition + (end - start);
-                let minNotePitch: number = pitchBounds.getMin() - 1;
-                let maxNotePitch: number = pitchBounds.getMax();
-
-                // Prevent huge notes in the pattern preview.
-                const minPitchCount: number = 12; // @TODO: Use pitchesPerOctave here
-                const diff: number = Math.max(0, (minPitchCount + 1) - (maxNotePitch - minNotePitch));
-                const halfDiff: number = diff >>> 1;
-                minNotePitch -= halfDiff;
-                maxNotePitch += halfDiff;
-                const noteH: number = bodyHeight / (maxNotePitch - minNotePitch);
-                context.fillStyle = "#17d15b";
-                for (let noteIndex: number = 0; noteIndex < noteCount; noteIndex++) {
-                    const note: Note.Type = notes[noteIndex];
-                    const noteStart: number = note.start;
-                    const noteEnd: number = note.end;
-                    const notePitch: number = note.pitch;
-                    const noteY: number = y + headerHeight + remap(notePitch, minNotePitch, maxNotePitch, bodyHeight - 4, 2);
-                    for (let loopIndex: number = 0; loopIndex < loopCount; loopIndex++) {
-                        const loopNoteStart: number = noteStart + patternDuration * loopIndex;
-                        const loopNoteEnd: number = noteEnd + patternDuration * loopIndex;
-                        const noteX0: number = clamp(remap(loopNoteStart, 0, maxPosition, 0, w), 0, w - 1);
-                        const noteX1: number = clamp(remap(loopNoteEnd, 0, maxPosition, 0, w), 0, w - 1);
-                        const noteX: number = x + noteX0;
-                        const noteW: number = noteX1 - noteX0;
-                        if (
-                            rangesOverlap(noteX, noteX + noteW, 0, canvasWidth)
-                            && rangesOverlap(noteY, noteY + noteH, 0, canvasHeight)
-                        ) {
-                            context.fillRect(noteX, noteY, noteW, noteH);
-                        }
-                        if (loopNoteStart > duration) {
-                            break;
-                        }
-                    }
-                    if (noteStart > duration) {
-                        break;
-                    }
-                }
-            }
-            for (let loopIndex: number = 1; loopIndex < loopCount; loopIndex++) {
-                const seamTick: number = patternDuration * loopIndex;
-                const seamX: number = x + remap(seamTick, 0, duration, 0, w);
-                if (seamX > x1) {
-                    break;
-                }
-                const dashCount: number = 5;
-                const dashH: number = h / dashCount;
-                const dashGap: number = 2;
-                for (let dashIndex: number = 0; dashIndex < dashCount; dashIndex++) {
-                    const y0: number = y + dashIndex * dashH + dashGap;
-                    const y1: number = y + (dashIndex + 1) * dashH - dashGap * 2;
-                    context.beginPath();
-                    context.moveTo(seamX, y0);
-                    context.lineTo(seamX, y1);
-                    context.stroke();
-                }
-            }
-            context.strokeRect(x, y, w, h);
         }
     }
 
@@ -1298,6 +1090,33 @@ export class Timeline implements Component {
 
     public onAction = (kind: ActionKind, context: OperationContext): ActionResponse => {
         switch (kind) {
+            case ActionKind.TimelineImportSample: {
+                // @TODO: This is here in the timeline because I need to know
+                // the selected track. If I want this to be global then I need
+                // to make that accessible elsewhere.
+                this._app.importSample().then(({ samplesPerSecond, dataL, dataR }) => {
+                    const sound: Sound.Type = this._doc.insertSound(samplesPerSecond, dataL, dataR);
+                    const ticksPerBar: number = this._doc.project.song.beatsPerBar * this._doc.project.song.ppqn;
+                    const timeCursor: number = this._doc.timeCursor;
+                    this._doc.insertClip(
+                        clamp(this._state.selectedTrackIndex, 0, this._doc.project.song.tracks.length - 1),
+                        timeCursor + ticksPerBar * 0,
+                        timeCursor + ticksPerBar * 4,
+                        0,
+                        0,
+                        sound.id,
+                    );
+
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                }).catch((error) => {
+                    // @TODO: Show something on failures.
+                    console.error(error);
+                });
+
+                return ActionResponse.Done;
+            };
             case ActionKind.CreateClipAndPattern: {
                 if (isKeyboardGesture(context.gesture1)) {
                     if (insideRange(this._state.selectedTrackIndex, 0, this._doc.project.song.tracks.length - 1)) {
@@ -1312,6 +1131,7 @@ export class Timeline implements Component {
                             end,
                             pattern.idLo,
                             pattern.idHi,
+                            0,
                         );
                         this._doc.timeCursor = clip.end;
 
@@ -1602,26 +1422,28 @@ export class Timeline implements Component {
                 if ((clipHit & ClipHit.Inside) !== 0) {
                     const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
                     const clip: Clip.Type = track.clips[clipIndex];
-                    const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
-                    const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
-                        patternsById,
-                        clip.patternIdLo,
-                        clip.patternIdHi,
-                    );
-                    if (patternTableIndex === -1) {
-                        throw new Error("Couldn't find pattern index");
+                    if (clip.kind === Clip.Kind.Pattern) {
+                        const patternsById: Uint64ToUint32Table.Type = this._doc.project.song.patternsById;
+                        const patternTableIndex: number = Uint64ToUint32Table.getIndexFromKey(
+                            patternsById,
+                            clip.patternIdLo,
+                            clip.patternIdHi,
+                        );
+                        if (patternTableIndex === -1) {
+                            throw new Error("Couldn't find pattern index");
+                        }
+                        const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
+                        this._doc.setCurrentPattern(patternIndex, clipTrackIndex, clipIndex);
+
+                        this._state.selectedTrackIndex = clipTrackIndex;
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);
+                        this._state.selectionOverlayIsDirty = true;
+
+                        this._ui.scheduleMainRender();
+
+                        return ActionResponse.Done;
                     }
-                    const patternIndex: number = Uint64ToUint32Table.getValueFromIndex(patternsById, patternTableIndex);
-                    this._doc.setCurrentPattern(patternIndex, clipTrackIndex, clipIndex);
-
-                    this._state.selectedTrackIndex = clipTrackIndex;
-                    this._state.selectedClipsByTrackIndex.clear();
-                    this._state.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);
-                    this._state.selectionOverlayIsDirty = true;
-
-                    this._ui.scheduleMainRender();
-
-                    return ActionResponse.Done;
                 }
 
                 return ActionResponse.NotApplicable;

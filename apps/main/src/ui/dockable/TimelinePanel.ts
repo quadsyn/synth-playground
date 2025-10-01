@@ -3,15 +3,16 @@ import { SongDocument } from "../../SongDocument.js";
 import { UIContext } from "../UIContext.js";
 import { Timeline } from "../timeline/Timeline.js";
 import { AreaKind } from "../input/areas.js";
+import { type AppContext } from "../../AppContext.js";
 
 export class TimelinePanel extends DockablePanel {
     private _ui: UIContext;
     private _timeline: Timeline;
 
-    constructor(ui: UIContext, doc: SongDocument) {
+    constructor(app: AppContext, doc: SongDocument) {
         super();
-        this._ui = ui;
-        this._timeline = new Timeline(this._ui, doc);
+        this._ui = app.ui;
+        this._timeline = new Timeline(app, doc);
         this._element.appendChild(this._timeline.element);
         this._ui.resizeObserver.register(this._element, this._onResizeObserved);
     }

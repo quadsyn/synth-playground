@@ -10,7 +10,7 @@ export interface Type {
 
     // Normally I'd use optional fields in here, but I'm trying to keep object
     // shapes consistent, so those optional fields have been put in their own
-    // related sub-objects. The exception is the pattern ID below.
+    // related sub-objects. The exceptions are the IDs below.
     kind: Kind;
     patternClipData: PatternClipData.Type | null;
 
@@ -21,6 +21,9 @@ export interface Type {
     // all indices in all clips in the song.
     patternIdLo: number;
     patternIdHi: number;
+
+    // Internal ID. Don't serialize this.
+    soundId: number;
 
     // Internal ID. Don't serialize this.
     idLo: number;
@@ -34,6 +37,7 @@ export function make(
     patternClipData: PatternClipData.Type | null,
     patternIdLo: number,
     patternIdHi: number,
+    soundId: number,
     idLo: number,
     idHi: number,
 ): Type {
@@ -45,6 +49,7 @@ export function make(
         patternClipData: patternClipData,
         patternIdLo: patternIdLo,
         patternIdHi: patternIdHi,
+        soundId: soundId,
         idLo: idLo,
         idHi: idHi,
     };
@@ -52,4 +57,5 @@ export function make(
 
 export const enum Kind {
     Pattern,
+    Sound,
 }

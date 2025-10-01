@@ -110,12 +110,12 @@ export function set(
     let existingKey1: number = buckets[newIndex * 5 + 1];
     let existingKey2: number = buckets[newIndex * 5 + 2];
     let existingKey3: number = buckets[newIndex * 5 + 3];
-    while (
-        existingKey0 !== C.EMPTY_SENTINEL_0
-        || existingKey1 !== C.EMPTY_SENTINEL_1
-        || existingKey2 !== C.EMPTY_SENTINEL_2
-        || existingKey3 !== C.EMPTY_SENTINEL_3
-    ) {
+    while (!(
+        existingKey0 === C.EMPTY_SENTINEL_0
+        && existingKey1 === C.EMPTY_SENTINEL_1
+        && existingKey2 === C.EMPTY_SENTINEL_2
+        && existingKey3 === C.EMPTY_SENTINEL_3
+    )) {
         if (
             existingKey0 === key0
             && existingKey1 === key1
@@ -160,12 +160,12 @@ export function remove(
     let existingKey1: number = buckets[newIndex * 5 + 1];
     let existingKey2: number = buckets[newIndex * 5 + 2];
     let existingKey3: number = buckets[newIndex * 5 + 3];
-    while (
-        existingKey0 !== C.EMPTY_SENTINEL_0
-        || existingKey1 !== C.EMPTY_SENTINEL_1
-        || existingKey2 !== C.EMPTY_SENTINEL_2
-        || existingKey3 !== C.EMPTY_SENTINEL_3
-    ) {
+    while (!(
+        existingKey0 === C.EMPTY_SENTINEL_0
+        && existingKey1 === C.EMPTY_SENTINEL_1
+        && existingKey2 === C.EMPTY_SENTINEL_2
+        && existingKey3 === C.EMPTY_SENTINEL_3
+    )) {
         if (
             existingKey0 === key0
             && existingKey1 === key1
@@ -257,29 +257,23 @@ export function getIndexFromKey(
     let existingKey1: number = buckets[newIndex * 5 + 1];
     let existingKey2: number = buckets[newIndex * 5 + 2];
     let existingKey3: number = buckets[newIndex * 5 + 3];
-    if (
-        existingKey0 === key0
-        && existingKey1 === key1
-        && existingKey2 === key2
-        && existingKey3 === key3
-    ) return newIndex;
-    while (
-        existingKey0 !== C.EMPTY_SENTINEL_0
-        || existingKey1 !== C.EMPTY_SENTINEL_1
-        || existingKey2 !== C.EMPTY_SENTINEL_2
-        || existingKey3 !== C.EMPTY_SENTINEL_3
-    ) {
-        newIndex = (newIndex + 1) & mask;
-        existingKey0 = buckets[newIndex * 5];
-        existingKey1 = buckets[newIndex * 5 + 1];
-        existingKey2 = buckets[newIndex * 5 + 2];
-        existingKey3 = buckets[newIndex * 5 + 3];
+    while (!(
+        existingKey0 === C.EMPTY_SENTINEL_0
+        && existingKey1 === C.EMPTY_SENTINEL_1
+        && existingKey2 === C.EMPTY_SENTINEL_2
+        && existingKey3 === C.EMPTY_SENTINEL_3
+    )) {
         if (
             existingKey0 === key0
             && existingKey1 === key1
             && existingKey2 === key2
             && existingKey3 === key3
         ) return newIndex;
+        newIndex = (newIndex + 1) & mask;
+        existingKey0 = buckets[newIndex * 5];
+        existingKey1 = buckets[newIndex * 5 + 1];
+        existingKey2 = buckets[newIndex * 5 + 2];
+        existingKey3 = buckets[newIndex * 5 + 3];
     }
     return -1;
 }
@@ -321,24 +315,24 @@ function expand(table: Type): void {
         const key2: number = oldBuckets[oldIndex * 5 + 2];
         const key3: number = oldBuckets[oldIndex * 5 + 3];
         const value: number = oldBuckets[oldIndex * 5 + 4];
-        if (
-            key0 !== C.EMPTY_SENTINEL_0
-            || key1 !== C.EMPTY_SENTINEL_1
-            || key2 !== C.EMPTY_SENTINEL_2
-            || key3 !== C.EMPTY_SENTINEL_3
-        ) {
+        if (!(
+            key0 === C.EMPTY_SENTINEL_0
+            && key1 === C.EMPTY_SENTINEL_1
+            && key2 === C.EMPTY_SENTINEL_2
+            && key3 === C.EMPTY_SENTINEL_3
+        )) {
             let found: boolean = false;
             let newIndex: number = hash128(key0, key1, key2, key3) & newMask;
             let existingKey0: number = newBuckets[newIndex * 5];
             let existingKey1: number = newBuckets[newIndex * 5 + 1];
             let existingKey2: number = newBuckets[newIndex * 5 + 2];
             let existingKey3: number = newBuckets[newIndex * 5 + 3];
-            while (
-                existingKey0 !== C.EMPTY_SENTINEL_0
-                || existingKey1 !== C.EMPTY_SENTINEL_1
-                || existingKey2 !== C.EMPTY_SENTINEL_2
-                || existingKey3 !== C.EMPTY_SENTINEL_3
-            ) {
+            while (!(
+                existingKey0 === C.EMPTY_SENTINEL_0
+                && existingKey1 === C.EMPTY_SENTINEL_1
+                && existingKey2 === C.EMPTY_SENTINEL_2
+                && existingKey3 === C.EMPTY_SENTINEL_3
+            )) {
                 if (
                     existingKey0 === key0
                     && existingKey1 === key1
@@ -388,12 +382,12 @@ export function forEach(
         const key1: number = buckets[index * 5 + 1];
         const key2: number = buckets[index * 5 + 2];
         const key3: number = buckets[index * 5 + 3];
-        if (
-            key0 !== C.EMPTY_SENTINEL_0
-            || key1 !== C.EMPTY_SENTINEL_1
-            || key2 !== C.EMPTY_SENTINEL_2
-            || key3 !== C.EMPTY_SENTINEL_3
-        ) {
+        if (!(
+            key0 === C.EMPTY_SENTINEL_0
+            && key1 === C.EMPTY_SENTINEL_1
+            && key2 === C.EMPTY_SENTINEL_2
+            && key3 === C.EMPTY_SENTINEL_3
+        )) {
             const value: number = buckets[index * 5 + 4];
             callbackFn(value, key0, key1, key2, key3, table);
         }

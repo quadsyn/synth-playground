@@ -1,4 +1,5 @@
 export const enum MessageKind {
+    // Main thread -> audio thread
     Play,
     Pause,
     Stop,
@@ -7,8 +8,13 @@ export const enum MessageKind {
 
     LoadSong,
 
+    LoadSound,
+
     PlayPianoNote,
     StopPianoNote,
 
     Quit,
+
+    // Audio thread -> main thread
+    ReceivedSound,
 }

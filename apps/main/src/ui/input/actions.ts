@@ -71,6 +71,7 @@ export const enum ActionKind {
     CreateTempoEnvelopePoint,
     RemoveTempoEnvelopePoint,
     MoveTempoEnvelopePointBounded,
+    TimelineImportSample,
 }
 
 export const enum ActionTags {
@@ -589,6 +590,14 @@ type ActionTableEntry = [
         [GestureKind.Drag | MouseButton.Left],
         <ActionId>"timeline.moveTempoEnvelopePointBounded",
         StringId.TimelineActionMoveTempoEnvelopePointBounded,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.TimelineImportSample,
+        AreaKind.Timeline,
+        [],
+        <ActionId>"timeline.importSample",
+        StringId.TimelineActionImportSample,
     ],
 ]).forEach(([tags, action, area, defaultShortcuts, id, labelId]) => {
     registerAction(tags, action, area, defaultShortcuts, id, labelId);

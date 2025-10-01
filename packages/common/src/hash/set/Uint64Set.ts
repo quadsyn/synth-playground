@@ -69,7 +69,7 @@ export function add(table: Type, keyLo: number, keyHi: number): void {
     let newIndex: number = hash64(keyLo, keyHi) & mask;
     let existingKeyLo: number = buckets[newIndex * 2];
     let existingKeyHi: number = buckets[newIndex * 2 + 1];
-    while (existingKeyLo !== C.EMPTY_SENTINEL_LO || existingKeyHi !== C.EMPTY_SENTINEL_HI) {
+    while (!(existingKeyLo === C.EMPTY_SENTINEL_LO && existingKeyHi === C.EMPTY_SENTINEL_HI)) {
         if (existingKeyLo === keyLo && existingKeyHi === keyHi) {
             found = true;
             break;
@@ -95,7 +95,7 @@ export function remove(table: Type, keyLo: number, keyHi: number): boolean {
     let newIndex: number = hash64(keyLo, keyHi) & mask;
     let existingKeyLo: number = buckets[newIndex * 2];
     let existingKeyHi: number = buckets[newIndex * 2 + 1];
-    while (existingKeyLo !== C.EMPTY_SENTINEL_LO || existingKeyHi !== C.EMPTY_SENTINEL_HI) {
+    while (!(existingKeyLo === C.EMPTY_SENTINEL_LO && existingKeyHi === C.EMPTY_SENTINEL_HI)) {
         if (existingKeyLo === keyLo && existingKeyHi === keyHi) {
             index = newIndex;
             break;
@@ -152,12 +152,11 @@ export function getIndexFromKey(table: Type, keyLo: number, keyHi: number): numb
     let newIndex: number = hash64(keyLo, keyHi) & mask;
     let existingKeyLo: number = buckets[newIndex * 2];
     let existingKeyHi: number = buckets[newIndex * 2 + 1];
-    if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
-    while (existingKeyLo !== C.EMPTY_SENTINEL_LO || existingKeyHi !== C.EMPTY_SENTINEL_HI) {
+    while (!(existingKeyLo === C.EMPTY_SENTINEL_LO && existingKeyHi === C.EMPTY_SENTINEL_HI)) {
+        if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
         newIndex = (newIndex + 1) & mask;
         existingKeyLo = buckets[newIndex * 2];
         existingKeyHi = buckets[newIndex * 2 + 1];
-        if (existingKeyLo === keyLo && existingKeyHi === keyHi) return newIndex;
     }
     return -1;
 }
@@ -171,12 +170,12 @@ function expand(table: Type): void {
     for (let oldIndex: number = 0; oldIndex < oldCapacity; oldIndex++) {
         const keyLo: number = oldBuckets[oldIndex * 2];
         const keyHi: number = oldBuckets[oldIndex * 2 + 1];
-        if (keyLo !== C.EMPTY_SENTINEL_LO || keyHi !== C.EMPTY_SENTINEL_HI) {
+        if (!(keyLo === C.EMPTY_SENTINEL_LO && keyHi === C.EMPTY_SENTINEL_HI)) {
             let found: boolean = false;
             let newIndex: number = hash64(keyLo, keyHi) & newMask;
             let existingKeyLo: number = newBuckets[newIndex * 2];
             let existingKeyHi: number = newBuckets[newIndex * 2 + 1];
-            while (existingKeyLo !== C.EMPTY_SENTINEL_LO || existingKeyHi !== C.EMPTY_SENTINEL_HI) {
+            while (!(existingKeyLo === C.EMPTY_SENTINEL_LO && existingKeyHi === C.EMPTY_SENTINEL_HI)) {
                 if (existingKeyLo === keyLo && existingKeyHi === keyHi) {
                     found = true;
                     break;
@@ -206,7 +205,7 @@ export function forEach(
     for (let index: number = 0; index < capacity; index++) {
         const keyLo: number = buckets[index * 2];
         const keyHi: number = buckets[index * 2 + 1];
-        if (keyLo !== C.EMPTY_SENTINEL_LO || keyHi !== C.EMPTY_SENTINEL_HI) {
+        if (!(keyLo === C.EMPTY_SENTINEL_LO && keyHi === C.EMPTY_SENTINEL_HI)) {
             callbackFn(keyLo, keyHi, table);
         }
     }

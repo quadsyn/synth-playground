@@ -1,6 +1,7 @@
 import { clamp } from "@synth-playground/common/math.js";
 import * as LongId from "@synth-playground/common/LongId.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
+import * as Uint32ToUint32Table from "@synth-playground/common/hash/table/Uint32ToUint32Table.js";
 import { ValueAnalyser } from "@synth-playground/browser/ValueAnalyser.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import * as Song from "@synth-playground/synthesizer/data/Song.js";
@@ -10,6 +11,7 @@ import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
+import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
 import { makeIdGenerator } from "@synth-playground/synthesizer/data/common.js";
 // import audioWorkletCode from "inlineworker!@synth-playground/main-audio-worklet";
 import audioWorkletUrl from "inlineworker!@synth-playground/main-audio-worklet";
@@ -84,12 +86,13 @@ export class SongDocument {
     public pianoRollClipIndex: number;
     public timeCursor: number;
     public shouldShowTempoEnvelope: boolean;
+    public soundVersionsPresentInAudioThread: Map<number, number>; // sound id -> sound version
 
     constructor() {
         this.patternInfoCache = new WeakMap();
 
         this.project = Project.make();
-        const pattern: Pattern.Type = this.insertPattern();
+        const pattern: Pattern.Type = this._insertPattern();
         const ticksPerBar: number = 1 * this.project.song.beatsPerBar * this.project.song.ppqn;
         this._insertClip(
             0,
@@ -97,31 +100,35 @@ export class SongDocument {
             ticksPerBar * 4,
             pattern.idLo,
             pattern.idHi,
+            0,
         );
-        const pattern2: Pattern.Type = this.insertPattern();
+        const pattern2: Pattern.Type = this._insertPattern();
         this._insertClip(
             1,
             ticksPerBar * 0,
             ticksPerBar * 4,
             pattern2.idLo,
             pattern2.idHi,
+            0,
         );
-        const pattern3: Pattern.Type = this.insertPattern();
+        const pattern3: Pattern.Type = this._insertPattern();
         this._insertClip(
             2,
             ticksPerBar * 0,
             ticksPerBar * 4,
             pattern3.idLo,
             pattern3.idHi,
+            0,
         );
-        const pattern4: Pattern.Type = this.insertPattern();
-        this._insertClip(
-            3,
-            ticksPerBar * 0,
-            ticksPerBar * 4,
-            pattern4.idLo,
-            pattern4.idHi,
-        );
+        // const pattern4: Pattern.Type = this._insertPattern();
+        // this._insertClip(
+        //     3,
+        //     ticksPerBar * 0,
+        //     ticksPerBar * 4,
+        //     pattern4.idLo,
+        //     pattern4.idHi,
+        //     0,
+        // );
         // this._insertClip(
         //     0,
         //     ticksPerBar * 1 - this.project.song.ppqn,
@@ -148,6 +155,7 @@ export class SongDocument {
         this.pianoRollClipIndex = 0;
         this.timeCursor = 0;
         this.shouldShowTempoEnvelope = false;
+        this.soundVersionsPresentInAudioThread = new Map();
 
         this.onProjectChanged = new Emitter();
         this.onStartedPlaying = new Emitter();
@@ -257,6 +265,7 @@ export class SongDocument {
                 processorOptions: {},
             },
         );
+        this.audioWorkletNode.port.onmessage = this._onMessageReceivedFromAudioThread;
         this.audioWorkletNode.connect(this.audioContext.destination, 0, 0);
         this.audioWorkletNode.connect(this.outputAnalyserNode, 0, 0);
         this.playheadAnalyser.plug(this.audioWorkletNode, 1);
@@ -271,6 +280,16 @@ export class SongDocument {
             this.audioContext = null;
         }
     }
+
+    private _onMessageReceivedFromAudioThread = (event: MessageEvent): void => {
+        switch (event.data["kind"] as MessageKind) {
+            case MessageKind.ReceivedSound: {
+                const id: number = event.data["id"];
+                const version: number = event.data["version"];
+                this.soundVersionsPresentInAudioThread.set(id, version);
+            } break;
+        }
+    };
 
     // @TODO: Check what happens if this is called more than once before it
     // finishes executing.
@@ -290,11 +309,7 @@ export class SongDocument {
         await this.audioContext.resume();
 
         if (!this.sentSongForTheFirstTime) {
-            this.audioWorkletNode.port.postMessage({
-                kind: MessageKind.LoadSong,
-                song: this.project.song,
-            });
-            this.sentSongForTheFirstTime = true;
+            this._sendSongToAudioThread();
         }
         this.audioWorkletNode.port.postMessage({
             kind: MessageKind.Play,
@@ -426,6 +441,38 @@ export class SongDocument {
         this.onChangedPianoRollPattern.notifyListeners();
     }
 
+    private _insertSound(
+        samplesPerSecond: number,
+        dataL: Float32Array,
+        dataR: Float32Array | null,
+    ): Sound.Type {
+        const id: number = this.project.soundIdGenerator;
+        const version: number = 0;
+        const sound: Sound.Type = Sound.make(
+            id,
+            version,
+            samplesPerSecond,
+            dataL,
+            dataR,
+        );
+        const index: number = this.project.sounds.length;
+        this.project.sounds.push(sound);
+        Uint32ToUint32Table.set(this.project.soundsById, id, index);
+        // Keep this as an unsigned 32-bit integer.
+        this.project.soundIdGenerator = (this.project.soundIdGenerator + 1) >>> 0;
+        return sound;
+    }
+
+    public insertSound(
+        samplesPerSecond: number,
+        dataL: Float32Array,
+        dataR: Float32Array | null,
+    ): Sound.Type {
+        const sound: Sound.Type = this._insertSound(samplesPerSecond, dataL, dataR);
+        this.markProjectAsDirty();
+        return sound;
+    }
+
     public insertTempoEnvelopePoint(pointTime: number, pointValue: number): Breakpoint.Type {
         if (this.project.song.tempoEnvelope == null) {
             this.project.song.tempoEnvelope = [];
@@ -478,7 +525,7 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
-    public insertPattern(): Pattern.Type {
+    private _insertPattern(): Pattern.Type {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
         const idGenerator: LongId.Type = project.patternIdGenerator;
@@ -506,8 +553,12 @@ export class SongDocument {
             viewportX1: null,
             viewportY1: null,
         });
-        // @TODO: Hmm.
-        // this.markProjectAsDirty();
+        return pattern;
+    }
+
+    public insertPattern(): Pattern.Type {
+        const pattern: Pattern.Type = this._insertPattern();
+        this.markProjectAsDirty();
         return pattern;
     }
 
@@ -517,18 +568,25 @@ export class SongDocument {
         end: number,
         patternIdLo: number,
         patternIdHi: number,
+        soundId: number,
     ): Clip.Type {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
         const track: Track.Type = song.tracks[trackIndex];
         const idGenerator: LongId.Type = project.clipIdGenerator;
+        const kind: Clip.Kind = (
+            soundId !== 0
+            ? Clip.Kind.Sound
+            : Clip.Kind.Pattern
+        );
         const clip: Clip.Type = Clip.make(
             start,
             end,
-            Clip.Kind.Pattern,
+            kind,
             /* patternClipData */ null,
             patternIdLo,
             patternIdHi,
+            soundId,
             idGenerator.lo,
             idGenerator.hi,
         );
@@ -544,6 +602,7 @@ export class SongDocument {
         end: number,
         patternIdLo: number,
         patternIdHi: number,
+        soundId: number,
     ): Clip.Type {
         // @TODO: Check if the duration is 0 and don't insert if so?
 
@@ -556,6 +615,7 @@ export class SongDocument {
             end,
             patternIdLo,
             patternIdHi,
+            soundId,
         );
         this.markProjectAsDirty();
 
@@ -1061,15 +1121,35 @@ export class SongDocument {
 
     // @TODO: Rename?
     public markProjectAsDirty(): void {
+        this._sendSongToAudioThread();
+        this.onProjectChanged.notifyListeners();
+    }
+
+    private _sendSongToAudioThread(): void {
         if (this.audioContext != null && this.audioWorkletNode != null) {
             this.audioWorkletNode.port.postMessage({
                 kind: MessageKind.LoadSong,
                 song: this.project.song,
+                clearSounds: !this.sentSongForTheFirstTime,
             });
-            this.sentSongForTheFirstTime = true;
-        }
 
-        this.onProjectChanged.notifyListeners();
+            this.sentSongForTheFirstTime = true;
+
+            const sounds: Sound.Type[] = this.project.sounds;
+            const soundCount: number = sounds.length;
+            for (let soundIndex: number = 0; soundIndex < soundCount; soundIndex++) {
+                const sound: Sound.Type = sounds[soundIndex];
+                const id: number = sound.id;
+                const versionInMainThread: number = sound.version;
+                const versionInAudioThread: number | undefined = this.soundVersionsPresentInAudioThread.get(id);
+                if (versionInAudioThread !== versionInMainThread) {
+                    this.audioWorkletNode.port.postMessage({
+                        kind: MessageKind.LoadSound,
+                        sound: sound,
+                    });
+                }
+            }
+        }
     }
 
     public async playPianoNote(pitch: number): Promise<void> {
