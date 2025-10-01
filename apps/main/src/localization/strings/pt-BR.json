@@ -47,6 +47,7 @@
             "createClipAndPattern": "Create clip and pattern",
             "removeClip": "Remove clip",
             "splitClip": "Split clip",
+            "duplicateClip": "Duplicate clip",
             "leftStretchClip": "Stretch clip from the left",
             "rightStretchClip": "Stretch clip from the right",
             "moveClips": "Move clips",

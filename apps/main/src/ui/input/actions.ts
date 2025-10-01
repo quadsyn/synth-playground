@@ -57,6 +57,7 @@ export const enum ActionKind {
     CreateClipAndPattern,
     RemoveClip,
     SplitClip,
+    DuplicateClip,
     LeftStretchClip,
     RightStretchClip,
     MoveClips,
@@ -473,6 +474,14 @@ type ActionTableEntry = [
         [GestureKind.Press | Key.S],
         <ActionId>"timeline.splitClip",
         StringId.TimelineActionSplitClip,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.DuplicateClip,
+        AreaKind.Timeline,
+        [GestureKind.Press | Key.D],
+        <ActionId>"timeline.duplicateClip",
+        StringId.TimelineActionDuplicateClip,
     ],
     [
         ActionTags.None,

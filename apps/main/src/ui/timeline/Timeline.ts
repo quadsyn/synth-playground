@@ -1194,6 +1194,47 @@ export class Timeline implements Component {
 
                 return ActionResponse.NotApplicable;
             };
+            case ActionKind.DuplicateClip: {
+                let didDuplicate: boolean = false;
+                let newClipTrackIndex: number | null = null;
+                let newClip: Clip.Type | null = null;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    if (clips.length === 1) {
+                        const clip: Clip.Type = clips[0];
+                        newClipTrackIndex = trackIndex;
+                        newClip = this._doc.insertClip(
+                            trackIndex,
+                            clip.start,
+                            clip.end,
+                            clip.patternIdLo,
+                            clip.patternIdHi,
+                            clip.soundId,
+                            (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : null
+                            ),
+                        );
+                        didDuplicate = true;
+                    }
+                }
+
+                if (didDuplicate) {
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectedClipsByTrackIndex.set(newClipTrackIndex!, [newClip!]);
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
             case ActionKind.CreateClipAndPattern: {
                 if (isKeyboardGesture(context.gesture1)) {
                     if (insideRange(this._state.selectedTrackIndex, 0, this._doc.project.song.tracks.length - 1)) {

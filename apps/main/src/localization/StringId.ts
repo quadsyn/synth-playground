@@ -42,6 +42,7 @@ export const enum StringId {
     TimelineActionCreateClipAndPattern = "actions.timeline.createClipAndPattern",
     TimelineActionRemoveClip = "actions.timeline.removeClip",
     TimelineActionSplitClip = "actions.timeline.splitClip",
+    TimelineActionDuplicateClip = "actions.timeline.duplicateClip",
     TimelineActionLeftStretchClip = "actions.timeline.leftStretchClip",
     TimelineActionRightStretchClip = "actions.timeline.rightStretchClip",
     TimelineActionMoveClips = "actions.timeline.moveClips",
