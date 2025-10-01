@@ -203,7 +203,7 @@ export class Synthesizer {
     public assumptionsAreInvalid: boolean;
     public sounds: Sound.Type[];
     public soundsById: Uint32ToUint32Table.Type;
-    public soundTime: number;
+    public absoluteSongTimeInSamples: number;
 
     constructor(samplesPerSecond: number) {
         this.samplesPerSecond = samplesPerSecond;
@@ -229,7 +229,7 @@ export class Synthesizer {
         this.assumptionsAreInvalid = false;
         this.sounds = [];
         this.soundsById = Uint32ToUint32Table.make(4);
-        this.soundTime = 0;
+        this.absoluteSongTimeInSamples = 0;
     }
 
     public loadSong(song: Song.Type): void {
@@ -243,6 +243,7 @@ export class Synthesizer {
         // which would not clear this.
         this.sounds = [];
         Uint32ToUint32Table.clear(this.soundsById);
+        this.assumptionsAreInvalid = true;
     }
 
     public loadSound(sound: Sound.Type): void {
@@ -281,6 +282,7 @@ export class Synthesizer {
         this.tick = 0;
         this.tickSampleCountdown = 0;
         this.isAtStartOfTick = true;
+        this.absoluteSongTimeInSamples = 0;
         this.assumptionsAreInvalid = true;
     }
 
@@ -294,10 +296,12 @@ export class Synthesizer {
 
     public play(): void {
         this.playing = true;
+        this.assumptionsAreInvalid = true;
     }
 
     public pause(): void {
         this.playing = false;
+        this.assumptionsAreInvalid = true;
     }
 
     public stop(): void {
@@ -305,6 +309,7 @@ export class Synthesizer {
         this.tick = 0;
         this.isAtStartOfTick = false;
         this.tickSampleCountdown = 0;
+        this.absoluteSongTimeInSamples = 0;
         const trackCount: number = this.trackStates.length;
         for (let i: number = 0; i < trackCount; i++) {
             const trackState: TrackState = this.trackStates[i];
@@ -312,6 +317,7 @@ export class Synthesizer {
             trackState.activeClipsLength = 0;
             Uint64ToUint32Table.clear(trackState.activeClipsByClipId);
         }
+        this.assumptionsAreInvalid = true;
     }
 
     private _determineActiveClips(trackIndex: number): void {
@@ -539,6 +545,23 @@ export class Synthesizer {
             this.tickSampleCountdown = this.samplesPerTick;
         }
 
+        if (this.playing && this.assumptionsAreInvalid) {
+            const fractionalTick: number = (
+                this.tick
+                + (this.samplesPerTick - this.tickSampleCountdown) / this.samplesPerTick
+            );
+
+            const tempoMap: TempoMap.Type = this.song.tempoMap;
+            this.absoluteSongTimeInSamples = TempoMap.computeSecondsFromTick(
+                tempoMap.sections,
+                TempoMap.findSectionIndexByTick(
+                    tempoMap.sections,
+                    fractionalTick,
+                ),
+                fractionalTick,
+            ) * this.samplesPerSecond;
+        }
+
         const previousTick: number = this.tick;
         const previousTickSampleCountdown: number = this.tickSampleCountdown;
 
@@ -553,28 +576,6 @@ export class Synthesizer {
             const samplesLeftInBuffer: number = size - bufferIndex;
             const samplesLeftInTick: number = Math.ceil(this.tickSampleCountdown);
             const runLength: number = Math.min(samplesLeftInBuffer, samplesLeftInTick);
-
-            let fractionalTick: number = 0;
-            let absoluteSongTimeInSeconds: number = 0;
-            let absoluteSongTimeInSamples: number = 0;
-            if (this.playing) {
-                fractionalTick = (
-                    this.tick
-                    + (this.samplesPerTick - this.tickSampleCountdown) / this.samplesPerTick
-                );
-
-                const tempoMap: TempoMap.Type = this.song.tempoMap;
-                absoluteSongTimeInSeconds = TempoMap.computeSecondsFromTick(
-                    tempoMap.sections,
-                    TempoMap.findSectionIndexByTick(
-                        tempoMap.sections,
-                        fractionalTick,
-                    ),
-                    fractionalTick,
-                );
-
-                absoluteSongTimeInSamples = absoluteSongTimeInSeconds * this.samplesPerSecond;
-            }
 
             if (this.playing)
             for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
@@ -602,6 +603,7 @@ export class Synthesizer {
                                 this._determineActiveTones(trackIndex, clipIndex, patternIndex);
                             }
                         } else if (clip.kind === Clip.Kind.Sound) {
+                            // @TODO: This only needs to be done for the equivalent of "note on" for clips.
                             const startTick: number = clip.start;
                             const tempoMap: TempoMap.Type = this.song.tempoMap;
                             const absoluteStartTimeInSeconds: number = TempoMap.computeSecondsFromTick(
@@ -695,7 +697,9 @@ export class Synthesizer {
                             const soundLength: number = dataL.length;
 
                             const speed: number = 1;
-                            let t: number = ((absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples) * speed) % soundLength;
+                            let t: number = (
+                                (this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples) * speed
+                            ) % soundLength;
                             for (let i: number = 0; i < runLength; i++) {
                                 const sampleIndex0: number = Math.floor(t);
                                 const sampleFract: number = t - sampleIndex0;
@@ -748,6 +752,9 @@ export class Synthesizer {
 
             bufferIndex += runLength;
             this.tickSampleCountdown -= runLength;
+            if (this.playing) {
+                this.absoluteSongTimeInSamples += runLength;
+            }
             this.isAtStartOfTick = false;
 
             if (this.tickSampleCountdown <= 0) {
@@ -817,6 +824,7 @@ export class Synthesizer {
 
                 if (this.tick >= songDurationInTicks) {
                     this.tick = 0;
+                    this.absoluteSongTimeInSamples = 0;
                 }
             }
         }
