@@ -14,6 +14,7 @@ import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
+import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 import { ActionKind, ActionResponse } from "../input/actions.js";
 import { isKeyboardGesture } from "../input/gestures.js";
 import {
@@ -610,6 +611,11 @@ export class Timeline implements Component {
                             clip,
                             transform != null ? transform.newStart : clip.start,
                             transform != null ? transform.newEnd : clip.end,
+                            transform != null ? transform.newSoundStartOffset : (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : 0
+                            ),
                             this._state.viewport,
                             pixelsPerTick,
                             top,
@@ -1105,6 +1111,7 @@ export class Timeline implements Component {
                         0,
                         0,
                         sound.id,
+                        0,
                     );
 
                     this._state.selectionOverlayIsDirty = true;
@@ -1116,6 +1123,76 @@ export class Timeline implements Component {
                 });
 
                 return ActionResponse.Done;
+            };
+            case ActionKind.SplitClip: {
+                let didSplit: boolean = false;
+                const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
+                const timeCursor: number = this._doc.timeCursor;
+                const timeCursorInSeconds: number = TempoMap.computeSecondsFromTick(
+                    tempoMap.sections,
+                    TempoMap.findSectionIndexByTick(tempoMap.sections, timeCursor),
+                    timeCursor,
+                );
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    const track: Track.Type = tracks[trackIndex];
+                    for (const clip of clips) {
+                        const newStart: number = timeCursor;
+                        const newEnd: number = timeCursor;
+                        if (newStart <= clip.start || newEnd >= clip.end) {
+                            continue;
+                        }
+                        if (clip.kind === Clip.Kind.Pattern) {
+                            // @TODO: Implement startOffset for pattern clips and remove this.
+                            continue;
+                        }
+                        let existingSoundStartOffset: number | null = null;
+                        let newSoundStartOffset: number | null = null;
+                        if (clip.kind === Clip.Kind.Sound) {
+                            const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
+                                tempoMap.sections,
+                                TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
+                                clip.start,
+                            );
+                            existingSoundStartOffset = clip.soundClipData != null ? clip.soundClipData.startOffset : 0;
+                            newSoundStartOffset = existingSoundStartOffset + (timeCursorInSeconds - clipStartInSeconds);
+                        }
+                        if (newStart < clip.end) {
+                            this._doc.insertClip(
+                                trackIndex,
+                                newStart,
+                                clip.end,
+                                clip.patternIdLo,
+                                clip.patternIdHi,
+                                clip.soundId,
+                                newSoundStartOffset,
+                            );
+                            this._doc.changeClip(
+                                clip,
+                                track.clips.indexOf(clip),
+                                clip.start,
+                                newEnd,
+                                existingSoundStartOffset,
+                                trackIndex,
+                                trackIndex,
+                            );
+                            didSplit = true;
+                        }
+                    }
+                }
+
+                if (didSplit) {
+                    this._state.selectedClipsByTrackIndex.clear();
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
             };
             case ActionKind.CreateClipAndPattern: {
                 if (isKeyboardGesture(context.gesture1)) {
@@ -1132,6 +1209,7 @@ export class Timeline implements Component {
                             pattern.idLo,
                             pattern.idHi,
                             0,
+                            null,
                         );
                         this._doc.timeCursor = clip.end;
 
@@ -1186,6 +1264,11 @@ export class Timeline implements Component {
                         new Map([[clip, {
                             newStart: clip.start,
                             newEnd: clip.end,
+                            newSoundStartOffset: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : 0
+                            ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
                         }]]),
@@ -1235,6 +1318,11 @@ export class Timeline implements Component {
                         new Map([[clip, {
                             newStart: clip.start,
                             newEnd: clip.end,
+                            newSoundStartOffset: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : 0
+                            ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
                         }]]),
@@ -1286,6 +1374,11 @@ export class Timeline implements Component {
                         clipMap.set(clip, {
                             newStart: clip.start,
                             newEnd: clip.end,
+                            newSoundStartOffset: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : 0
+                            ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
                         });

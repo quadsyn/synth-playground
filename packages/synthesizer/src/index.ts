@@ -5,6 +5,7 @@ import * as Breakpoint from "./data/Breakpoint.js";
 import * as Note from "./data/Note.js";
 import * as Pattern from "./data/Pattern.js";
 import * as Clip from "./data/Clip.js";
+import * as SoundClipData from "./data/SoundClipData.js";
 import * as Track from "./data/Track.js";
 import * as Song from "./data/Song.js";
 import * as Sound from "./data/Sound.js";
@@ -696,9 +697,14 @@ export class Synthesizer {
                             const dataR: Float32Array = sound.dataR != null ? sound.dataR : sound.dataL;
                             const soundLength: number = dataL.length;
 
+                            const soundClipData: SoundClipData.Type | null = activeClip.clip.soundClipData;
+                            const startOffsetInSeconds: number = soundClipData != null ? soundClipData.startOffset : 0;
+                            const startOffsetInSamples: number = startOffsetInSeconds * this.samplesPerSecond;
+
                             const speed: number = 1;
                             let t: number = (
                                 (this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples) * speed
+                                + startOffsetInSamples
                             ) % soundLength;
                             for (let i: number = 0; i < runLength; i++) {
                                 const sampleIndex0: number = Math.floor(t);

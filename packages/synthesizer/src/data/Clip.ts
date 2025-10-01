@@ -1,4 +1,5 @@
 import * as PatternClipData from "./PatternClipData.js";
+import * as SoundClipData from "./SoundClipData.js";
 
 export interface Type {
     // In pulses per quarter note.
@@ -13,6 +14,7 @@ export interface Type {
     // related sub-objects. The exceptions are the IDs below.
     kind: Kind;
     patternClipData: PatternClipData.Type | null;
+    soundClipData: SoundClipData.Type | null;
 
     // Internal ID. Don't serialize this.
     // @TODO: This means that we need to do an extra hash table lookup per tick
@@ -35,6 +37,7 @@ export function make(
     end: number,
     kind: Kind,
     patternClipData: PatternClipData.Type | null,
+    soundClipData: SoundClipData.Type | null,
     patternIdLo: number,
     patternIdHi: number,
     soundId: number,
@@ -47,6 +50,7 @@ export function make(
         maxEnd: end,
         kind: kind,
         patternClipData: patternClipData,
+        soundClipData: soundClipData,
         patternIdLo: patternIdLo,
         patternIdHi: patternIdHi,
         soundId: soundId,

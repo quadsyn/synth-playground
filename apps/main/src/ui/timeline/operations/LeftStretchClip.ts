@@ -3,6 +3,7 @@ import { clamp } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
+import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
@@ -38,6 +39,28 @@ export class LeftStretchClip implements ClipOperation {
 
             transform.newStart = clip.start + cursorPpqnDelta;
 
+            if (clip.kind === Clip.Kind.Sound) {
+                const existingStartOffset: number = (
+                    clip.soundClipData != null
+                    ? clip.soundClipData.startOffset
+                    : 0
+                );
+
+                const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
+                const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
+                    tempoMap.sections,
+                    TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
+                    clip.start,
+                );
+                const newClipStartInSeconds: number = TempoMap.computeSecondsFromTick(
+                    tempoMap.sections,
+                    TempoMap.findSectionIndexByTick(tempoMap.sections, transform.newStart),
+                    transform.newStart,
+                );
+                const deltaSeconds: number = newClipStartInSeconds - clipStartInSeconds;
+                transform.newSoundStartOffset = Math.max(0, existingStartOffset + deltaSeconds);
+            }
+
             // We only have one clip to process.
             break;
         }
@@ -52,10 +75,19 @@ export class LeftStretchClip implements ClipOperation {
             // @TODO: Skip committing if the clip properties didn't change.
             for (let [clip, transform] of this.data.clips.entries()) {
                 const newStart: number = clamp(transform.newStart, 0, songDuration - 1);
+                const newSoundStartOffset: number = Math.max(0, transform.newSoundStartOffset);
                 const clipIndex: number = transform.clipIndex;
                 const clipTrackIndex: number = transform.clipTrackIndex;
 
-                this._doc.changeClip(clip, clipIndex, newStart, clip.end, clipTrackIndex, clipTrackIndex);
+                this._doc.changeClip(
+                    clip,
+                    clipIndex,
+                    newStart,
+                    clip.end,
+                    newSoundStartOffset,
+                    clipTrackIndex,
+                    clipTrackIndex
+                );
 
                 this._operationState.selectedClipsByTrackIndex.clear();
                 this._operationState.selectedClipsByTrackIndex.set(clipTrackIndex, [clip]);

@@ -46,6 +46,7 @@
         "timeline": {
             "createClipAndPattern": "Create clip and pattern",
             "removeClip": "Remove clip",
+            "splitClip": "Split clip",
             "leftStretchClip": "Stretch clip from the left",
             "rightStretchClip": "Stretch clip from the right",
             "moveClips": "Move clips",

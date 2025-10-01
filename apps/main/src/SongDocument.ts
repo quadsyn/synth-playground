@@ -7,6 +7,7 @@ import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import * as Song from "@synth-playground/synthesizer/data/Song.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
+import * as SoundClipData from "@synth-playground/synthesizer/data/SoundClipData.js";
 import * as Pattern from "@synth-playground/synthesizer/data/Pattern.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
@@ -87,6 +88,7 @@ export class SongDocument {
     public timeCursor: number;
     public shouldShowTempoEnvelope: boolean;
     public soundVersionsPresentInAudioThread: Map<number, number>; // sound id -> sound version
+    private _markProjectAsDirtyRequest: number | null;
 
     constructor() {
         this.patternInfoCache = new WeakMap();
@@ -101,6 +103,7 @@ export class SongDocument {
             pattern.idLo,
             pattern.idHi,
             0,
+            null,
         );
         const pattern2: Pattern.Type = this._insertPattern();
         this._insertClip(
@@ -110,6 +113,7 @@ export class SongDocument {
             pattern2.idLo,
             pattern2.idHi,
             0,
+            null,
         );
         const pattern3: Pattern.Type = this._insertPattern();
         this._insertClip(
@@ -119,6 +123,7 @@ export class SongDocument {
             pattern3.idLo,
             pattern3.idHi,
             0,
+            null,
         );
         // const pattern4: Pattern.Type = this._insertPattern();
         // this._insertClip(
@@ -128,6 +133,7 @@ export class SongDocument {
         //     pattern4.idLo,
         //     pattern4.idHi,
         //     0,
+        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -135,6 +141,8 @@ export class SongDocument {
         //     ticksPerBar * 2 - this.project.song.ppqn,
         //     pattern.idLo,
         //     pattern.idHi,
+        //     0,
+        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -142,6 +150,8 @@ export class SongDocument {
         //     ticksPerBar * 3,
         //     pattern.idLo,
         //     pattern.idHi,
+        //     0,
+        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -149,6 +159,8 @@ export class SongDocument {
         //     ticksPerBar * 4,
         //     pattern.idLo,
         //     pattern.idHi,
+        //     0,
+        //     null,
         // );
         this.pianoRollPatternIndex = 0;
         this.pianoRollTrackIndex = 0;
@@ -216,6 +228,8 @@ export class SongDocument {
         });
         this.audioWorkletNode = null;
         this.sentSongForTheFirstTime = false;
+
+        this._markProjectAsDirtyRequest = null;
     }
 
     async createAudioContext(): Promise<void> {
@@ -569,6 +583,7 @@ export class SongDocument {
         patternIdLo: number,
         patternIdHi: number,
         soundId: number,
+        soundStartOffset: number | null,
     ): Clip.Type {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
@@ -584,12 +599,16 @@ export class SongDocument {
             end,
             kind,
             /* patternClipData */ null,
+            /* soundClipData */ null,
             patternIdLo,
             patternIdHi,
             soundId,
             idGenerator.lo,
             idGenerator.hi,
         );
+        if (soundStartOffset != null) {
+            clip.soundClipData = SoundClipData.make(soundStartOffset);
+        }
         LongId.increment(idGenerator);
         track.clips.push(clip);
         this.markTrackAsDirty(track);
@@ -603,6 +622,7 @@ export class SongDocument {
         patternIdLo: number,
         patternIdHi: number,
         soundId: number,
+        soundStartOffset: number | null,
     ): Clip.Type {
         // @TODO: Check if the duration is 0 and don't insert if so?
 
@@ -616,6 +636,7 @@ export class SongDocument {
             patternIdLo,
             patternIdHi,
             soundId,
+            soundStartOffset,
         );
         this.markProjectAsDirty();
 
@@ -653,6 +674,7 @@ export class SongDocument {
         clipIndex: number,
         start: number,
         end: number,
+        soundStartOffset: number | null,
         oldTrackIndex: number,
         newTrackIndex: number,
     ): void {
@@ -664,6 +686,14 @@ export class SongDocument {
         const newTrack: Track.Type = song.tracks[newTrackIndex];
         clip.start = start;
         clip.end = end;
+        if (clip.kind === Clip.Kind.Sound && soundStartOffset != null) {
+            let soundClipData: SoundClipData.Type | null = clip.soundClipData;
+            if (soundClipData == null) {
+                soundClipData = SoundClipData.make(0);
+                clip.soundClipData = soundClipData;
+            }
+            soundClipData.startOffset = soundStartOffset;
+        }
         const changedTracks: boolean = oldTrackIndex !== newTrackIndex;
         if (changedTracks) {
             oldTrack.clips.splice(clipIndex, 1);
@@ -1121,8 +1151,15 @@ export class SongDocument {
 
     // @TODO: Rename?
     public markProjectAsDirty(): void {
-        this._sendSongToAudioThread();
-        this.onProjectChanged.notifyListeners();
+        if (this._markProjectAsDirtyRequest != null) {
+            return;
+        }
+
+        this._markProjectAsDirtyRequest = requestAnimationFrame(() => {
+            this._markProjectAsDirtyRequest = null;
+            this._sendSongToAudioThread();
+            this.onProjectChanged.notifyListeners();
+        });
     }
 
     private _sendSongToAudioThread(): void {

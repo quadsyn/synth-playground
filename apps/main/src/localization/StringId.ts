@@ -41,6 +41,7 @@ export const enum StringId {
     PianoRollActionQuantize = "actions.pianoRoll.quantize",
     TimelineActionCreateClipAndPattern = "actions.timeline.createClipAndPattern",
     TimelineActionRemoveClip = "actions.timeline.removeClip",
+    TimelineActionSplitClip = "actions.timeline.splitClip",
     TimelineActionLeftStretchClip = "actions.timeline.leftStretchClip",
     TimelineActionRightStretchClip = "actions.timeline.rightStretchClip",
     TimelineActionMoveClips = "actions.timeline.moveClips",

@@ -56,6 +56,7 @@ export const enum ActionKind {
     // Timeline
     CreateClipAndPattern,
     RemoveClip,
+    SplitClip,
     LeftStretchClip,
     RightStretchClip,
     MoveClips,
@@ -464,6 +465,14 @@ type ActionTableEntry = [
         [GestureKind.Press | Key.Delete],
         <ActionId>"timeline.removeClip",
         StringId.TimelineActionRemoveClip,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.SplitClip,
+        AreaKind.Timeline,
+        [GestureKind.Press | Key.S],
+        <ActionId>"timeline.splitClip",
+        StringId.TimelineActionSplitClip,
     ],
     [
         ActionTags.None,
