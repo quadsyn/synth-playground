@@ -36,6 +36,7 @@ import { LeftStretchClip } from "./operations/LeftStretchClip.js";
 import { RightStretchClip } from "./operations/RightStretchClip.js";
 import { MoveClips } from "./operations/MoveClips.js";
 import { MoveTempoEnvelopePointBounded } from "./operations/MoveTempoEnvelopePointBounded.js";
+import { StretchSoundClipPlaybackRate } from "./operations/StretchSoundClipPlaybackRate.js";
 import { drawClip, drawClipContents } from "./clipPainting.js";
 import { type AppContext } from "../../AppContext.js";
 
@@ -616,6 +617,11 @@ export class Timeline implements Component {
                                 ? clip.soundClipData.startOffset
                                 : 0
                             ),
+                            transform != null ? transform.newSoundPlaybackRate : (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.playbackRate
+                                : 1
+                            ),
                             this._state.viewport,
                             pixelsPerTick,
                             top,
@@ -1043,6 +1049,9 @@ export class Timeline implements Component {
                             const clipStartStretchHandleX1: number = clamp(clipX0 + this._state.clipStretchHandleSize, clipX0, clipX1);
                             const clipEndStretchHandleX0: number = clamp(clipX1 - this._state.clipStretchHandleSize, clipX0, clipX1);
                             const clipEndStretchHandleX1: number = clipX1;
+                            const clipBottomHandleSize: number = 6;
+                            const clipBottomHandleY0: number = Math.max(clipY0, clipY1 - clipBottomHandleSize);
+                            const clipBottomHandleY1: number = clipY1;
 
                             if (
                                 insideRange(mouseX, clipStartStretchHandleX0, clipStartStretchHandleX1)
@@ -1056,6 +1065,10 @@ export class Timeline implements Component {
                                 && insideRange(mouseY, clipY0, clipY1)
                             ) {
                                 result.clipHit |= ClipHit.Right;
+                            }
+
+                            if (insideRange(mouseY, clipBottomHandleY0, clipBottomHandleY1)) {
+                                result.clipHit |= ClipHit.Bottom;
                             }
                         },
                     );
@@ -1111,7 +1124,6 @@ export class Timeline implements Component {
                         0,
                         0,
                         sound.id,
-                        0,
                     );
 
                     this._state.selectionOverlayIsDirty = true;
@@ -1149,33 +1161,45 @@ export class Timeline implements Component {
                             // @TODO: Implement startOffset for pattern clips and remove this.
                             continue;
                         }
-                        let existingSoundStartOffset: number | null = null;
-                        let newSoundStartOffset: number | null = null;
+                        let newSoundStartOffset: number = 0;
+                        let newPlaybackRate: number = 1;
                         if (clip.kind === Clip.Kind.Sound) {
                             const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
                                 tempoMap.sections,
                                 TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
                                 clip.start,
                             );
-                            existingSoundStartOffset = clip.soundClipData != null ? clip.soundClipData.startOffset : 0;
-                            newSoundStartOffset = existingSoundStartOffset + (timeCursorInSeconds - clipStartInSeconds);
+                            const existingSoundStartOffset: number = (
+                                clip.soundClipData != null
+                                ? clip.soundClipData.startOffset
+                                : 0
+                            );
+                            const existingSoundPlaybackRate: number = (
+                                clip.soundClipData != null
+                                ? clip.soundClipData.playbackRate
+                                : 1
+                            );
+                            newPlaybackRate = existingSoundPlaybackRate;
+                            newSoundStartOffset = existingSoundStartOffset + (timeCursorInSeconds - clipStartInSeconds) * existingSoundPlaybackRate;
                         }
                         if (newStart < clip.end) {
-                            this._doc.insertClip(
+                            const newClip: Clip.Type = this._doc.insertClip(
                                 trackIndex,
                                 newStart,
                                 clip.end,
                                 clip.patternIdLo,
                                 clip.patternIdHi,
                                 clip.soundId,
-                                newSoundStartOffset,
                             );
-                            this._doc.changeClip(
+                            if (clip.kind === Clip.Kind.Sound) {
+                                this._doc.changeSoundClipPlaybackRate(newClip, newPlaybackRate);
+                                this._doc.changeSoundClipStartOffset(newClip, newSoundStartOffset);
+                            }
+                            this._doc.changeClipPosition(
                                 clip,
                                 track.clips.indexOf(clip),
                                 clip.start,
                                 newEnd,
-                                existingSoundStartOffset,
                                 trackIndex,
                                 trackIndex,
                             );
@@ -1214,12 +1238,11 @@ export class Timeline implements Component {
                             clip.patternIdLo,
                             clip.patternIdHi,
                             clip.soundId,
-                            (
-                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
-                                ? clip.soundClipData.startOffset
-                                : null
-                            ),
                         );
+                        if (clip.kind === Clip.Kind.Sound && clip.soundClipData != null) {
+                            this._doc.changeSoundClipStartOffset(newClip, clip.soundClipData.startOffset);
+                            this._doc.changeSoundClipPlaybackRate(newClip, clip.soundClipData.playbackRate);
+                        }
                         didDuplicate = true;
                     }
                 }
@@ -1250,7 +1273,6 @@ export class Timeline implements Component {
                             pattern.idLo,
                             pattern.idHi,
                             0,
-                            null,
                         );
                         this._doc.timeCursor = clip.end;
 
@@ -1262,6 +1284,67 @@ export class Timeline implements Component {
                         this._ui.scheduleMainRender();
 
                         return ActionResponse.Done;
+                    }
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.ChangeSoundClipPlaybackRate: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if ((clipHit & ClipHit.Bottom) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    if (clip.kind === Clip.Kind.Sound) {
+                        const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                        const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+
+                        // this._clearHoverState();
+                        this._state.selectedTrackIndex = clipTrackIndex;
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectionOverlayIsDirty = true;
+
+                        this._activeOperation = new StretchSoundClipPlaybackRate(
+                            this._state,
+                            this._doc,
+                            cursorPpqn0,
+                            new Map([[clip, {
+                                newStart: clip.start,
+                                newEnd: clip.end,
+                                newSoundStartOffset: (
+                                    clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                    ? clip.soundClipData.startOffset
+                                    : 0
+                                ),
+                                newSoundPlaybackRate: (
+                                    clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                    ? clip.soundClipData.playbackRate
+                                    : 1
+                                ),
+                                clipIndex: clipIndex,
+                                clipTrackIndex: clipTrackIndex,
+                            }]]),
+                        );
+                        this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                        return ActionResponse.StartedOperation;
                     }
                 }
 
@@ -1309,6 +1392,11 @@ export class Timeline implements Component {
                                 clip.kind === Clip.Kind.Sound && clip.soundClipData != null
                                 ? clip.soundClipData.startOffset
                                 : 0
+                            ),
+                            newSoundPlaybackRate: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.playbackRate
+                                : 1
                             ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
@@ -1364,6 +1452,11 @@ export class Timeline implements Component {
                                 ? clip.soundClipData.startOffset
                                 : 0
                             ),
+                            newSoundPlaybackRate: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.playbackRate
+                                : 1
+                            ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
                         }]]),
@@ -1398,6 +1491,7 @@ export class Timeline implements Component {
                     (clipHit & ClipHit.Inside) !== 0
                     && (clipHit & ClipHit.Left) === 0
                     && (clipHit & ClipHit.Right) === 0
+                    && (clipHit & ClipHit.Bottom) === 0
                 ) {
                     const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
                     const clip: Clip.Type = track.clips[clipIndex];
@@ -1419,6 +1513,11 @@ export class Timeline implements Component {
                                 clip.kind === Clip.Kind.Sound && clip.soundClipData != null
                                 ? clip.soundClipData.startOffset
                                 : 0
+                            ),
+                            newSoundPlaybackRate: (
+                                clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                ? clip.soundClipData.playbackRate
+                                : 1
                             ),
                             clipIndex: clipIndex,
                             clipTrackIndex: clipTrackIndex,
@@ -2067,6 +2166,7 @@ const enum ClipHit {
     Inside = 0b0001,
     Left   = 0b0010,
     Right  = 0b0100,
+    Bottom = 0b1000,
 }
 
 interface HoverQueryResult {

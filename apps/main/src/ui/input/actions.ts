@@ -62,6 +62,7 @@ export const enum ActionKind {
     RightStretchClip,
     MoveClips,
     SelectClip,
+    ChangeSoundClipPlaybackRate,
     TimelineSelectBox,
     TimelineSelectAll,
     TimelineZoomInAroundMouseHorizontally,
@@ -514,6 +515,14 @@ type ActionTableEntry = [
         [GestureKind.Release | MouseButton.Left],
         <ActionId>"timeline.selectClip",
         StringId.TimelineActionSelectClip,
+    ],
+    [
+        ActionTags.None,
+        ActionKind.ChangeSoundClipPlaybackRate,
+        AreaKind.Timeline,
+        [GestureKind.Drag | MouseButton.Left],
+        <ActionId>"timeline.changeSoundClipPlaybackRate",
+        StringId.TimelineActionChangeSoundClipPlaybackRate,
     ],
     [
         ActionTags.None,

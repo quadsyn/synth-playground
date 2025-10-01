@@ -55,22 +55,16 @@ export class RightStretchClip implements ClipOperation {
             for (let [clip, transform] of this.data.clips.entries()) {
                 // @TODO: Make sure duration can't end up as 0.
                 const newEnd: number = clamp(transform.newEnd, 1, songDuration);
-                const existingSoundStartOffset: number = (
-                    clip.kind === Clip.Kind.Sound && clip.soundClipData != null
-                    ? clip.soundClipData.startOffset
-                    : 0
-                );
                 const clipIndex: number = transform.clipIndex;
                 const clipTrackIndex: number = transform.clipTrackIndex;
 
-                this._doc.changeClip(
+                this._doc.changeClipPosition(
                     clip,
                     clipIndex,
                     clip.start,
                     newEnd,
-                    existingSoundStartOffset,
                     clipTrackIndex,
-                    clipTrackIndex
+                    clipTrackIndex,
                 );
 
                 this._operationState.selectedClipsByTrackIndex.clear();

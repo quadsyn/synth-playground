@@ -47,6 +47,7 @@ export const enum StringId {
     TimelineActionRightStretchClip = "actions.timeline.rightStretchClip",
     TimelineActionMoveClips = "actions.timeline.moveClips",
     TimelineActionSelectClip = "actions.timeline.selectClip",
+    TimelineActionChangeSoundClipPlaybackRate = "actions.timeline.changeSoundClipPlaybackRate",
     TimelineActionSelectBox = "actions.timeline.selectBox",
     TimelineActionSelectAll = "actions.timeline.selectAll",
     TimelineActionZoomInAroundMouseHorizontally = "actions.timeline.zoomInAroundMouseHorizontally",

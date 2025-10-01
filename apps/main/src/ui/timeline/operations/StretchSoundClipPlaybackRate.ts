@@ -8,7 +8,7 @@ import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
 
-export class LeftStretchClip implements ClipOperation {
+export class StretchSoundClipPlaybackRate implements ClipOperation {
     public kind: OperationKind.Clip;
     public data: { clips: Map<Clip.Type, ClipTransform> };
 
@@ -31,32 +31,48 @@ export class LeftStretchClip implements ClipOperation {
 
     private _move(x1: number): void {
         for (let [clip, transform] of this.data.clips.entries()) {
-            const cursorPpqn0: number = this._cursorPpqn0 | 0;
-            const cursorPpqn1: number = this._operationState.mouseToPpqn(x1) | 0;
-            const cursorPpqnDeltaMin: number = 0 - clip.start;
-            const cursorPpqnDeltaMax: number = ((clip.end - 1) - clip.start);
-            const cursorPpqnDelta: number = clamp(cursorPpqn1 - cursorPpqn0, cursorPpqnDeltaMin, cursorPpqnDeltaMax);
-
-            transform.newStart = clip.start + cursorPpqnDelta;
-
-            if (clip.kind === Clip.Kind.Sound) {
-                const existingStartOffset: number = clip.soundClipData != null ? clip.soundClipData.startOffset : 0;
-                const existingPlaybackRate: number = clip.soundClipData != null ? clip.soundClipData.playbackRate : 1;
-
-                const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
-                const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
-                    tempoMap.sections,
-                    TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
-                    clip.start,
-                );
-                const newClipStartInSeconds: number = TempoMap.computeSecondsFromTick(
-                    tempoMap.sections,
-                    TempoMap.findSectionIndexByTick(tempoMap.sections, transform.newStart),
-                    transform.newStart,
-                );
-                const deltaSeconds: number = newClipStartInSeconds - clipStartInSeconds;
-                transform.newSoundStartOffset = Math.max(0, existingStartOffset + deltaSeconds * existingPlaybackRate);
+            if (clip.kind !== Clip.Kind.Sound) {
+                return;
             }
+
+            const minPlaybackRate: number = 0.01;
+            const maxPlaybackRate: number = 1024;
+
+            const cursorPpqn0: number = this._cursorPpqn0;
+            const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
+
+            const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
+            const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
+                tempoMap.sections,
+                TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
+                clip.start,
+            );
+
+            const cursorPpqn0InSeconds: number = TempoMap.computeSecondsFromTick(
+                tempoMap.sections,
+                TempoMap.findSectionIndexByTick(tempoMap.sections, cursorPpqn0),
+                cursorPpqn0,
+            );
+            const cursorPpqn1InSeconds: number = TempoMap.computeSecondsFromTick(
+                tempoMap.sections,
+                TempoMap.findSectionIndexByTick(tempoMap.sections, cursorPpqn1),
+                cursorPpqn1,
+            );
+
+            const oldDurationInSeconds: number = cursorPpqn0InSeconds - clipStartInSeconds;
+            const newDurationInSeconds: number = cursorPpqn1InSeconds - clipStartInSeconds;
+
+            const existingPlaybackRate: number = clip.soundClipData != null ? clip.soundClipData.playbackRate : 1;
+            const existingStartOffset: number = clip.soundClipData != null ? clip.soundClipData.startOffset : 0;
+
+            const ratio: number = oldDurationInSeconds / newDurationInSeconds;
+            const newRawPlaybackRate: number = existingPlaybackRate * ratio;
+            const clampedRatio: number = clamp(newRawPlaybackRate / existingPlaybackRate, minPlaybackRate, maxPlaybackRate);
+            const newPlaybackRate: number = clamp(existingPlaybackRate * clampedRatio, minPlaybackRate, maxPlaybackRate);
+            const newStartOffset: number = existingStartOffset;
+
+            transform.newSoundPlaybackRate = newPlaybackRate;
+            transform.newSoundStartOffset = newStartOffset;
 
             // We only have one clip to process.
             break;
@@ -67,25 +83,15 @@ export class LeftStretchClip implements ClipOperation {
 
     public update(context: OperationContext): OperationResponse {
         if (isReleasing(context)) {
-            const songDuration: number = this._doc.project.song.duration;
-
             // @TODO: Skip committing if the clip properties didn't change.
             for (let [clip, transform] of this.data.clips.entries()) {
-                const newStart: number = clamp(transform.newStart, 0, songDuration - 1);
-                const clipIndex: number = transform.clipIndex;
+                const newStartOffset: number = transform.newSoundStartOffset;
+                const newPlaybackRate: number = transform.newSoundPlaybackRate;
                 const clipTrackIndex: number = transform.clipTrackIndex;
 
-                this._doc.changeClipPosition(
-                    clip,
-                    clipIndex,
-                    newStart,
-                    clip.end,
-                    clipTrackIndex,
-                    clipTrackIndex,
-                );
                 if (clip.kind === Clip.Kind.Sound) {
-                    const newStartOffset: number = Math.max(0, transform.newSoundStartOffset);
                     this._doc.changeSoundClipStartOffset(clip, newStartOffset);
+                    this._doc.changeSoundClipPlaybackRate(clip, newPlaybackRate);
                 }
 
                 this._operationState.selectedClipsByTrackIndex.clear();

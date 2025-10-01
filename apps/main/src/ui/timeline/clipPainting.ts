@@ -178,6 +178,7 @@ export function drawClipContents(
     start: number,
     end: number,
     soundStartOffsetInSeconds: number,
+    soundPlaybackRate: number,
     viewport: Viewport.Type,
     pixelsPerTick: number,
     trackTop: number,
@@ -221,6 +222,7 @@ export function drawClipContents(
                 start,
                 end,
                 soundStartOffsetInSeconds,
+                soundPlaybackRate,
                 viewport,
                 pixelsPerTick,
                 trackTop,
@@ -356,6 +358,7 @@ function drawSoundClipContents(
     start: number,
     end: number,
     soundStartOffsetInSeconds: number,
+    soundPlaybackRate: number,
     viewport: Viewport.Type,
     pixelsPerTick: number,
     trackTop: number,
@@ -441,18 +444,18 @@ function drawSoundClipContents(
     let regionDurationInTicks: number = absoluteTimeInTicks1 - absoluteTimeInTicks0;
     let regionDurationInSeconds: number = absoluteTimeInSeconds1 - absoluteTimeInSeconds0;
     let samplesPerPixel: number = (
-        (regionDurationInSeconds * samplesPerSecond)
+        ((regionDurationInSeconds * soundPlaybackRate) * samplesPerSecond)
         / (regionDurationInTicks * pixelsPerTick)
     ) * peakW;
     // @TODO: What needs to happen if the sample rates don't match? I guess I have
     // to make use of the playback rate here first, then that sample rate mismatch
     // would be factored into it.
-    let relativeTimeInSamples0: number = (
-        (absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds + soundStartOffsetInSeconds) * samplesPerSecond
-    ) | 0;
-    let relativeTimeInSamples1: number = (
-        (absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds + soundStartOffsetInSeconds) * samplesPerSecond
-    ) | 0;
+    let relativeTimeInSamples0: number = (((
+        absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds
+    ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
+    let relativeTimeInSamples1: number = (((
+        absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
+    ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
 
     let peakX: number = ((visibleStartTick - viewportX0) * pixelsPerTick) | 0;
     let peakNextX: number = ((absoluteTimeInTicks1 - viewportX0) * pixelsPerTick) | 0;
@@ -526,15 +529,15 @@ function drawSoundClipContents(
             regionDurationInTicks = absoluteTimeInTicks1 - absoluteTimeInTicks0;
             regionDurationInSeconds = absoluteTimeInSeconds1 - absoluteTimeInSeconds0;
             samplesPerPixel = (
-                (regionDurationInSeconds * samplesPerSecond)
+                ((regionDurationInSeconds * soundPlaybackRate) * samplesPerSecond)
                 / (regionDurationInTicks * pixelsPerTick)
             ) * peakW;
-            relativeTimeInSamples0 = (
-                (absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds + soundStartOffsetInSeconds) * samplesPerSecond
-            ) | 0;
-            relativeTimeInSamples1 = (
-                (absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds + soundStartOffsetInSeconds) * samplesPerSecond
-            ) | 0;
+            relativeTimeInSamples0 = (((
+                absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds
+            ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
+            relativeTimeInSamples1 = (((
+                absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
+            ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
 
             peakNextX = ((absoluteTimeInTicks1 - viewportX0) * pixelsPerTick) | 0;
         }

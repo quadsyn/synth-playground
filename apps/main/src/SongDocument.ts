@@ -103,7 +103,6 @@ export class SongDocument {
             pattern.idLo,
             pattern.idHi,
             0,
-            null,
         );
         const pattern2: Pattern.Type = this._insertPattern();
         this._insertClip(
@@ -113,7 +112,6 @@ export class SongDocument {
             pattern2.idLo,
             pattern2.idHi,
             0,
-            null,
         );
         const pattern3: Pattern.Type = this._insertPattern();
         this._insertClip(
@@ -123,7 +121,6 @@ export class SongDocument {
             pattern3.idLo,
             pattern3.idHi,
             0,
-            null,
         );
         // const pattern4: Pattern.Type = this._insertPattern();
         // this._insertClip(
@@ -133,7 +130,6 @@ export class SongDocument {
         //     pattern4.idLo,
         //     pattern4.idHi,
         //     0,
-        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -142,7 +138,6 @@ export class SongDocument {
         //     pattern.idLo,
         //     pattern.idHi,
         //     0,
-        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -151,7 +146,6 @@ export class SongDocument {
         //     pattern.idLo,
         //     pattern.idHi,
         //     0,
-        //     null,
         // );
         // this._insertClip(
         //     0,
@@ -160,7 +154,6 @@ export class SongDocument {
         //     pattern.idLo,
         //     pattern.idHi,
         //     0,
-        //     null,
         // );
         this.pianoRollPatternIndex = 0;
         this.pianoRollTrackIndex = 0;
@@ -583,7 +576,6 @@ export class SongDocument {
         patternIdLo: number,
         patternIdHi: number,
         soundId: number,
-        soundStartOffset: number | null,
     ): Clip.Type {
         const project: Project.Type = this.project;
         const song: Song.Type = project.song;
@@ -606,9 +598,6 @@ export class SongDocument {
             idGenerator.lo,
             idGenerator.hi,
         );
-        if (soundStartOffset != null) {
-            clip.soundClipData = SoundClipData.make(soundStartOffset);
-        }
         LongId.increment(idGenerator);
         track.clips.push(clip);
         this.markTrackAsDirty(track);
@@ -622,7 +611,6 @@ export class SongDocument {
         patternIdLo: number,
         patternIdHi: number,
         soundId: number,
-        soundStartOffset: number | null,
     ): Clip.Type {
         // @TODO: Check if the duration is 0 and don't insert if so?
 
@@ -636,7 +624,6 @@ export class SongDocument {
             patternIdLo,
             patternIdHi,
             soundId,
-            soundStartOffset,
         );
         this.markProjectAsDirty();
 
@@ -669,12 +656,11 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
-    public changeClip(
+    public changeClipPosition(
         clip: Clip.Type,
         clipIndex: number,
         start: number,
         end: number,
-        soundStartOffset: number | null,
         oldTrackIndex: number,
         newTrackIndex: number,
     ): void {
@@ -686,14 +672,6 @@ export class SongDocument {
         const newTrack: Track.Type = song.tracks[newTrackIndex];
         clip.start = start;
         clip.end = end;
-        if (clip.kind === Clip.Kind.Sound && soundStartOffset != null) {
-            let soundClipData: SoundClipData.Type | null = clip.soundClipData;
-            if (soundClipData == null) {
-                soundClipData = SoundClipData.make(0);
-                clip.soundClipData = soundClipData;
-            }
-            soundClipData.startOffset = soundStartOffset;
-        }
         const changedTracks: boolean = oldTrackIndex !== newTrackIndex;
         if (changedTracks) {
             oldTrack.clips.splice(clipIndex, 1);
@@ -703,6 +681,42 @@ export class SongDocument {
         } else {
             this.markTrackAsDirty(newTrack);
         }
+        this.markProjectAsDirty();
+    }
+
+    public changeSoundClipStartOffset(clip: Clip.Type, startOffset: number): void {
+        if (clip.kind !== Clip.Kind.Sound) {
+            return;
+        }
+
+        let soundClipData: SoundClipData.Type | null = clip.soundClipData;
+        if (soundClipData == null) {
+            soundClipData = SoundClipData.make(
+                /* startOffset */ 0,
+                /* playbackRate */ 1,
+            );
+            clip.soundClipData = soundClipData;
+        }
+        soundClipData.startOffset = startOffset;
+
+        this.markProjectAsDirty();
+    }
+
+    public changeSoundClipPlaybackRate(clip: Clip.Type, playbackRate: number): void {
+        if (clip.kind !== Clip.Kind.Sound) {
+            return;
+        }
+
+        let soundClipData: SoundClipData.Type | null = clip.soundClipData;
+        if (soundClipData == null) {
+            soundClipData = SoundClipData.make(
+                /* startOffset */ 0,
+                /* playbackRate */ 1,
+            );
+            clip.soundClipData = soundClipData;
+        }
+        soundClipData.playbackRate = playbackRate;
+
         this.markProjectAsDirty();
     }
 

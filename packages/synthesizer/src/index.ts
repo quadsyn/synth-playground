@@ -547,6 +547,11 @@ export class Synthesizer {
         }
 
         if (this.playing && this.assumptionsAreInvalid) {
+            // @TODO: Maybe treat the sequential assumption as invalid until we
+            // start a new tick? I was trying this out and noticed that sometimes
+            // the lowpass effect from linear interpolation could be heard. Maybe
+            // it's whatever as it will likely go away with further edits.
+
             const fractionalTick: number = (
                 this.tick
                 + (this.samplesPerTick - this.tickSampleCountdown) / this.samplesPerTick
@@ -700,12 +705,11 @@ export class Synthesizer {
                             const soundClipData: SoundClipData.Type | null = activeClip.clip.soundClipData;
                             const startOffsetInSeconds: number = soundClipData != null ? soundClipData.startOffset : 0;
                             const startOffsetInSamples: number = startOffsetInSeconds * this.samplesPerSecond;
+                            const playbackRate: number = soundClipData != null ? soundClipData.playbackRate : 1;
 
-                            const speed: number = 1;
-                            let t: number = (
-                                (this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples) * speed
-                                + startOffsetInSamples
-                            ) % soundLength;
+                            let t: number = ((
+                                this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples
+                            ) * playbackRate + startOffsetInSamples) % soundLength;
                             for (let i: number = 0; i < runLength; i++) {
                                 const sampleIndex0: number = Math.floor(t);
                                 const sampleFract: number = t - sampleIndex0;
@@ -718,7 +722,7 @@ export class Synthesizer {
                                 const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
                                 outL[bufferIndex + i] += outSampleL;
                                 outR[bufferIndex + i] += outSampleR;
-                                t = (t + speed) % soundLength;
+                                t = (t + playbackRate) % soundLength;
                             }
                         }
                     }
@@ -831,6 +835,11 @@ export class Synthesizer {
                 if (this.tick >= songDurationInTicks) {
                     this.tick = 0;
                     this.absoluteSongTimeInSamples = 0;
+                    // In this case, this violates the sequential assumption because
+                    // all the efficient things I can think of to do for voice allocation
+                    // only work for going forward in time (I could look at having another
+                    // special case for going backwards but that sounds annoying to do).
+                    this.assumptionsAreInvalid = true;
                 }
             }
         }
