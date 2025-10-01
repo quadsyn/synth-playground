@@ -254,16 +254,32 @@ export class Main implements Component {
                     this._ui.scheduleMainRender();
                 }
             },
-            importSample: async (): Promise<LoadedSample> => {
+            loadSampleFromFile: async (file: File): Promise<LoadedSample> => {
+                if (this._doc.audioContext == null) {
+                    await this._doc.createAudioContext();
+                }
+
+                if (this._doc.audioContext == null) {
+                    throw new Error("Audio context is not available");
+                }
+
+                const buffer: ArrayBuffer = await file.arrayBuffer();
+                const audioBuffer: AudioBuffer = await this._doc.audioContext!.decodeAudioData(buffer);
+                const dataL: Float32Array = audioBuffer.getChannelData(0);
+                const dataR: Float32Array = (
+                    audioBuffer.numberOfChannels > 1
+                    ? audioBuffer.getChannelData(1)
+                    : dataL
+                );
+                const samplesPerSecond: number = (
+                    this._doc.audioContext != null
+                    ? this._doc.audioContext.sampleRate
+                    : this._doc.samplesPerSecond
+                );
+                return { samplesPerSecond, dataL, dataR };
+            },
+            showImportSampleDialog: async (): Promise<LoadedSample> => {
                 return new Promise(async (resolve, reject) => {
-                    if (this._doc.audioContext == null) {
-                        await this._doc.createAudioContext();
-                    }
-
-                    if (this._doc.audioContext == null) {
-                        throw new Error("Audio context is not available");
-                    }
-
                     const fileInput: HTMLInputElement = H("input", { type: "file", style: "display: none;" });
                     document.body.appendChild(fileInput);
                     fileInput.addEventListener("input", async () => {
@@ -272,23 +288,11 @@ export class Main implements Component {
                         }
 
                         const file: File = fileInput.files[0];
-                        const buffer: ArrayBuffer = await file.arrayBuffer();
-                        const audioBuffer: AudioBuffer = await this._doc.audioContext!.decodeAudioData(buffer);
-                        const dataL: Float32Array = audioBuffer.getChannelData(0);
-                        const dataR: Float32Array = (
-                            audioBuffer.numberOfChannels > 1
-                            ? audioBuffer.getChannelData(1)
-                            : dataL
-                        );
-                        const samplesPerSecond: number = (
-                            this._doc.audioContext != null
-                            ? this._doc.audioContext.sampleRate
-                            : this._doc.samplesPerSecond
-                        );
+                        const loadedSample: LoadedSample = await this._app.loadSampleFromFile(file);
 
                         fileInput.remove();
 
-                        resolve({ samplesPerSecond, dataL, dataR });
+                        resolve(loadedSample);
                     }, { once: true });
                     fileInput.click();
                 });
@@ -591,6 +595,8 @@ export class Main implements Component {
 
         window.addEventListener("resize", this._onWindowResize);
         window.addEventListener("keydown", this._handleKeyDown);
+        window.addEventListener("drop", this._onWindowDrop);
+        window.addEventListener("dragover", this._onWindowDragOver);
     }
 
     public dispose(): void {
@@ -600,6 +606,8 @@ export class Main implements Component {
         }
         window.removeEventListener("resize", this._onWindowResize);
         window.removeEventListener("keydown", this._handleKeyDown);
+        window.removeEventListener("drop", this._onWindowDrop);
+        window.removeEventListener("dragover", this._onWindowDragOver);
         this._doc.destroyAudioContext();
         this._commandPalette.dispose();
         this._menuBar.dispose();
@@ -716,6 +724,14 @@ export class Main implements Component {
     }
 
     private _onWindowResize = (): void => {};
+
+    private _onWindowDragOver = (event: DragEvent): void => {
+        event.preventDefault();
+    };
+
+    private _onWindowDrop = (event: DragEvent): void => {
+        event.preventDefault();
+    };
 
     // @TODO: I'm not really sure what to do with this. This maybe should be
     // somewhere inside the input manager but it's awkward to pass this there.

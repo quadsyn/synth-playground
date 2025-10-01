@@ -76,6 +76,7 @@ export class Timeline implements Component {
     private _playhead: number;
     private _playheadIsVisible: boolean;
     private _cursor: string;
+    private _fileDropPosition: number | null;
 
     private _renderedClipsDirty: boolean;
     private _renderedViewport: Viewport.Type | null;
@@ -83,6 +84,7 @@ export class Timeline implements Component {
     private _renderedPlayheadIsVisible: boolean;
     private _renderedCursor: string | null;
     private _renderedLanesVersion: number | null;
+    private _renderedFileDropPosition: number | null;
 
     constructor(
         app: AppContext,
@@ -186,6 +188,8 @@ export class Timeline implements Component {
         this._renderedPlayhead = null;
         this._renderedPlayheadIsVisible = false;
 
+        this._fileDropPosition = null;
+
         this._cursor = "default";
 
         this._renderedClipsDirty = true;
@@ -193,6 +197,7 @@ export class Timeline implements Component {
         this._renderedViewport = null;
         this._renderedCursor = null;
         this._renderedLanesVersion = null;
+        this._renderedFileDropPosition = null;
 
         const initialTrackZoom: number = 1;
         const initialTrackPan: number = 0;
@@ -343,10 +348,15 @@ export class Timeline implements Component {
             ),
             this._trackScrollBar.element,
         );
+
+        this.element.addEventListener("dragover", this._onDragOver);
+        this.element.addEventListener("drop", this._onDrop);
     }
 
     public dispose(): void {
         this._doc.onProjectChanged.removeListener(this._onProjectChanged);
+        this.element.removeEventListener("dragover", this._onDragOver);
+        this.element.removeEventListener("drop", this._onDrop);
 
         this._timeScrollBar.dispose();
         this._trackScrollBar.dispose();
@@ -428,6 +438,7 @@ export class Timeline implements Component {
         this._state.envelopesAreDirty = false;
         this._state.tempoEnvelopeIsDirty = false;
         this._renderedLanesVersion = this._laneManager.getLanesVersion();
+        this._renderedFileDropPosition = this._fileDropPosition;
     }
 
     private _renderGrid(): void {
@@ -877,6 +888,7 @@ export class Timeline implements Component {
             && this._renderedPlayhead === this._playhead
             && !Viewport.isDirty(this._renderedViewport, this._state.viewport, Viewport.DirtyCheckOptions.Both)
             && !this._playheadOverlayCanvasResized
+            && this._fileDropPosition === this._renderedFileDropPosition
         ) {
             return;
         }
@@ -903,6 +915,11 @@ export class Timeline implements Component {
         if (this._playheadIsVisible && playhead != null) {
             const x: number = (playhead - viewportX0) * pixelsPerTick;
             context.fillRect(x - 1, 0, 2, height);
+        }
+
+        if (this._fileDropPosition != null) {
+            const x: number = (this._fileDropPosition - viewportX0) * pixelsPerTick;
+            context.fillRect(x, 0, 1, height);
         }
     }
 
@@ -1107,16 +1124,113 @@ export class Timeline implements Component {
         }
     };
 
+    private _onDragOver = (event: DragEvent): void => {
+        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+        const width: number = bounds.width;
+        const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+        const mouseX: number = event.clientX - bounds.left;
+        const tick: number = clamp(
+            this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth),
+            0,
+            this._doc.project.song.duration
+        ) | 0;
+        this._fileDropPosition = tick;
+        this._ui.scheduleMainRender();
+    };
+
+    private _onDrop = (event: DragEvent): void => {
+        event.preventDefault();
+
+        const count: number = event.dataTransfer != null ? event.dataTransfer.items.length : 0;
+        for (let index: number = 0; index < count; index++) {
+            const item: DataTransferItem = event.dataTransfer!.items[index];
+            if (item.kind !== "file") {
+                continue;
+            }
+
+            const file: File | null = item.getAsFile();
+            if (file == null) {
+                continue;
+            }
+
+            this._app.loadSampleFromFile(file).then(({ samplesPerSecond, dataL, dataR }) => {
+                const sound: Sound.Type = this._doc.insertSound(samplesPerSecond, dataL, dataR);
+
+                const ticksPerBar: number = this._doc.project.song.beatsPerBar * this._doc.project.song.ppqn;
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                const mouseX: number = event.clientX - bounds.left;
+                const mouseY: number = event.clientY - bounds.top;
+                const tick: number = clamp(
+                    this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth),
+                    0,
+                    this._doc.project.song.duration
+                ) | 0;
+                let dropTrackIndex: number = this._state.selectedTrackIndex;
+                const viewportY0: number = this._state.viewport.y0;
+                const lanes: Lane.Type[] = this._laneManager.getLanes();
+                const laneLayouts: LaneLayout[] = this._laneManager.getLaneLayouts();
+                const laneCount: number = lanes.length;
+                const firstLaneIndex: number = this._laneManager.findFirstVisibleLaneIndex(viewportY0);
+                for (let laneIndex: number = firstLaneIndex; laneIndex < laneCount; laneIndex++) {
+                    const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                    const laneHeight: number = lane.height;
+                    const kind: Lane.Kind = lane.kind;
+                    const top: number = laneLayout.y0 - viewportY0 + 2;
+                    const bottom: number = top + laneHeight - 2;
+                    if (top > height) {
+                        break;
+                    }
+                    if (kind === Lane.Kind.Track) {
+                        const trackIndex: number = lane.trackIndex;
+                        dropTrackIndex = trackIndex;
+                        if (insideRange(mouseY, top, bottom)) {
+                            break;
+                        }
+                    }
+                }
+
+                // @TODO: Compute length in ticks and use it here.
+                this._doc.insertClip(
+                    clamp(dropTrackIndex, 0, this._doc.project.song.tracks.length - 1),
+                    tick + ticksPerBar * 0,
+                    tick + ticksPerBar * 4,
+                    0,
+                    0,
+                    sound.id,
+                );
+
+                this._state.selectionOverlayIsDirty = true;
+                this._renderedClipsDirty = true;
+                this._ui.scheduleMainRender();
+            }).catch((error) => {
+                // @TODO: Show something on failures.
+                console.error(error);
+            });
+
+            // @TODO: Support multiple files?
+            break;
+        }
+
+        this._fileDropPosition = null;
+        this._ui.scheduleMainRender();
+    };
+
     public onAction = (kind: ActionKind, context: OperationContext): ActionResponse => {
         switch (kind) {
             case ActionKind.TimelineImportSample: {
                 // @TODO: This is here in the timeline because I need to know
                 // the selected track. If I want this to be global then I need
                 // to make that accessible elsewhere.
-                this._app.importSample().then(({ samplesPerSecond, dataL, dataR }) => {
+                this._app.showImportSampleDialog().then(({ samplesPerSecond, dataL, dataR }) => {
                     const sound: Sound.Type = this._doc.insertSound(samplesPerSecond, dataL, dataR);
                     const ticksPerBar: number = this._doc.project.song.beatsPerBar * this._doc.project.song.ppqn;
                     const timeCursor: number = this._doc.timeCursor;
+                    // @TODO: Compute length in ticks and use it here.
                     this._doc.insertClip(
                         clamp(this._state.selectedTrackIndex, 0, this._doc.project.song.tracks.length - 1),
                         timeCursor + ticksPerBar * 0,

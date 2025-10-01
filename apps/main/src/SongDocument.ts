@@ -453,6 +453,7 @@ export class SongDocument {
         dataL: Float32Array,
         dataR: Float32Array | null,
     ): Sound.Type {
+        // @TODO: Hash each sound and use that to know if we need to create or reuse?
         const id: number = this.project.soundIdGenerator;
         const version: number = 0;
         const sound: Sound.Type = Sound.make(

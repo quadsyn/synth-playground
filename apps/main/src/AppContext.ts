@@ -17,7 +17,8 @@ export interface AppContext {
     showDebugInfoPanel: () => void;
     showCommandPalette: () => void;
     changeLanguage: (language: LanguageId) => Promise<void>;
-    importSample: () => Promise<LoadedSample>;
+    loadSampleFromFile: (file: File) => Promise<LoadedSample>;
+    showImportSampleDialog: () => Promise<LoadedSample>;
 }
 
 export interface LoadedSample {
