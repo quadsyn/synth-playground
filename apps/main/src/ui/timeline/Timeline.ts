@@ -350,12 +350,14 @@ export class Timeline implements Component {
         );
 
         this.element.addEventListener("dragover", this._onDragOver);
+        this.element.addEventListener("dragleave", this._onDragLeave);
         this.element.addEventListener("drop", this._onDrop);
     }
 
     public dispose(): void {
         this._doc.onProjectChanged.removeListener(this._onProjectChanged);
         this.element.removeEventListener("dragover", this._onDragOver);
+        this.element.removeEventListener("dragleave", this._onDragLeave);
         this.element.removeEventListener("drop", this._onDrop);
 
         this._timeScrollBar.dispose();
@@ -1135,6 +1137,11 @@ export class Timeline implements Component {
             this._doc.project.song.duration
         ) | 0;
         this._fileDropPosition = tick;
+        this._ui.scheduleMainRender();
+    };
+
+    private _onDragLeave = (event: DragEvent): void => {
+        this._fileDropPosition = null;
         this._ui.scheduleMainRender();
     };
 
