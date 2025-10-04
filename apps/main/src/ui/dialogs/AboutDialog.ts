@@ -1,6 +1,7 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { UIContext } from "../UIContext.js";
 import { Button } from "../basic/Button.js";
+import { Button as FFButton } from "../ISOLATED/ff-rewritten/Button.js";
 import { type Dialog } from "../dialog/Dialog.js";
 import { CloseButton } from "../dialog/CloseButton.js";
 import { DialogHeader } from "../dialog/DialogHeader.js";
@@ -14,11 +15,12 @@ export class AboutDialog implements Dialog {
 
     private _ui: UIContext;
     private _closeButton: CloseButton;
+    private _testButton: FFButton;
 
     constructor(ui: UIContext) {
         this._ui = ui;
-
         this._closeButton = new CloseButton(() => { this.close() });
+        this._testButton = new FFButton('close', 'FF Rewrite!');
         this.element = H("div", { class: dialogClassName },
             DialogHeader("About", this._closeButton.element),
             DialogBody(H("div", {
@@ -35,6 +37,7 @@ export class AboutDialog implements Dialog {
                 H("p", {},
                     "An attempt at writing a synthesizer and an associated editor."
                 ),
+                this._testButton.element,
                 H("div", { style: "display: flex;" },
                     new Button("Open about dialog again", () => {
                         this._ui.dialogManager.show(new AboutDialog(this._ui), {

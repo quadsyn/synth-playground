@@ -11,6 +11,7 @@ export function getAreaLabelId(kind: AreaKind): StringId {
         case AreaKind.Global: return StringId.GlobalActionCategory;
         case AreaKind.PianoRoll: return StringId.PianoRollActionCategory;
         case AreaKind.Timeline: return StringId.TimelineActionCategory;
+        default: { kind satisfies never; throw new Error(`Unexpected AreaKind ${kind}`); }
     }
 }
 

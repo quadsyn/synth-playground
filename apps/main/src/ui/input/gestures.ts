@@ -326,7 +326,7 @@ export function gestureKindToString(kind: GestureKind): string {
         case GestureKind.Release: return "Release";
         case GestureKind.Drag: return "Drag";
         case GestureKind.Move: return "Move";
-        default: return "";
+        default: { kind satisfies never; throw new Error(`Unexpected GestureKind: ${kind}`); }
     }
 }
 
@@ -341,7 +341,7 @@ export function mouseButtonToString(button: MouseButton): string {
         case MouseButton.Middle: return "Mouse Middle";
         case MouseButton.WheelUp: return "Wheel Up";
         case MouseButton.WheelDown: return "Wheel Down";
-        default: return "";
+        default: { button satisfies never; throw new Error(`Unexpected MouseButton: ${button}`); }
     }
 }
 
@@ -464,7 +464,7 @@ export function keyToString(key: Key): string {
 
 // @TODO: Localization
 export function gestureToString(gesture: EncodedGesture): string {
-    let result: string = "";
+    let result: string[] = [];
 
     if (gesture !== GestureKind.None) {
         let buttonString: string = "";
@@ -475,21 +475,21 @@ export function gestureToString(gesture: EncodedGesture): string {
         }
         // @TODO: Show macOS specific labels.
         if ((gesture & Mod.Ctrl) !== 0) {
-            result += "Ctrl+";
+            result.push("Ctrl+");
         }
         if ((gesture & Mod.Alt) !== 0) {
-            result += "Alt+";
+            result.push("Alt+");
         }
         if ((gesture & Mod.Shift) !== 0) {
-            result += "Shift+";
+            result.push("Shift+");
         }
         if ((gesture & Mod.Meta) !== 0) {
-            result += "Meta+";
+            result.push("Meta+");
         }
-        result += buttonString;
+        result.push(buttonString);
     }
 
-    return result;
+    return result.join('');
 }
 
 // @TODO:
