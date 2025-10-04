@@ -1,5 +1,4 @@
 import { SongDocument } from "../../../SongDocument.js";
-import { clamp } from "@synth-playground/common/math.js";
 import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
@@ -8,7 +7,7 @@ import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
 
-export class StretchSoundClipPlaybackRate implements ClipOperation {
+export class SlipSoundClip implements ClipOperation {
     public kind: OperationKind.Clip;
     public data: { clips: Map<Clip.Type, ClipTransform> };
 
@@ -35,18 +34,10 @@ export class StretchSoundClipPlaybackRate implements ClipOperation {
                 return;
             }
 
-            const minPlaybackRate: number = 0.01;
-            const maxPlaybackRate: number = 1024;
-
             const cursorPpqn0: number = this._cursorPpqn0;
             const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
 
             const tempoMap: TempoMap.Type = this._doc.project.song.tempoMap;
-            const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
-                tempoMap.sections,
-                TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
-                clip.start,
-            );
 
             const cursorPpqn0InSeconds: number = TempoMap.computeSecondsFromTick(
                 tempoMap.sections,
@@ -58,20 +49,17 @@ export class StretchSoundClipPlaybackRate implements ClipOperation {
                 TempoMap.findSectionIndexByTick(tempoMap.sections, cursorPpqn1),
                 cursorPpqn1,
             );
-
-            const oldDurationInSeconds: number = cursorPpqn0InSeconds - clipStartInSeconds;
-            const newDurationInSeconds: number = cursorPpqn1InSeconds - clipStartInSeconds;
+            const deltaSeconds: number = cursorPpqn1InSeconds - cursorPpqn0InSeconds;
 
             const existingPlaybackRate: number = clip.soundClipData != null ? clip.soundClipData.playbackRate : 1;
             const existingStartOffset: number = clip.soundClipData != null ? clip.soundClipData.startOffset : 0;
 
-            const ratio: number = oldDurationInSeconds / newDurationInSeconds;
-            const newRawPlaybackRate: number = existingPlaybackRate * ratio;
-            const clampedRatio: number = clamp(newRawPlaybackRate / existingPlaybackRate, minPlaybackRate, maxPlaybackRate);
-            const newPlaybackRate: number = clamp(existingPlaybackRate * clampedRatio, minPlaybackRate, maxPlaybackRate);
-            const newStartOffset: number = existingStartOffset;
+            const newRawOffset: number = existingStartOffset - deltaSeconds * existingPlaybackRate;
+            // @TODO: Limit to the duration of the sound in seconds, if it exists.
+            // Or maybe wrap around?
+            // If the sound isn't there then this action probably should just abort.
+            const newStartOffset: number = Math.max(newRawOffset, 0);
 
-            transform.newSoundPlaybackRate = newPlaybackRate;
             transform.newSoundStartOffset = newStartOffset;
 
             // We only have one clip to process.
@@ -86,12 +74,10 @@ export class StretchSoundClipPlaybackRate implements ClipOperation {
             // @TODO: Skip committing if the clip properties didn't change.
             for (let [clip, transform] of this.data.clips.entries()) {
                 const newStartOffset: number = transform.newSoundStartOffset;
-                const newPlaybackRate: number = transform.newSoundPlaybackRate;
                 const clipTrackIndex: number = transform.clipTrackIndex;
 
                 if (clip.kind === Clip.Kind.Sound) {
                     this._doc.changeSoundClipStartOffset(clip, newStartOffset);
-                    this._doc.changeSoundClipPlaybackRate(clip, newPlaybackRate);
                 }
 
                 this._operationState.selectedClipsByTrackIndex.clear();

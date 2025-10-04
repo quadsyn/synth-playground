@@ -36,7 +36,8 @@ import { LeftStretchClip } from "./operations/LeftStretchClip.js";
 import { RightStretchClip } from "./operations/RightStretchClip.js";
 import { MoveClips } from "./operations/MoveClips.js";
 import { MoveTempoEnvelopePointBounded } from "./operations/MoveTempoEnvelopePointBounded.js";
-import { StretchSoundClipPlaybackRate } from "./operations/StretchSoundClipPlaybackRate.js";
+import { StretchSoundClipRate } from "./operations/StretchSoundClipRate.js";
+import { SlipSoundClip } from "./operations/SlipSoundClip.js";
 import { drawClip, drawClipContents } from "./clipPainting.js";
 import { type AppContext } from "../../AppContext.js";
 
@@ -1410,7 +1411,7 @@ export class Timeline implements Component {
 
                 return ActionResponse.NotApplicable;
             };
-            case ActionKind.ChangeSoundClipPlaybackRate: {
+            case ActionKind.StretchSoundClipRate: {
                 if (!mouseStartedInside(context, this._canvasesContainer)) {
                     return ActionResponse.NotApplicable;
                 }
@@ -1442,7 +1443,68 @@ export class Timeline implements Component {
                         this._state.selectedClipsByTrackIndex.clear();
                         this._state.selectionOverlayIsDirty = true;
 
-                        this._activeOperation = new StretchSoundClipPlaybackRate(
+                        this._activeOperation = new StretchSoundClipRate(
+                            this._state,
+                            this._doc,
+                            cursorPpqn0,
+                            new Map([[clip, {
+                                newStart: clip.start,
+                                newEnd: clip.end,
+                                newSoundStartOffset: (
+                                    clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                    ? clip.soundClipData.startOffset
+                                    : 0
+                                ),
+                                newSoundPlaybackRate: (
+                                    clip.kind === Clip.Kind.Sound && clip.soundClipData != null
+                                    ? clip.soundClipData.playbackRate
+                                    : 1
+                                ),
+                                clipIndex: clipIndex,
+                                clipTrackIndex: clipTrackIndex,
+                            }]]),
+                        );
+                        this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
+
+                        return ActionResponse.StartedOperation;
+                    }
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.SlipSoundClip: {
+                if (!mouseStartedInside(context, this._canvasesContainer)) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+                const width: number = bounds.width;
+                const height: number = bounds.height;
+                const mouseX: number = context.x0 - bounds.left;
+                const mouseY: number = context.y0 - bounds.top;
+
+                this._findClipUnderMouse(width, height, mouseX, mouseY, this._hoverQueryResult);
+                const clipIndex: number = this._hoverQueryResult.clipIndex;
+                const clipTrackIndex: number = this._hoverQueryResult.clipTrackIndex;
+                const clipHit: ClipHit = this._hoverQueryResult.clipHit;
+                if (clipIndex === -1) {
+                    return ActionResponse.NotApplicable;
+                }
+
+                if ((clipHit & ClipHit.Bottom) !== 0) {
+                    const track: Track.Type = this._doc.project.song.tracks[clipTrackIndex];
+                    const clip: Clip.Type = track.clips[clipIndex];
+
+                    if (clip.kind === Clip.Kind.Sound) {
+                        const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+                        const cursorPpqn0: number = this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth);
+
+                        // this._clearHoverState();
+                        this._state.selectedTrackIndex = clipTrackIndex;
+                        this._state.selectedClipsByTrackIndex.clear();
+                        this._state.selectionOverlayIsDirty = true;
+
+                        this._activeOperation = new SlipSoundClip(
                             this._state,
                             this._doc,
                             cursorPpqn0,
