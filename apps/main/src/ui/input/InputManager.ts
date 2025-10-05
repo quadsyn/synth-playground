@@ -766,7 +766,6 @@ export class InputManager {
                 const gesture: EncodedGesture = this._currentMouseGesture.toEncodedGesture();
                 this._updateOperationContext(event, gesture);
 
-                const wasDragging: boolean = this._dragging;
                 if (this.hasActiveOperationHandler()) {
                     const response: OperationResponse | null = this._updateActiveOperation();
                     if (response != null) {
@@ -801,10 +800,6 @@ export class InputManager {
                     this._operationContext.y0 = 0;
                     this._operationContext.gesture0 = GestureKind.None;
                     this._operationContext.element0 = null;
-                }
-
-                if (!handled && wasDragging) {
-                    handled = true;
                 }
 
                 shouldPreventDefault = handled;

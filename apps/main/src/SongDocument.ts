@@ -1054,8 +1054,7 @@ export class SongDocument {
         note.volumeEnvelope.splice(pointIndex, 1);
         note.volumeEnvelope.sort(Breakpoint.byTimeAscending);
 
-        // @TODO: Skip sorting if not needed. Reindexing is always necessary
-        // though, I think.
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
         this.markPatternAsDirty(pattern);
         this.markProjectAsDirty();
     }
@@ -1077,8 +1076,7 @@ export class SongDocument {
         note.pitchEnvelope.splice(pointIndex, 1);
         note.pitchEnvelope.sort(Breakpoint.byTimeAscending);
 
-        // @TODO: Skip sorting if not needed. Reindexing is always necessary
-        // though, I think.
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
         this.markPatternAsDirty(pattern);
         this.markProjectAsDirty();
     }
@@ -1102,8 +1100,7 @@ export class SongDocument {
         // @TODO: Skip this when the move is bounded.
         note.volumeEnvelope!.sort(Breakpoint.byTimeAscending);
 
-        // @TODO: Skip sorting if not needed. Reindexing is always necessary
-        // though, I think.
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
         this.markPatternAsDirty(pattern);
         this.markProjectAsDirty();
     }
@@ -1127,8 +1124,7 @@ export class SongDocument {
         // @TODO: Skip this when the move is bounded.
         note.pitchEnvelope!.sort(Breakpoint.byTimeAscending);
 
-        // @TODO: Skip sorting if not needed. Reindexing is always necessary
-        // though, I think.
+        // @TODO: Skip sorting and reindexing as we're not changing note positions.
         this.markPatternAsDirty(pattern);
         this.markProjectAsDirty();
     }
