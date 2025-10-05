@@ -1128,17 +1128,32 @@ export class Timeline implements Component {
     };
 
     private _onDragOver = (event: DragEvent): void => {
-        const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
-        const width: number = bounds.width;
-        const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
-        const mouseX: number = event.clientX - bounds.left;
-        const tick: number = clamp(
-            this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth),
-            0,
-            this._doc.project.song.duration
-        ) | 0;
-        this._fileDropPosition = tick;
-        this._ui.scheduleMainRender();
+        let hasFiles: boolean = false;
+
+        const count: number = event.dataTransfer != null ? event.dataTransfer.items.length : 0;
+        for (let index: number = 0; index < count; index++) {
+            const item: DataTransferItem = event.dataTransfer!.items[index];
+            if (item.kind === "file") {
+                hasFiles = true;
+                break;
+            }
+        }
+
+        if (hasFiles) {
+            const bounds: DOMRect = this._canvasesContainer.getBoundingClientRect();
+            const width: number = bounds.width;
+            const viewportWidth: number = this._state.viewport.x1 - this._state.viewport.x0;
+            const mouseX: number = event.clientX - bounds.left;
+            const tick: number = clamp(
+                this._state.viewport.x0 + remap(mouseX, 0, width, 0, viewportWidth),
+                0,
+                this._doc.project.song.duration
+            ) | 0;
+            this._fileDropPosition = tick;
+            this._ui.scheduleMainRender();
+        }
+        // @TODO: If there's no files and the file drop position is not null,
+        // set the file drop position to null and re-render?
     };
 
     private _onDragLeave = (event: DragEvent): void => {
