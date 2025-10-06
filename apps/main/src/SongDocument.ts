@@ -13,6 +13,7 @@ import * as Note from "@synth-playground/synthesizer/data/Note.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
+import { TimeStretchMode } from "@synth-playground/synthesizer/data/TimeStretchMode.js";
 import { makeIdGenerator } from "@synth-playground/synthesizer/data/common.js";
 // import audioWorkletCode from "inlineworker!@synth-playground/main-audio-worklet";
 import audioWorkletUrl from "inlineworker!@synth-playground/main-audio-worklet";
@@ -695,6 +696,8 @@ export class SongDocument {
             soundClipData = SoundClipData.make(
                 /* startOffset */ 0,
                 /* playbackRate */ 1,
+                /* timeStretchMode */ TimeStretchMode.None,
+                /* pitchShift */ 1,
             );
             clip.soundClipData = soundClipData;
         }
@@ -713,10 +716,58 @@ export class SongDocument {
             soundClipData = SoundClipData.make(
                 /* startOffset */ 0,
                 /* playbackRate */ 1,
+                /* timeStretchMode */ TimeStretchMode.None,
+                /* pitchShift */ 1,
             );
             clip.soundClipData = soundClipData;
         }
+        // @TODO:
+        // - Don't set if NaN
+        // - Keep bounded
         soundClipData.playbackRate = playbackRate;
+
+        this.markProjectAsDirty();
+    }
+
+    public changeSoundClipPitchShift(clip: Clip.Type, pitchShift: number): void {
+        if (clip.kind !== Clip.Kind.Sound) {
+            return;
+        }
+
+        let soundClipData: SoundClipData.Type | null = clip.soundClipData;
+        if (soundClipData == null) {
+            soundClipData = SoundClipData.make(
+                /* startOffset */ 0,
+                /* playbackRate */ 1,
+                /* timeStretchMode */ TimeStretchMode.None,
+                /* pitchShift */ 1,
+            );
+            clip.soundClipData = soundClipData;
+        }
+        // @TODO:
+        // - Don't set if NaN
+        // - Keep bounded
+        soundClipData.pitchShift = pitchShift;
+
+        this.markProjectAsDirty();
+    }
+
+    public changeSoundClipTimeStretchMode(clip: Clip.Type, timeStretchMode: TimeStretchMode): void {
+        if (clip.kind !== Clip.Kind.Sound) {
+            return;
+        }
+
+        let soundClipData: SoundClipData.Type | null = clip.soundClipData;
+        if (soundClipData == null) {
+            soundClipData = SoundClipData.make(
+                /* startOffset */ 0,
+                /* playbackRate */ 1,
+                /* timeStretchMode */ TimeStretchMode.None,
+                /* pitchShift */ 1,
+            );
+            clip.soundClipData = soundClipData;
+        }
+        soundClipData.timeStretchMode = timeStretchMode;
 
         this.markProjectAsDirty();
     }

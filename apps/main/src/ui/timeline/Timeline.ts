@@ -15,6 +15,7 @@ import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import * as Sound from "@synth-playground/synthesizer/data/Sound.js";
 import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
+import { TimeStretchMode } from "@synth-playground/synthesizer/data/TimeStretchMode.js";
 import { ActionKind, ActionResponse } from "../input/actions.js";
 import { isKeyboardGesture } from "../input/gestures.js";
 import {
@@ -1245,6 +1246,234 @@ export class Timeline implements Component {
 
     public onAction = (kind: ActionKind, context: OperationContext): ActionResponse => {
         switch (kind) {
+            case ActionKind.SetSoundClipTimeStretchModeToNone: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        this._doc.changeSoundClipTimeStretchMode(clip, TimeStretchMode.None);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.SetSoundClipTimeStretchModeToLowQuality: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        this._doc.changeSoundClipTimeStretchMode(clip, TimeStretchMode.LowQuality);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.ResetSoundClipPlaybackRate: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        this._doc.changeSoundClipPlaybackRate(clip, 1);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.ResetSoundClipPitchShift: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        this._doc.changeSoundClipPitchShift(clip, 1);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.PitchShiftSoundClipUpByOneSemitone: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPitchShift: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.pitchShift
+                            : 1
+                        );
+                        this._doc.changeSoundClipPitchShift(clip, existingPitchShift * Math.pow(2, 1 / 12));
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.PitchShiftSoundClipDownByOneSemitone: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPitchShift: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.pitchShift
+                            : 1
+                        );
+                        this._doc.changeSoundClipPitchShift(clip, existingPitchShift / Math.pow(2, 1 / 12));
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.PitchShiftSoundClipUpByOneOctave: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPitchShift: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.pitchShift
+                            : 1
+                        );
+                        this._doc.changeSoundClipPitchShift(clip, existingPitchShift * 2);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.PitchShiftSoundClipDownByOneOctave: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPitchShift: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.pitchShift
+                            : 1
+                        );
+                        this._doc.changeSoundClipPitchShift(clip, existingPitchShift / 2);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
             case ActionKind.TimelineImportSample: {
                 // @TODO: This is here in the timeline because I need to know
                 // the selected track. If I want this to be global then I need

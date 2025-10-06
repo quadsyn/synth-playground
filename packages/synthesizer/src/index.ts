@@ -10,6 +10,7 @@ import * as Track from "./data/Track.js";
 import * as Song from "./data/Song.js";
 import * as Sound from "./data/Sound.js";
 import * as TempoMap from "./data/TempoMap.js";
+import { TimeStretchMode } from "./data/TimeStretchMode.js";
 
 // Rule of thumb: keep strings and the like outside of here. The synthesizer
 // should mostly operate on numbers and lists of numbers. Code that deals with
@@ -705,24 +706,76 @@ export class Synthesizer {
                             const soundClipData: SoundClipData.Type | null = activeClip.clip.soundClipData;
                             const startOffsetInSeconds: number = soundClipData != null ? soundClipData.startOffset : 0;
                             const startOffsetInSamples: number = startOffsetInSeconds * this.samplesPerSecond;
-                            const playbackRate: number = soundClipData != null ? soundClipData.playbackRate : 1;
 
-                            let t: number = ((
-                                this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples
-                            ) * playbackRate + startOffsetInSamples) % soundLength;
-                            for (let i: number = 0; i < runLength; i++) {
-                                const sampleIndex0: number = Math.floor(t);
-                                const sampleFract: number = t - sampleIndex0;
-                                const sampleIndex1: number = (sampleIndex0 + 1) % soundLength;
-                                const sampleL0: number = dataL[sampleIndex0];
-                                const sampleL1: number = dataL[sampleIndex1];
-                                const sampleR0: number = dataR[sampleIndex0];
-                                const sampleR1: number = dataR[sampleIndex1];
-                                const outSampleL: number = sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract;
-                                const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
-                                outL[bufferIndex + i] += outSampleL;
-                                outR[bufferIndex + i] += outSampleR;
-                                t = (t + playbackRate) % soundLength;
+                            let timeStretchMode: TimeStretchMode = TimeStretchMode.None;
+                            let playbackRate: number = 1.0;
+                            let pitchShift: number = 1.0;
+                            if (soundClipData != null) {
+                                timeStretchMode = soundClipData.timeStretchMode;
+                                playbackRate = soundClipData.playbackRate;
+                                pitchShift = playbackRate;
+                                if (timeStretchMode !== TimeStretchMode.None) {
+                                    pitchShift = soundClipData.pitchShift;
+                                }
+                            }
+
+                            if (timeStretchMode === TimeStretchMode.LowQuality) {
+                                // @TODO:
+                                // - Replace `index % soundLength` with `if (index >= soundLength) index -= soundLength`.
+                                //   The problem is that I don't know how far `t0` needs to get. If I can bound that as
+                                //   well, then modulo is fine there, as it's not per sample so the cost doesn't matter
+                                //   as much.
+                                // - Make the grain size configurable per clip.
+                                // - Figure out what it will take to support changing playback rates and pitch shifts.
+                                // - Replace the window function with something cheaper. Some polynomial approximation
+                                //   would probably be best (so we can leave memory accesses for the audio file).
+                                const progress: number = this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples;
+                                const grainSizeInSeconds: number = 0.1; // 100ms
+                                const grainSize: number = grainSizeInSeconds * this.samplesPerSecond;
+                                const halfGrainSize: number = grainSize * 0.5;
+                                const grainPeriod: number = 1.0 / grainSize;
+                                let t0: number = progress;
+                                for (let i: number = 0; i < runLength; i++) {
+                                    const a: number = t0 * grainPeriod;
+                                    const aInt: number = Math.floor(a + 0.5);
+                                    const pA: number = a - aInt;
+                                    const tA: number = Math.max(0, pA * grainSize * pitchShift + aInt * playbackRate * grainSize);
+                                    const wA: number = (Math.cos(2.0 * Math.PI * pA) * 0.5 + 0.5);
+                                    const sampleIndexA: number = Math.floor(tA + startOffsetInSamples) % soundLength;
+                                    const b: number = (t0 * grainPeriod) + 0.5;
+                                    const bInt: number = Math.floor(b + 0.5);
+                                    const pB: number = b - bInt;
+                                    const tB: number = Math.max(0, pB * grainSize * pitchShift + bInt * playbackRate * grainSize - playbackRate * halfGrainSize);
+                                    const wB: number = (Math.cos(2.0 * Math.PI * pB) * 0.5 + 0.5);
+                                    const sampleIndexB: number = Math.floor(tB + startOffsetInSamples) % soundLength;
+                                    const sampleLA0: number = dataL[sampleIndexA] * wA;
+                                    const sampleRA0: number = dataR[sampleIndexA] * wA;
+                                    const sampleLB0: number = dataL[sampleIndexB] * wB;
+                                    const sampleRB0: number = dataR[sampleIndexB] * wB;
+                                    const outSampleL: number = sampleLA0 + sampleLB0;
+                                    const outSampleR: number = sampleRA0 + sampleRB0;
+                                    outL[bufferIndex + i] += outSampleL;
+                                    outR[bufferIndex + i] += outSampleR;
+                                    t0++;
+                                }
+                            } else {
+                                let t: number = ((
+                                    this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples
+                                ) * playbackRate + startOffsetInSamples) % soundLength;
+                                for (let i: number = 0; i < runLength; i++) {
+                                    const sampleIndex0: number = Math.floor(t);
+                                    const sampleFract: number = t - sampleIndex0;
+                                    const sampleIndex1: number = (sampleIndex0 + 1) % soundLength;
+                                    const sampleL0: number = dataL[sampleIndex0];
+                                    const sampleL1: number = dataL[sampleIndex1];
+                                    const sampleR0: number = dataR[sampleIndex0];
+                                    const sampleR1: number = dataR[sampleIndex1];
+                                    const outSampleL: number = sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract;
+                                    const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
+                                    outL[bufferIndex + i] += outSampleL;
+                                    outR[bufferIndex + i] += outSampleR;
+                                    t = (t + playbackRate) % soundLength;
+                                }
                             }
                         }
                     }
