@@ -22,7 +22,7 @@ export class TimelinePanel extends DockablePanel {
         if (this._api != null) {
             this._ui.inputManager.registerPanel(
                 this._api.id,
-                this._element,
+                this._timeline.element,
                 AreaKind.Timeline,
                 this._timeline.onAction,
             );

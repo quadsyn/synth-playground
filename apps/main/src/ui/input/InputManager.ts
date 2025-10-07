@@ -622,8 +622,8 @@ export class InputManager {
             activePanel != null ? activePanel.kind : AreaKind.Global
         );
 
-        let areaUnderTheMouse: AreaKind = areaKind;
-        let panelUnderTheMouse: RegisteredPanel | undefined = activePanel;
+        let areaUnderTheMouse: AreaKind = AreaKind.Global;
+        let panelUnderTheMouse: RegisteredPanel | undefined = undefined;
         if (event.type === "mousedown" || event.type === "wheel") {
             let el: HTMLElement | null = target;
             while (el != null) {
@@ -652,7 +652,7 @@ export class InputManager {
                     this._dragStartGesture,
                 );
 
-                if (!this._dragging) {
+                if (!this._dragging && areaUnderTheMouse !== AreaKind.Global) {
                     this._dragging = true;
                     this._draggingTarget = target;
                     this._dragStartGesture.copy(this._currentMouseGesture);
