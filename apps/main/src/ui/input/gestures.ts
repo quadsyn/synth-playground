@@ -326,7 +326,10 @@ export function gestureKindToString(kind: GestureKind): string {
         case GestureKind.Release: return "Release";
         case GestureKind.Drag: return "Drag";
         case GestureKind.Move: return "Move";
-        default: return "";
+        default: {
+            kind satisfies never // catch missing cases in TS
+            return "";
+        }
     }
 }
 
@@ -341,7 +344,10 @@ export function mouseButtonToString(button: MouseButton): string {
         case MouseButton.Middle: return "Mouse Middle";
         case MouseButton.WheelUp: return "Wheel Up";
         case MouseButton.WheelDown: return "Wheel Down";
-        default: return "";
+        default: {
+            button satisfies never; // catch missing cases in TS
+            return "";
+        }
     }
 }
 
@@ -458,7 +464,11 @@ export function keyToString(key: Key): string {
         case Key.Backslash: return "\\";
         case Key.BracketRight: return "]";
         case Key.Quote: return "'";
-        default: return "";
+        case Key.IsComposing: return ""; // to be exhaustive
+        default: {
+            key satisfies never // catch missing cases in TS
+            return "";
+        }
     }
 }
 

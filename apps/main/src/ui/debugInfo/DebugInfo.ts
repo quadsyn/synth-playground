@@ -1,12 +1,12 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { SongDocument } from "../../SongDocument.js";
 import * as LongId from "@synth-playground/common/LongId.js";
 import * as Project from "@synth-playground/synthesizer/data/Project.js";
 import * as Song from "@synth-playground/synthesizer/data/Song.js";
 
-class DebugInfoRow<T> implements Component {
+class DebugInfoRow<T> implements ManualComponent {
     public element: HTMLDivElement;
 
     private _valueDisplay: HTMLSpanElement;
@@ -63,7 +63,7 @@ class DebugInfoRow<T> implements Component {
     }
 }
 
-export class DebugInfo implements Component {
+export class DebugInfo implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

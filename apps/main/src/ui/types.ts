@@ -1,3 +1,10 @@
+/**
+ * A component should create an element in its constructor, although the user is responsible for attaching it to the
+ * DOM. Then for any properties that a user might be interested in changing, the corresponding changes to the DOM should be
+ * performed either when that property changes if it's an Observable, or the component should implement ManualComponent
+ * instead to indicate that the user performs it manually. All components need to dispose their own event listeners and
+ * any other data they're responsible for in the dispose method (see tooltip for dispose).
+ */
 export interface Component {
     /** DOM element used to display this component. */
     element: HTMLElement;
@@ -8,8 +15,15 @@ export interface Component {
      * Components have the responsibility to call this for their subcomponents.
      */
     dispose(): void;
+}
 
-    /**
+/**
+ * Manual components follow Component patterns, but the user is expected to call render when they need to update
+ * properties in the DOM. A manually rendered component tracks old values of its properties since last render to detect
+ * which edits to the DOM are needed (for performance, they should not perform full re-renders).
+ */
+export interface ManualComponent extends Component {
+	/**
      * Synchronizes the DOM element with the current state in memory.
      *
      * This function should be idempotent: multiple calls in a row should not

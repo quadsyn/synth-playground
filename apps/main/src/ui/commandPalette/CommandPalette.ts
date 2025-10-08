@@ -5,7 +5,7 @@ import {
 } from "@synth-playground/common/string.js";
 import { clamp, insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { StringId } from "../../localization/StringId.js";
 import { TextInput } from "../basic/TextInput.js";
 import { VirtualizedList, type IListItem } from "../basic/VirtualizedList.js";
@@ -22,7 +22,7 @@ import { type EncodedGesture, gestureToHtml } from "../input/gestures.js";
 
 // @TODO: Generalize this into something like vscode's QuickInput thing?
 
-export class CommandPalette implements Component {
+export class CommandPalette implements ManualComponent {
     public element: HTMLDivElement;
 
     private _app: AppContext;

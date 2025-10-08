@@ -1,6 +1,6 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../SongDocument.js";
-import { type Component } from "./types.js";
+import { type ManualComponent } from "./types.js";
 import { DockablePanel } from "./dockable/DockablePanel.js";
 import { UIContext } from "./UIContext.js";
 import {
@@ -39,6 +39,8 @@ import {
     type SerializedGridObject,
     // type IDockviewPanel,
 } from "dockview-core";
+import { DockPanel } from "./basic/DockPanel.js";
+import { DockStack } from "./basic/DockStack.js";
 
 // For now, bump this once changes are made, to effectively clear the saved
 // dockable panel layout.
@@ -63,7 +65,7 @@ const DOCKABLE_PANEL_IDS: Record<string, boolean> = {
     "spectrogramPanel": true,
 };
 
-export class Main implements Component {
+export class Main implements ManualComponent {
     public element: HTMLDivElement;
 
     private _doc: SongDocument;
@@ -74,6 +76,7 @@ export class Main implements Component {
     private _menuBar: MenuBar;
     private _dockviewContainer: HTMLDivElement;
     private _dockview: DockviewApi;
+	private _ffDock: DockStack;
     // @TODO: Store something here so we can update the titles when the language
     // changes. Probably the ID is enough, then we can just use a switch.
     // Ideally, the panel tab thing would be hooked up with the localization
@@ -103,6 +106,15 @@ export class Main implements Component {
                 z-index: 1;
             `,
         });
+
+		// TODO: tests! Remove
+		const dpTest = new DockPanel("TestA", true, true);
+		const dpTest2 = new DockPanel("TestB", true, true);
+		dpTest.element.appendChild(document.createTextNode("Contents of panel A."));
+		dpTest2.element.appendChild(document.createTextNode("Contents of panel B."));
+		this._ffDock = new DockStack();
+		this._ffDock.insertPanel(dpTest);
+		this._ffDock.insertPanel(dpTest2);
 
         this._ui = new UIContext(
             (timestamp: number): void => { this.render(); },
@@ -408,6 +420,7 @@ export class Main implements Component {
         ]);
         this.element.appendChild(this._menuBar.element);
         this.element.appendChild(this._dockviewContainer);
+		this.element.appendChild(this._ffDock.element);
         this.element.appendChild(this._commandPaletteContainer);
         this.element.appendChild(this._menuContainer);
         this.element.appendChild(this._ui.dialogManager.container);
@@ -447,50 +460,53 @@ export class Main implements Component {
             function recursiveFilter(
                 data: SerializedGridObject<GroupPanelViewState>,
             ): SerializedGridObject<GroupPanelViewState> | null {
-                if (data.type === "branch") {
-                    const outputData: SerializedGridObject<GroupPanelViewState>[] = [];
-                    for (const item of (data.data as SerializedGridObject<GroupPanelViewState>[])) {
-                        const filtered = recursiveFilter(item);
-                        if (filtered != null) {
-                            outputData.push(filtered);
+                let output: SerializedGridObject<GroupPanelViewState>
+                switch (data.type) {
+                        case "branch":
+                            const outputData: SerializedGridObject<GroupPanelViewState>[] = [];
+                        for (const item of (data.data as SerializedGridObject<GroupPanelViewState>[])) {
+                            const filtered = recursiveFilter(item);
+                            if (filtered != null) {
+                                outputData.push(filtered);
+                            }
                         }
-                    }
-                    if (outputData.length <= 0) {
+                        if (outputData.length <= 0) {
+                            return null;
+                        }
+                        output = {
+                            type: "branch",
+                            data: outputData,
+                        };
+                        if (data.size != null) {
+                            output.size = data.size;
+                        }
+                        if (data.visible != null) {
+                            output.visible = data.visible;
+                        }
+                        return output;
+                    case "leaf":
+                        const item: GroupPanelViewState = data.data as GroupPanelViewState;
+                        const outputData2: GroupPanelViewState = {
+                            id: item.id,
+                            views: item.views.filter(x => DOCKABLE_PANEL_IDS[x] != null),
+                        };
+                        if (outputData2.views.length <= 0) {
+                            return null;
+                        }
+                        output = {
+                            type: "leaf",
+                            data: outputData2,
+                        };
+                        if (data.size != null) {
+                            output.size = data.size;
+                        }
+                        if (data.visible != null) {
+                            output.visible = data.visible;
+                        }
+                        return output;
+                    default:
+                        data.type satisfies never // catch missing cases in TS
                         return null;
-                    }
-                    const output: SerializedGridObject<GroupPanelViewState> = {
-                        type: "branch",
-                        data: outputData,
-                    };
-                    if (data.size != null) {
-                        output.size = data.size;
-                    }
-                    if (data.visible != null) {
-                        output.visible = data.visible;
-                    }
-                    return output;
-                } else if (data.type === "leaf") {
-                    const item: GroupPanelViewState = data.data as GroupPanelViewState;
-                    const outputData: GroupPanelViewState = {
-                        id: item.id,
-                        views: item.views.filter(x => DOCKABLE_PANEL_IDS[x] != null),
-                    };
-                    if (outputData.views.length <= 0) {
-                        return null;
-                    }
-                    const output: SerializedGridObject<GroupPanelViewState> = {
-                        type: "leaf",
-                        data: outputData,
-                    };
-                    if (data.size != null) {
-                        output.size = data.size;
-                    }
-                    if (data.visible != null) {
-                        output.visible = data.visible;
-                    }
-                    return output;
-                } else {
-                    throw new Error(`Unknown type ${data.type}`);
                 }
             }
 

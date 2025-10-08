@@ -1,6 +1,6 @@
 import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { Menu, type MenuItem } from "./Menu.js";
 import { StringId } from "../../localization/StringId.js";
@@ -11,7 +11,7 @@ import { StringId } from "../../localization/StringId.js";
 // - How to deal with overflow?
 //   - One idea is to replace overflowing menu items with a "More..." menu item.
 
-export class MenuBar implements Component {
+export class MenuBar implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

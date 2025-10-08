@@ -1,8 +1,8 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 
-export class TextInput implements Component {
+export class TextInput implements ManualComponent {
     public element: HTMLInputElement;
 
     private _ui: UIContext;

@@ -1,10 +1,10 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import * as Breakpoint from "@synth-playground/synthesizer/data/Breakpoint.js";
 import * as Viewport from "../common/Viewport.js";
 
-export class TimeRuler implements Component {
+export class TimeRuler implements ManualComponent {
     public element: HTMLDivElement;
     public size: number;
 

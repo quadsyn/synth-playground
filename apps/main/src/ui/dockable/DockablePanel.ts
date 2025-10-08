@@ -1,12 +1,12 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import {
     type DockviewPanelApi,
     type GroupPanelPartInitParameters,
     type IContentRenderer,
 } from "dockview-core";
 
-export class DockablePanel implements Component, IContentRenderer {
+export class DockablePanel implements ManualComponent, IContentRenderer {
     protected _element: HTMLElement;
     protected _api: DockviewPanelApi | null;
 

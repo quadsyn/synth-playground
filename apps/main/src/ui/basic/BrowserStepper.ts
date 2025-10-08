@@ -1,8 +1,8 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 
-export class BrowserStepper implements Component {
+export class BrowserStepper implements ManualComponent {
     public element: HTMLInputElement;
 
     private _ui: UIContext;

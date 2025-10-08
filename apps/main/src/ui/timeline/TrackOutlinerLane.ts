@@ -1,5 +1,5 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { BrowserSlider } from "../basic/BrowserSlider.js";
 import * as Lane from "./Lane.js";
@@ -7,7 +7,7 @@ import * as Lane from "./Lane.js";
 // @TODO:
 // - For event handling I'll need to record the track index here.
 
-export class TrackOutlinerLane implements Component {
+export class TrackOutlinerLane implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

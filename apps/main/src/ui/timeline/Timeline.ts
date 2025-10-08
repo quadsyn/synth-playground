@@ -1,6 +1,6 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../../SongDocument.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { unlerp, remap, clamp, insideRange } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
@@ -42,7 +42,7 @@ import { SlipSoundClip } from "./operations/SlipSoundClip.js";
 import { drawClip, drawClipContents } from "./clipPainting.js";
 import { type AppContext } from "../../AppContext.js";
 
-export class Timeline implements Component {
+export class Timeline implements ManualComponent {
     public element: HTMLDivElement;
 
     private _app: AppContext;

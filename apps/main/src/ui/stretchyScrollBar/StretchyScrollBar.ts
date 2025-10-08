@@ -1,6 +1,6 @@
 import { lerp, remap, clamp } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import {
     scrollBar as scrollBarClassName,
@@ -19,7 +19,7 @@ export type OnRenderOverlay = (
     height: number,
 ) => void;
 
-export class StretchyScrollBar implements Component {
+export class StretchyScrollBar implements ManualComponent {
     public element: HTMLDivElement;
     public size: number;
     public handleSize: number;

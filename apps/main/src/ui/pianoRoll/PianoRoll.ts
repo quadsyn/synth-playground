@@ -1,6 +1,6 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../../SongDocument.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { StretchyScrollBar } from "../stretchyScrollBar/StretchyScrollBar.js";
 import { lerp, unlerp, remap, clamp, insideRange, rangesOverlap } from "@synth-playground/common/math.js";
@@ -69,7 +69,7 @@ import {
     playheadColor,
 } from "./colors.js";
 
-export class PianoRoll implements Component {
+export class PianoRoll implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

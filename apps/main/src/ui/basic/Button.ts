@@ -1,20 +1,20 @@
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import {
     button as buttonClassName,
 } from "./Button.module.css";
 
-export class Button implements Component {
+export class Button implements ManualComponent {
     public element: HTMLButtonElement;
 
     private _label: string;
     private _disabled: boolean;
-    private _onClick: () => void;
+    private _onClick: (event: MouseEvent) => void;
 
     private _renderedLabel: string;
     private _renderedDisabled: boolean | null;
 
-    constructor(label: string, onClick: () => void) {
+    constructor(label: string, onClick: (event: MouseEvent) => void) {
         this._onClick = onClick;
 
         this._label = label;
@@ -25,7 +25,7 @@ export class Button implements Component {
         this.element = H("button", {
             type: "button",
             class: buttonClassName,
-        }, label);
+        }, H("div", {  }), label);
 
         this.element.addEventListener("click", this._handleClick);
         // @TODO: Intercept keydown for space?
@@ -55,8 +55,8 @@ export class Button implements Component {
         }
     }
 
-    private _handleClick = (event: Event): void => {
-        this._onClick();
+    private _handleClick = (event: MouseEvent): void => {
+        this._onClick(event);
 
         event.stopPropagation();
     };

@@ -1,12 +1,12 @@
 import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 
 // @TODO: Generalize this in a better way.
 
 // @TODO: Find a better name that doesn't require the I prefix?
-export interface IListItem extends Component {
+export interface IListItem extends ManualComponent {
     setHeight(height: number): void;
     setTop(top: string): void;
     setText(text: string): void;
@@ -113,7 +113,7 @@ const MAX_CONTAINER_HEIGHT: number = 7_000_000;
 export type ItemMaker = (height: number) => IListItem;
 
 // @TODO: onClick
-export class VirtualizedList<T> implements Component {
+export class VirtualizedList<T> implements ManualComponent {
     public element: HTMLDivElement;
 
     protected _ui: UIContext;

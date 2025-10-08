@@ -1,6 +1,6 @@
 import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { StringId } from "../../localization/StringId.js";
 
@@ -12,7 +12,7 @@ import { StringId } from "../../localization/StringId.js";
 // - Implement more of the safe triangle tweaks from Dear ImGui? Maybe also
 //   the ones from react-aria?
 
-export class Menu implements Component {
+export class Menu implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

@@ -6,13 +6,13 @@ import {
     inferno_b as colormap_b,
 } from "@synth-playground/common/colormaps.js";
 import { UIContext } from "../UIContext.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { SongDocument } from "../../SongDocument.js";
 
 // @TODO: Formalize how time advances here. I think I'll need to persist some
 // amount of spectrums instead of drawing and immediately forgetting them.
 
-export class Spectrogram implements Component {
+export class Spectrogram implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

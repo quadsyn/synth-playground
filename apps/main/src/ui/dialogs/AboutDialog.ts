@@ -30,26 +30,24 @@ export class AboutDialog implements Dialog {
                     box-sizing: border-box;
                     align-items: center;
                     justify-content: center;
-                `,
-            },
-                H("p", {},
+                `}),
+				H("p", {},
                     "An attempt at writing a synthesizer and an associated editor."
                 ),
-                H("div", { style: "display: flex;" },
-                    new Button("Open about dialog again", () => {
-                        this._ui.dialogManager.show(new AboutDialog(this._ui), {
-                            dismissable: true,
-                        });
-                    }).element,
-                ),
-                H("hr", {}),
-                H("p", {},
-                    H("a", {
-                        href: "https://github.com/quadsyn/synth-playground",
-                        target: "_blank",
-                    }, "Source code"),
-                ),
-            )),
+				H("div", { style: "display: flex;" },
+					new Button("Open about dialog again", () => {
+						this._ui.dialogManager.show(new AboutDialog(this._ui), {
+							dismissable: true,
+						});
+					}).element,
+				),
+				H("hr", {}),
+				H("p", {},
+					H("a", {
+						href: "https://github.com/quadsyn/synth-playground",
+						target: "_blank",
+					}, "Source code"),
+				)),
         );
     }
 

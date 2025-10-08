@@ -1,12 +1,12 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { UIContext } from "../UIContext.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { StringId } from "../../localization/StringId.js";
 import { Button } from "../basic/Button.js";
 import { SongDocument } from "../../SongDocument.js";
 import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 
-export class Transport implements Component {
+export class Transport implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

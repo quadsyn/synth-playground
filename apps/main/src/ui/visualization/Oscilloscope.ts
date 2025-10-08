@@ -1,10 +1,10 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { clamp, remap } from "@synth-playground/common/math.js";
 import { UIContext } from "../UIContext.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { SongDocument } from "../../SongDocument.js";
 
-export class Oscilloscope implements Component {
+export class Oscilloscope implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

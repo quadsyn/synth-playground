@@ -1,12 +1,12 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { clamp, insideRange } from "@synth-playground/common/math.js";
 import { matchExactSubstring } from "@synth-playground/common/string.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 
 // @TODO: Generalize and allow the parent component to put arbitrary DOM nodes
 // in here.
-class TreeViewItem implements Component {
+class TreeViewItem implements ManualComponent {
     public element: HTMLDivElement;
 
     private _textContainer: HTMLDivElement;
@@ -232,7 +232,7 @@ function pick<T>(array: T[]): T {
 
 const MAX_CONTAINER_HEIGHT: number = 7_000_000;
 
-export class VirtualizedTree implements Component {
+export class VirtualizedTree implements ManualComponent {
     public element: HTMLDivElement;
 
     private _ui: UIContext;

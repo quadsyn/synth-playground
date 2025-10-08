@@ -1,6 +1,6 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../../SongDocument.js";
-import { type Component } from "../types.js";
+import { type ManualComponent } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import * as TrackMetadata from "@synth-playground/synthesizer/data/TrackMetadata.js";
@@ -16,7 +16,7 @@ import { TrackOutlinerLane } from "./TrackOutlinerLane.js";
 //   I guess? Though I've only noticed this now because I don't have focus
 //   trapping for dialogs at this point.
 
-export class TrackOutliner implements Component {
+export class TrackOutliner implements ManualComponent {
     public element: HTMLDivElement;
     public size: number;
 

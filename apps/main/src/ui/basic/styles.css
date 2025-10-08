@@ -1,0 +1,668 @@
+/**
+ * FF Typescript Foundation Library
+ * Copyright 2019 Ralph Wiedemeier, Frame Factory GmbH
+ *
+ * License: MIT
+ */
+
+/*************************************** COLORS */
+
+:root {
+	--font-ui: "Segoe UI;HelveticaNeue;Helvetica Neue;Helvetica;Arial;sans-serif;";
+	--font-ui-normal: 400; /* font weight */
+	--font-ui-bold: 400; /* font weight */
+
+    --color-background: #343434;
+    --color-background-dark: color-mix(in lab, var(--color-background), #000 5%);
+    --color-background-darker: color-mix(in lab, var(--color-background), #000 10%);
+    --color-background-light: color-mix(in lab, var(--color-background), #fff 10%);
+    --color-background-lighter: color-mix(in lab, var(--color-background), #fff 20%);
+    --color-background-hover: var(--color-background-lighter);
+
+    --color-primary: #1f6699;
+    --color-primary-light: color-mix(in lab, var(--color-primary), #fff 8%);
+    --color-primary-dark: color-mix(in lab, var(--color-primary), #000 8%);
+
+    --color-secondary: #E64A19;
+    --color-secondary-light: color-mix(in lab, var(--color-secondary), #fff 15%);
+    --color-secondary-dark: color-mix(in lab, var(--color-secondary), #000 15%);
+
+    --color-text: #c8c8c8;
+    --color-text-light: #e8e8e8;
+    --color-text-dark: #a0a0a0;
+    --color-text-disabled: #808080;
+    --color-icon: #a0a0a0;
+    --color-icon-disabled: #606060;
+
+    --color-focus: color-mix(in lab, var(--color-secondary), #fff 15%);
+
+    --color-prompt: #e6cf5c;
+    --color-info: #73adff;
+    --color-success: #8ae65c;
+    --color-warning: #e6a345;
+    --color-error: #e64545;
+
+	/* UI specific colors */
+	--color-dock-frame: var(--color-background-darker);
+}
+
+.ff-fullsize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+}
+
+.ff-container {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Displays a small triangle */
+.ff-caret-down {
+	width: 0;
+	height: 0;
+	border-left: 5px solid transparent;
+	border-right: 5px solid transparent;
+	border-bottom: 5px solid var(--color-icon);
+	transform: rotate(180deg);
+	transition: transform 0.05s;
+}
+
+.ff-caret-up {
+	width: 0;
+	height: 0;
+	border-left: 5px solid transparent;
+	border-right: 5px solid transparent;
+	border-bottom: 5px solid var(--color-icon);
+	transition: transform 0.05s;
+}
+
+.ff-caret-right {
+	width: 0;
+	height: 0;
+	border-left: 5px solid transparent;
+	border-right: 5px solid transparent;
+	border-bottom: 5px solid var(--color-icon);
+	transform: rotate(90deg);
+	transition: transform 0.05s;
+}
+
+.ff-caret-left {
+	width: 0;
+	height: 0;
+	border-left: 5px solid transparent;
+	border-right: 5px solid transparent;
+	border-bottom: 5px solid var(--color-icon);
+	transform: rotate(270deg);
+	transition: transform 0.05s;
+}
+
+/*************************************** GLOBAL */
+
+html {
+  color: var(--color-text);
+}
+
+button, input {
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background-color: inherit;
+  color: inherit;
+  font-size: inherit;
+  cursor: inherit;
+}
+
+*:focus {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 0;
+}
+
+*:focus:not(:focus-visible) {
+  outline: 0;
+}
+
+*:focus-visible {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 0;
+}
+
+/*************************************** SEMANTIC ELEMENTS */
+
+.ff-fullscreen {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.ff-noselect {
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+}
+
+.ff-off {
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.ff-on {
+  user-select: auto;
+  -webkit-user-select: none;
+  pointer-events: auto;
+}
+
+.ff-focusable {
+  nav-index: 0;
+}
+
+.ff-flex-row {
+  display: flex;
+}
+
+.ff-flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.ff-flex-wrap {
+  flex-wrap: wrap;
+}
+
+.ff-flex-centered {
+  align-items: center;
+}
+
+.ff-flex-item-fixed {
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.ff-flex-item-stretch, .ff-flex-spacer {
+  flex: 1 1 auto;
+  position: relative;
+}
+
+.ff-scroll-y {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.ff-position-above {
+  position: absolute;
+  bottom: 0;
+}
+
+.ff-position-below {
+  position: absolute;
+  top: 100%;
+}
+
+.ff-position-left {
+  position: absolute;
+  right: 0;
+}
+
+.ff-position-right {
+  position: absolute;
+  left: 100%;
+}
+
+.ff-position-above .ff-align-left,
+.ff-position-below .ff-align-left {
+	left: 0;
+}
+
+.ff-position-above, .ff-align-right,
+.ff-position-below, .ff-align-right {
+	right: 0;
+}
+
+.ff-position-left .ff-align-top,
+.ff-position-right .ff-align-top {
+	top: 0;
+}
+
+.ff-position-left .ff-align-bottom,
+.ff-position-left .ff-align-bottom {
+	bottom: 0;
+}
+
+.ff-ellipsis {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ff-placeholder {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.ff-splitter-section {
+  flex: 1 1 auto;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.ff-splitter[direction="vertical"] + .ff-splitter-section {
+  border-top: 2px solid var(--color-background-darker);
+}
+
+.ff-splitter:not([direction="vertical"]) + .ff-splitter-section {
+  border-left: 2px solid var(--color-background-darker);
+}
+
+/*************************************** CONTROLS */
+
+.ff-frame {
+  padding: 4px;
+}
+
+.ff-frame .ff-control {
+  margin: 4px;
+}
+
+.ff-icon {
+  display: inline-block;
+  position: relative;
+  height: 1rem;
+  fill: var(--color-icon);
+}
+
+.ff-icon svg {
+	width: inherit;
+    height: inherit;
+}
+
+.ff-button {
+  cursor: pointer;
+}
+
+.ff-button:vertical {
+	flex-direction: column;
+}
+
+.ff-button .ff-inline .ff-icon,
+.ff-button .ff-inline .ff-text {
+	display: inline;
+}
+
+.ff-button .ff-inline .ff-icon + .ff-text {
+	padding-left: 0.5em;
+}
+
+.ff-button .ff-transparent {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  padding: 5px;
+  background: transparent;
+  fill: var(--color-icon);
+  transition: fill 0.2s;
+}
+
+.ff-button .ff-transparent:hover,
+.ff-button .ff-transparent:focus {
+	fill: var(--color-text);
+}
+
+.ff-button .ff-transparent[selected] {
+	fill: var(--color-text);
+}
+
+.ff-button .ff-transparent > .ff-text {
+	margin: 3px;
+    white-space: nowrap;
+}
+
+.ff-button .ff-transparent > .ff-icon {
+	margin: 3px;
+    height: 1.3em;
+}
+
+.ff-button .ff-transparent > .ff-caret-down {
+	margin: 3px;
+}
+
+.ff-button .ff-transparent .ff-disabled {
+	color: var(--color-text-disabled);
+    fill: var(--color-icon-disabled);
+    user-select: none;
+    pointer-events: none;
+}
+
+.ff-button .ff-control {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  padding: 5px;
+  background: var(--color-background-light);
+  transition: background-color 0.2s;
+}
+
+.ff-button .ff-control:hover,
+.ff-button .ff-control:focus {
+	background-color: var(--color-background-lighter);
+}
+
+.ff-button .ff-control[selected] {
+	background-color: var(--color-primary);
+}
+
+.ff-button .ff-control[selected]:hover,
+.ff-button .ff-control[selected]:focus {
+	background-color: var(--color-primary-light);
+}
+
+.ff-button .ff-control > .ff-text {
+	margin: 3px;
+    white-space: nowrap;
+}
+
+.ff-button .ff-control > .ff-icon {
+	margin: 3px;
+    height: 1.3em;
+}
+
+.ff-button .ff-control > .ff-caret-down {
+	margin: 3px;
+}
+
+.ff-button .ff-control .ff-disabled {
+	color: var(--color-text-disabled);
+    fill: var(--color-icon-disabled);
+    user-select: none;
+    pointer-events: none;
+}
+
+.ff-button .ff-control .ff-disabled > .ff-icon {
+	fill: var(--color-icon-disabled);
+}
+
+.ff-menu {
+  background-color: var(--color-background-light);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.ff-menu .ff-divider {
+	height: 1px;
+    padding: 0;
+    background: var(--color-icon);
+}
+
+.ff-menu .ff-button {
+	justify-content: flex-start;
+    margin: 0;
+    padding: 4px 4px;
+}
+
+.ff-menu .ff-button .ff-icon {
+	height: 1.2em;
+    width: 2.2em;
+    margin-right: 4px;
+}
+
+.ff-dropdown .ff-menu {
+  min-width: 100%;
+  margin-top: 3px;
+}
+
+/*************************************** COMPONENTS */
+
+.ff-modal-plane {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 990;
+  pointer-events: auto;
+}
+
+.ff-modal-plane .ff-transition {
+	opacity: 1;
+}
+
+.ff-dialog {
+  box-sizing: border-box;
+  background: var(--color-background);
+  border: 1px solid var(--color-background-light);
+  box-shadow: 3px 3px 24px rgba(0, 0, 0, 0.4);
+}
+
+.ff-title-bar {
+  background: var(--color-background-darker);
+  padding: 2px;
+}
+
+.ff-title-bar .ff-text {
+	flex: 1 1 auto;
+    padding-right: 8px;
+}
+
+.ff-title-bar .ff-icon {
+	padding: 2px;
+}
+
+.ff-popup-button .ff-content {
+	transition: opacity 0.15s;
+}
+
+.ff-line-edit {
+  display: block;
+  overflow: hidden;
+  background-color: var(--color-background-darker);
+  min-height: 1.6em;
+}
+
+.ff-line-edit input {
+	padding: 2px;
+}
+
+.ff-text-edit {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  display: flex;
+  background-color: var(--color-background-darker);
+}
+
+.ff-text-edit textarea {
+	display: block;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 2px;
+    resize: none;
+    background: transparent;
+    color: inherit;
+    border: none;
+}
+
+.ff-color-edit {
+  font-size: 0.8rem;
+}
+
+.ff-color-edit .ff-control {
+	margin: 0;
+}
+
+.ff-color-edit .ff-slider-controls {
+    align-items: stretch;
+    flex: 1 1 auto;
+}
+
+.ff-color-edit .ff-numeric-controls {
+    flex: 0 0 auto;
+    align-items: center;
+    margin-top: 6px;
+}
+
+.ff-color-edit .ff-text {
+    color: var(--color-icon);
+    margin: 0 3px;
+}
+
+.ff-color-edit .ff-line-edit {
+    flex: 4 5 auto;
+}
+
+.ff-color-edit .ff-line-edit .ff-wide {
+	flex: 5 4 auto;
+}
+
+.ff-color-edit .ff-knob {
+    margin: -2px 0 0 -2px;
+    border: 2px solid white;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+}
+
+.ff-color-edit .ff-vector-slider {
+    flex: 1 0 auto;
+    padding: 0 10px 10px 0;
+
+    background-image:
+      linear-gradient(to bottom, transparent, black),
+      linear-gradient(to right, white, red);
+}
+
+.ff-color-edit .ff-linear-slider .ff-knob,
+.ff-color-edit .ff-vector-slider .ff-knob {
+	width: 10px;
+    height: 10px;
+}
+
+.ff-color-edit .ff-linear-slider {
+    flex: 0 0 24px;
+    margin-left: 6px;
+    padding-bottom: 10px;
+}
+
+.ff-color-edit .ff-hue-slider {
+	background: linear-gradient(to bottom, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+.ff-color-edit .ff-alpha-slider {
+	color: var(--color-background-light);
+}
+
+.ff-quad-splitter .ff-left,
+.ff-quad-splitter .ff-top {
+	box-sizing: border-box;
+    border-right: 1px solid var(--color-background);
+}
+
+/*************************************** MENU */
+
+.ff-popup-options {
+  box-sizing: border-box;
+  background: var(--color-background);
+  border: 1px solid var(--color-background-light);
+  box-shadow: 3px 3px 24px rgba(0, 0, 0, 0.4);
+  min-width: 6rem;
+}
+
+.ff-popup-options button {
+	padding: 4px 8px;
+    text-align: start;
+    user-select: none;
+}
+
+.ff-popup-options button + button {
+	margin-top: 1px;
+}
+
+.ff-popup-options button:hover {
+	background-color: var(--color-background-light);
+}
+
+.ff-popup-options button:focus {
+	outline: none;
+    background-color: var(--color-primary);
+}
+
+/************************************************* TAB CONTAINER */
+
+.ff-tab-container {
+  background: var(--color-background);
+}
+
+/*************************************** DOCK VIEW */
+
+.ff-tab-container, .ff-dock-stack {
+  background: var(--color-background-dark);
+  border: 1px solid var(--color-dock-frame);
+}
+
+.ff-tab-container header,
+.ff-dock-stack header {
+	background: var(--color-dock-frame);
+}
+
+.ff-tab-header, .ff-dock-panel-header {
+  background: var(--color-dock-frame);
+  color: var(--color-text);
+  padding: 1px 3px 2px 2px;
+}
+
+.ff-tab-header:active,
+.ff-dock-panel-header:active {
+	background: linear-gradient(color-mix(in lab, var(--color-background), #fff 18%)), var(--color-background);
+    color: var(--color-text);
+}
+
+.ff-tab-header label,
+.ff-dock-panel-header label {
+	pointer-events: none;
+}
+
+.ff-tab-header .ff-text,
+.ff-dock-panel-header .ff-text {
+	padding: 0 1px;
+}
+
+.ff-tab-header .ff-icon,
+.ff-dock-panel-header .ff-icon {
+	top: 1px;
+    height: 0.8rem;
+    padding: 0 1px;
+}
+
+.ff-dock-drop-marker {
+  box-sizing: border-box;
+  background: color-mix(in lab, var(--color-primary), #00000000 70%);
+  border: 1px solid var(--color-primary);
+}
