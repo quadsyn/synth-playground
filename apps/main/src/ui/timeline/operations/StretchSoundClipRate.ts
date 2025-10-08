@@ -4,6 +4,7 @@ import { GestureKind, gestureHasKind } from "../../input/gestures.js";
 import { OperationResponse, type OperationContext, isReleasing } from "../../input/operations.js";
 import * as Clip from "@synth-playground/synthesizer/data/Clip.js";
 import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
+import * as Constants from "@synth-playground/synthesizer/data/Constants.js";
 import { OperationKind, type ClipOperation } from "../Operation.js";
 import { type OperationState } from "../OperationState.js";
 import { type ClipTransform } from "../ClipTransform.js";
@@ -35,9 +36,6 @@ export class StretchSoundClipRate implements ClipOperation {
                 return;
             }
 
-            const minPlaybackRate: number = 0.01;
-            const maxPlaybackRate: number = 1024;
-
             const cursorPpqn0: number = this._cursorPpqn0;
             const cursorPpqn1: number = this._operationState.mouseToPpqn(x1);
 
@@ -67,8 +65,8 @@ export class StretchSoundClipRate implements ClipOperation {
 
             const ratio: number = oldDurationInSeconds / newDurationInSeconds;
             const newRawPlaybackRate: number = existingPlaybackRate * ratio;
-            const clampedRatio: number = clamp(newRawPlaybackRate / existingPlaybackRate, minPlaybackRate, maxPlaybackRate);
-            const newPlaybackRate: number = clamp(existingPlaybackRate * clampedRatio, minPlaybackRate, maxPlaybackRate);
+            const clampedRatio: number = clamp(newRawPlaybackRate / existingPlaybackRate, Constants.PlaybackRateMin, Constants.PlaybackRateMax);
+            const newPlaybackRate: number = clamp(existingPlaybackRate * clampedRatio, Constants.PlaybackRateMin, Constants.PlaybackRateMax);
             const newStartOffset: number = existingStartOffset;
 
             transform.newSoundPlaybackRate = newPlaybackRate;

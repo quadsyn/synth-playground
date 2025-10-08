@@ -223,10 +223,69 @@ function inlineWorkerPlugin(shouldMinify, skipTypeChecking) {
                     bundle: true,
                     minify: shouldMinify,
                     sourcemap: shouldMinify ? undefined : 'inline',
+                    plugins: [
+                        wasmFromPlugin(shouldMinify),
+                    ],
                     write: false,
                 });
                 const contents = outputFiles[0].contents;
                 return { contents: contents, loader: "dataurl" };
+            });
+        }
+    };
+}
+
+function wasmFromPlugin(shouldMinify) {
+    return {
+        name: "wasmFromPlugin",
+        setup(build) {
+            // @TODO: I'd like to filter by import attributes, but I can't:
+            // https://github.com/evanw/esbuild/issues/3384#issuecomment-1823412482
+            build.onResolve({ filter: /SignalsmithStretch/ }, async (args) => {
+                if (args.with?.wasmFrom == null) {
+                    return undefined;
+                }
+
+                const resolved = await build.resolve(args.with.wasmFrom, {
+                    kind: "import-statement",
+                    resolveDir: args.resolveDir,
+                });
+                if (resolved.errors.length > 0) {
+                    return { errors: resolved.errors };
+                }
+                return {
+                    path: args.path,
+                    pluginData: {
+                        path: resolved.path,
+                    },
+                    namespace: "wasmFrom",
+                };
+            });
+            build.onLoad({
+                filter: /.*/,
+                namespace: "wasmFrom",
+            }, async (args) => {
+                // @TODO: This is _extremely_ hacky.
+                const original = await fs.readFile(args.pluginData.path, { encoding: "utf-8" });
+                let transformed = original;
+                const unwantedPrefix = "let module = {}, exports = {};";
+                const unwantedPrefixStartIndex = transformed.indexOf(unwantedPrefix);
+                if (unwantedPrefixStartIndex !== -1) {
+                    transformed = transformed.slice(unwantedPrefixStartIndex + unwantedPrefix.length);
+                }
+                const unwantedSuffixStartIndex = transformed.indexOf("if (typeof exports === 'object' && typeof module === 'object')");
+                if (unwantedSuffixStartIndex !== -1) {
+                    transformed = transformed.slice(0, unwantedSuffixStartIndex);
+                }
+                transformed += `\nexport var SignalsmithStretch;`;
+
+                const { outputFiles } = await esbuild.build({
+                    stdin: { contents: transformed },
+                    minify: shouldMinify,
+                    write: false,
+                });
+                const contents = outputFiles[0].contents;
+                return { contents: transformed, loader: "js" };
             });
         }
     };
@@ -249,7 +308,10 @@ async function bundleApplication(
         minify: shouldMinify,
         sourcemap: shouldMinify ? undefined : 'inline',
         outdir: path.join(outputDirectory, appName),
-        plugins: [inlineWorkerPlugin(shouldMinify, skipTypeChecking)],
+        plugins: [
+            wasmFromPlugin(shouldMinify),
+            inlineWorkerPlugin(shouldMinify, skipTypeChecking),
+        ],
         loader: {
             ".svg": "dataurl",
         },

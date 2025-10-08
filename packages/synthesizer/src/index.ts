@@ -11,6 +11,9 @@ import * as Song from "./data/Song.js";
 import * as Sound from "./data/Sound.js";
 import * as TempoMap from "./data/TempoMap.js";
 import { TimeStretchMode } from "./data/TimeStretchMode.js";
+import { SignalsmithStretch, type SignalsmithStretchModule } from "./SignalsmithStretch.js" with {
+    wasmFrom: "signalsmith-stretch",
+};
 
 // Rule of thumb: keep strings and the like outside of here. The synthesizer
 // should mostly operate on numbers and lists of numbers. Code that deals with
@@ -110,6 +113,7 @@ class ClipState {
     public activeTonesLength: number;
     public activeTonesByNoteId: Uint64ToUint32Table.Type;
     public absoluteStartTimeInSamples: number;
+    public signalsmithTimeStretcher: SignalsmithTimeStretcher | null;
 
     constructor(clip: Clip.Type) {
         this.clip = clip;
@@ -119,6 +123,7 @@ class ClipState {
         this.activeTonesLength = 0;
         this.activeTonesByNoteId = Uint64ToUint32Table.make(32);
         this.absoluteStartTimeInSamples = 0;
+        this.signalsmithTimeStretcher = null;
     }
 
     public pushActiveTone(tone: Tone): void {
@@ -187,6 +192,296 @@ function evaluateWaveform(phase: number): number {
     return a * (1.0 - t) + b * t;
 }
 
+class SignalsmithTimeStretcher {
+    public wasm: SignalsmithStretchModule | null;
+    public configuredForTheFirstTime: boolean;
+    public samplesPerSecond: number;
+    public channelCount: number;
+    public playbackRate: number;
+    public millisecondsPerBlock: number;
+    public millisecondsPerInterval: number;
+    public inputLatencyInSamples: number;
+    public inputLatencyInSeconds: number;
+    public outputLatencyInSamples: number;
+    public outputLatencyInSeconds: number;
+    public bufferSizeInSamples: number;
+    public emptyArray: Float32Array;
+    public inputBufferPointers: number[];
+    public inputBufferArrays: Float32Array[];
+    public outputBufferPointers: number[];
+    public outputBufferArrays: Float32Array[];
+
+    constructor() {
+        this.wasm = null;
+
+        this.configuredForTheFirstTime = false;
+        this.samplesPerSecond = 48000;
+        this.channelCount = 2;
+
+        this.playbackRate = 1;
+
+        // From the web demo
+        // this.millisecondsPerBlock = 120;
+        // const overlap: number = 4;
+        // this.millisecondsPerInterval = this.millisecondsPerBlock / overlap;
+
+        // From the "cheaper" preset
+        this.millisecondsPerBlock = 100;
+        this.millisecondsPerInterval = 40;
+
+        this.inputLatencyInSamples = 0;
+        this.inputLatencyInSeconds = 0;
+        this.outputLatencyInSamples = 0;
+        this.outputLatencyInSeconds = 0;
+
+        this.emptyArray = new Float32Array(1);
+        this.bufferSizeInSamples = 0;
+        this.inputBufferPointers = [];
+        this.inputBufferArrays = [];
+        this.outputBufferPointers = [];
+        this.outputBufferArrays = [];
+        for (let i = 0; i < this.channelCount; i++) {
+            this.inputBufferPointers.push(0);
+            this.inputBufferArrays.push(this.emptyArray);
+            this.outputBufferPointers.push(0);
+            this.outputBufferArrays.push(this.emptyArray);
+        }
+
+        this.loadWasm();
+    }
+
+    public loadWasm(): void {
+        if (this.wasm != null) {
+            // onLoad();
+            return;
+        }
+
+        SignalsmithStretch().then(wasm => {
+            if (this.wasm != null) {
+                // onLoad();
+                return;
+            }
+
+            this.wasm = wasm;
+            this.wasm._main();
+
+            // onLoad();
+        });
+    }
+
+    public configure(samplesPerSecond: number, channelCount: number): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        this.samplesPerSecond = samplesPerSecond;
+        this.channelCount = channelCount;
+
+        this.playbackRate = 1;
+
+        const blockSamples: number = Math.round((this.millisecondsPerBlock / 1000) * this.samplesPerSecond);
+        const intervalSamples: number = Math.round((this.millisecondsPerInterval / 1000) * this.samplesPerSecond);
+        const splitComputation: boolean = true;
+
+        this.wasm._configure(this.channelCount, blockSamples, intervalSamples, splitComputation);
+        this.reset();
+
+        this.inputLatencyInSamples = this.wasm._inputLatency();
+        this.inputLatencyInSeconds = this.inputLatencyInSamples / this.samplesPerSecond;
+        this.outputLatencyInSamples = this.wasm._outputLatency();
+        this.outputLatencyInSeconds = this.outputLatencyInSamples / this.samplesPerSecond;
+        this.updateBuffers();
+        this.updateBufferArrays();
+
+        this.configuredForTheFirstTime = true;
+    }
+
+    public reset(): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        this.wasm._reset();
+    }
+
+    public updateBuffers(): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        this.bufferSizeInSamples = this.inputLatencyInSamples + this.outputLatencyInSamples;
+        const bytesPerSample: number = 4; // 32-bit floating point
+        const bufferSizeInBytes: number = this.bufferSizeInSamples * bytesPerSample;
+        const basePointer: number = this.wasm._setBuffers(this.channelCount, this.bufferSizeInSamples);
+        for (let i: number = 0; i < this.channelCount; i++) {
+            this.inputBufferPointers[i] = basePointer + bufferSizeInBytes * i;
+            this.outputBufferPointers[i] = basePointer + bufferSizeInBytes * (i + this.channelCount);
+        }
+        this.reset();
+    }
+
+    public updateBufferArrays(): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        for (let i: number = 0; i < this.channelCount; i++) {
+            this.inputBufferArrays[i] = new Float32Array(
+                this.wasm.HEAP8.buffer,
+                this.inputBufferPointers[i],
+                this.bufferSizeInSamples
+            );
+            this.outputBufferArrays[i] = new Float32Array(
+                this.wasm.HEAP8.buffer,
+                this.outputBufferPointers[i],
+                this.bufferSizeInSamples
+            );
+        }
+    }
+
+    public setTransposeSemitones(semitones: number): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        const tonalityLimit: number = 1; // Normalized.
+        this.wasm._setTransposeSemitones(semitones, tonalityLimit);
+    }
+
+    public setTransposeFactor(factor: number): void {
+        if (this.wasm == null) {
+            return;
+        }
+
+        const tonalityLimit: number = 1; // Normalized.
+        this.wasm._setTransposeFactor(factor, tonalityLimit);
+    }
+
+    public setPlaybackRate(rate: number): void {
+        this.playbackRate = rate;
+    }
+
+    public processSoundTick(
+        inL: Float32Array,
+        inR: Float32Array,
+        inBaseSample: number, // Can be fractional.
+        inSize: number,
+    ): void {
+        const channelCount: number = this.channelCount;
+
+        if (this.wasm == null || channelCount !== 2) {
+            return;
+        }
+
+        const bufferSizeInSamples: number = this.bufferSizeInSamples;
+        const playbackRate: number = this.playbackRate;
+
+        const count: number = Math.min(inSize, bufferSizeInSamples);
+        const inputBufferL: Float32Array = this.inputBufferArrays[0];
+        const inputBufferR: Float32Array = this.inputBufferArrays[1];
+        // @TODO: This is a bit slow since I'm actually executing it every run.
+        // Maybe I should track how much of the buffer is being used, so I can
+        // skip clearing it if I'm just going to overwrite everything that's
+        // non-0 anyway.
+        inputBufferL.fill(0);
+        inputBufferR.fill(0);
+        let sampleIndex: number = Math.round(inBaseSample);
+        for (let index: number = 0; index < count; index++) {
+            if (sampleIndex >= 0) {
+                inputBufferL[index] = inL[sampleIndex];
+                inputBufferR[index] = inR[sampleIndex];
+            }
+            sampleIndex++;
+            if (sampleIndex >= inSize) sampleIndex -= inSize;
+        }
+        this.wasm._seek(bufferSizeInSamples, playbackRate);
+    }
+
+    public processSoundRun(
+        outL: Float32Array,
+        outR: Float32Array,
+        outBase: number,
+        outSize: number,
+    ): void {
+        const channelCount: number = this.channelCount;
+
+        if (this.wasm == null || channelCount !== 2) {
+            return;
+        }
+
+        // @TODO: This assumes outSize is smaller than bufferSizeInSamples.
+        // For larger outSize values, this needs to be wrapped into a loop.
+
+        // @TODO: Optimize the case where the playback rate and pitch shift
+        // factor are both 1.
+
+        this.wasm._process(0, outSize);
+        const outputBufferL: Float32Array = this.outputBufferArrays[0];
+        const outputBufferR: Float32Array = this.outputBufferArrays[1];
+        for (let index: number = 0; index < outSize; index++) {
+            outL[outBase + index] += outputBufferL[index];
+            outR[outBase + index] += outputBufferR[index];
+        }
+    }
+}
+
+class SignalsmithTimeStretcherPool {
+    public freeInstances: SignalsmithTimeStretcher[];
+    public freeInstancesCount: number;
+
+    constructor() {
+        this.freeInstances = [];
+        this.freeInstancesCount = 0;
+
+        const initialCount: number = 4;
+        for (let index: number = 0; index < initialCount; index++) {
+            this.createInstance();
+        }
+    }
+
+    public getOrCreateInstance(): SignalsmithTimeStretcher | null {
+        if (this.freeInstancesCount === 0) {
+            this.createInstance();
+        }
+
+        const top: SignalsmithTimeStretcher = this.freeInstances[this.freeInstancesCount - 1];
+        if (top.wasm == null) {
+            return null;
+        }
+
+        this.freeInstances.pop();
+        this.freeInstancesCount--;
+        return top;
+    }
+
+    public releaseInstance(instance: SignalsmithTimeStretcher | null): void {
+        if (instance == null) {
+            return;
+        }
+
+        const index: number = this.freeInstancesCount;
+        if (index > this.freeInstances.length) {
+            this.freeInstances.push(instance);
+            this.freeInstancesCount++;
+        } else {
+            this.freeInstances[index] = instance;
+            this.freeInstancesCount++;
+        }
+    }
+
+    public createInstance(): void {
+        const instance: SignalsmithTimeStretcher = new SignalsmithTimeStretcher();
+        const index: number = this.freeInstancesCount;
+        if (index > this.freeInstances.length) {
+            this.freeInstances.push(instance);
+            this.freeInstancesCount++;
+        } else {
+            this.freeInstances[index] = instance;
+            this.freeInstancesCount++;
+        }
+    }
+}
+
 export class Synthesizer {
     public samplesPerSecond: number;
     public song: Song.Type;
@@ -206,6 +501,7 @@ export class Synthesizer {
     public sounds: Sound.Type[];
     public soundsById: Uint32ToUint32Table.Type;
     public absoluteSongTimeInSamples: number;
+    public signalsmithTimeStretcherPool: SignalsmithTimeStretcherPool;
 
     constructor(samplesPerSecond: number) {
         this.samplesPerSecond = samplesPerSecond;
@@ -232,6 +528,7 @@ export class Synthesizer {
         this.sounds = [];
         this.soundsById = Uint32ToUint32Table.make(4);
         this.absoluteSongTimeInSamples = 0;
+        this.signalsmithTimeStretcherPool = new SignalsmithTimeStretcherPool();
     }
 
     public loadSong(song: Song.Type): void {
@@ -315,6 +612,13 @@ export class Synthesizer {
         const trackCount: number = this.trackStates.length;
         for (let i: number = 0; i < trackCount; i++) {
             const trackState: TrackState = this.trackStates[i];
+            for (let j: number = 0; j < trackState.activeClipsLength; j++) {
+                const clipState: ClipState | null = trackState.activeClips[j];
+                if (clipState != null) {
+                    this.signalsmithTimeStretcherPool.releaseInstance(clipState.signalsmithTimeStretcher);
+                    clipState.signalsmithTimeStretcher = null;
+                }
+            }
             trackState.activeClips = [];
             trackState.activeClipsLength = 0;
             Uint64ToUint32Table.clear(trackState.activeClipsByClipId);
@@ -358,6 +662,24 @@ export class Synthesizer {
                         clipState.seenInClipSearch = true;
                         if (tick === clip.end - 1) clipState.isOnLastTick = true;
                         trackState.pushActiveClip(clipState);
+                        if (
+                            clip.kind === Clip.Kind.Sound
+                            && clip.soundClipData != null
+                            && clip.soundClipData.timeStretchMode === TimeStretchMode.HighQuality
+                        ) {
+                            const stretch: SignalsmithTimeStretcher | null = this.signalsmithTimeStretcherPool.getOrCreateInstance();
+                            clipState.signalsmithTimeStretcher = stretch;
+                            if (stretch != null) {
+                                if (
+                                    !stretch.configuredForTheFirstTime
+                                    || stretch.samplesPerSecond !== this.samplesPerSecond
+                                    || stretch.channelCount !== 2
+                                ) {
+                                    stretch.configure(this.samplesPerSecond, /* channelCount */ 2);
+                                }
+                                stretch.reset();
+                            }
+                        }
                     }
                 } else {
                     const activeClipIndex: number = Uint64ToUint32Table.getValueFromIndex(
@@ -382,6 +704,25 @@ export class Synthesizer {
                     existing.seenInClipSearch = true;
                     // Update reference.
                     existing.clip = clip;
+                    if (
+                        clip.kind === Clip.Kind.Sound
+                        && clip.soundClipData != null
+                        && clip.soundClipData.timeStretchMode === TimeStretchMode.HighQuality
+                        && existing.signalsmithTimeStretcher == null
+                    ) {
+                        const stretch: SignalsmithTimeStretcher | null = this.signalsmithTimeStretcherPool.getOrCreateInstance();
+                        existing.signalsmithTimeStretcher = stretch;
+                        if (stretch != null) {
+                            if (
+                                !stretch.configuredForTheFirstTime
+                                || stretch.samplesPerSecond !== this.samplesPerSecond
+                                || stretch.channelCount !== 2
+                            ) {
+                                stretch.configure(this.samplesPerSecond, /* channelCount */ 2);
+                            }
+                            stretch.reset();
+                        }
+                    }
                 }
             },
         );
@@ -719,7 +1060,36 @@ export class Synthesizer {
                                 }
                             }
 
-                            if (timeStretchMode === TimeStretchMode.LowQuality) {
+                            // @TODO: The low and high quality time stretchers are not emitting the correct output
+                            // when a clip is split into two (and thus the 2nd clip ends up with a non-zero start
+                            // offset). It's very noticeable with playback rates closer to 0.
+
+                            if (timeStretchMode === TimeStretchMode.HighQuality) {
+                                const stretch: SignalsmithTimeStretcher | null = activeClip.signalsmithTimeStretcher;
+                                if (stretch != null) {
+                                    // @TODO: I would like to only run this at the start of each tick, but unfortunately I
+                                    // don't yet know what's the right point where Stretch runs out of samples and I need to
+                                    // seek again. This happens more often with larger ticks/lower tempos. This will also be
+                                    // similarly incorrect if the render quantum size can be made larger than 128 samples,
+                                    // and executing this with every run wouldn't even help in that case!
+                                    if (true) {
+                                        const progress: number = this.absoluteSongTimeInSamples - activeClip.absoluteStartTimeInSamples;
+                                        const t: number = (
+                                            (
+                                                progress
+                                                + stretch.outputLatencyInSamples
+                                            ) * playbackRate
+                                            + startOffsetInSamples
+                                            + stretch.inputLatencyInSamples
+                                            - stretch.bufferSizeInSamples
+                                        ) % soundLength;
+                                        stretch.setPlaybackRate(playbackRate);
+                                        stretch.setTransposeFactor(pitchShift);
+                                        stretch.processSoundTick(dataL, dataR, t, soundLength);
+                                    }
+                                    stretch.processSoundRun(outL, outR, bufferIndex, runLength);
+                                }
+                            } else if (timeStretchMode === TimeStretchMode.LowQuality) {
                                 // @TODO:
                                 // - Replace `index % soundLength` with `if (index >= soundLength) index -= soundLength`.
                                 //   The problem is that I don't know how far `t0` needs to get. If I can bound that as
@@ -881,6 +1251,15 @@ export class Synthesizer {
                             activeClips[trackState.activeClipsLength - 1] = clipState;
                             activeClips[clipIndex] = other;
                             trackState.popActiveClip();
+                            if (
+                                clip.kind === Clip.Kind.Sound
+                                && clip.soundClipData != null
+                                && clip.soundClipData.timeStretchMode === TimeStretchMode.HighQuality
+                            ) {
+                                const instance: SignalsmithTimeStretcher | null = clipState.signalsmithTimeStretcher;
+                                clipState.signalsmithTimeStretcher = null;
+                                this.signalsmithTimeStretcherPool.releaseInstance(instance);
+                            }
                         }
                     }
                 }

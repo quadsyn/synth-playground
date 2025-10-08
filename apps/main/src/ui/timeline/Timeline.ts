@@ -1298,6 +1298,32 @@ export class Timeline implements Component {
 
                 return ActionResponse.NotApplicable;
             };
+            case ActionKind.SetSoundClipTimeStretchModeToHighQuality: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        this._doc.changeSoundClipTimeStretchMode(clip, TimeStretchMode.HighQuality);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
             case ActionKind.ResetSoundClipPlaybackRate: {
                 let didChange: boolean = false;
 
@@ -1337,6 +1363,68 @@ export class Timeline implements Component {
                             continue;
                         }
                         this._doc.changeSoundClipPitchShift(clip, 1);
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.MultiplySoundClipPlaybackRateByTwo: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPlaybackRate: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.playbackRate
+                            : 1
+                        );
+                        this._doc.changeSoundClipPlaybackRate(clip, clamp(existingPlaybackRate * 2, Constants.PlaybackRateMin, Constants.PlaybackRateMax));
+                        didChange = true;
+                    }
+                }
+
+                if (didChange) {
+                    this._state.selectionOverlayIsDirty = true;
+                    this._renderedClipsDirty = true;
+                    this._ui.scheduleMainRender();
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.DivideSoundClipPlaybackRateByTwo: {
+                let didChange: boolean = false;
+
+                for (const [trackIndex, clips] of this._state.selectedClipsByTrackIndex.entries()) {
+                    const tracks: Track.Type[] = this._doc.project.song.tracks;
+                    if (!insideRange(trackIndex, 0, tracks.length - 1)) {
+                        continue;
+                    }
+                    for (const clip of clips) {
+                        if (clip.kind !== Clip.Kind.Sound) {
+                            continue;
+                        }
+                        const existingPlaybackRate: number = (
+                            clip.soundClipData != null
+                            ? clip.soundClipData.playbackRate
+                            : 1
+                        );
+                        this._doc.changeSoundClipPlaybackRate(clip, clamp(existingPlaybackRate / 2, Constants.PlaybackRateMin, Constants.PlaybackRateMax));
                         didChange = true;
                     }
                 }
@@ -1527,7 +1615,9 @@ export class Timeline implements Component {
                             // @TODO: Implement startOffset for pattern clips and remove this.
                             continue;
                         }
+                        let newSoundTimeStretchMode: TimeStretchMode = TimeStretchMode.None;
                         let newSoundStartOffset: number = 0;
+                        let newSoundPitchShift: number = 1;
                         let newPlaybackRate: number = 1;
                         if (clip.kind === Clip.Kind.Sound) {
                             const clipStartInSeconds: number = TempoMap.computeSecondsFromTick(
@@ -1535,18 +1625,19 @@ export class Timeline implements Component {
                                 TempoMap.findSectionIndexByTick(tempoMap.sections, clip.start),
                                 clip.start,
                             );
-                            const existingSoundStartOffset: number = (
-                                clip.soundClipData != null
-                                ? clip.soundClipData.startOffset
-                                : 0
-                            );
-                            const existingSoundPlaybackRate: number = (
-                                clip.soundClipData != null
-                                ? clip.soundClipData.playbackRate
-                                : 1
-                            );
-                            newPlaybackRate = existingSoundPlaybackRate;
-                            newSoundStartOffset = existingSoundStartOffset + (timeCursorInSeconds - clipStartInSeconds) * existingSoundPlaybackRate;
+                            if (clip.soundClipData != null) {
+                                const playbackRate: number = clip.soundClipData.playbackRate;
+                                const startOffset: number = clip.soundClipData.startOffset;
+                                newSoundTimeStretchMode = clip.soundClipData.timeStretchMode;
+                                newSoundStartOffset = startOffset + (timeCursorInSeconds - clipStartInSeconds) * playbackRate;
+                                newSoundPitchShift = clip.soundClipData.pitchShift;
+                                newPlaybackRate = playbackRate;
+                            } else {
+                                newSoundTimeStretchMode = TimeStretchMode.None;
+                                newSoundStartOffset = 0 + (timeCursorInSeconds - clipStartInSeconds) * 1;
+                                newSoundPitchShift = 1;
+                                newPlaybackRate = 1;
+                            }
                         }
                         if (newStart < clip.end) {
                             const newClip: Clip.Type = this._doc.insertClip(
@@ -1558,8 +1649,10 @@ export class Timeline implements Component {
                                 clip.soundId,
                             );
                             if (clip.kind === Clip.Kind.Sound) {
+                                this._doc.changeSoundClipTimeStretchMode(newClip, newSoundTimeStretchMode);
                                 this._doc.changeSoundClipPlaybackRate(newClip, newPlaybackRate);
                                 this._doc.changeSoundClipStartOffset(newClip, newSoundStartOffset);
+                                this._doc.changeSoundClipPitchShift(newClip, newSoundPitchShift);
                             }
                             this._doc.changeClipPosition(
                                 clip,
