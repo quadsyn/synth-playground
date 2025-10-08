@@ -1060,10 +1060,6 @@ export class Synthesizer {
                                 }
                             }
 
-                            // @TODO: The low and high quality time stretchers are not emitting the correct output
-                            // when a clip is split into two (and thus the 2nd clip ends up with a non-zero start
-                            // offset). It's very noticeable with playback rates closer to 0.
-
                             if (timeStretchMode === TimeStretchMode.HighQuality) {
                                 const stretch: SignalsmithTimeStretcher | null = activeClip.signalsmithTimeStretcher;
                                 if (stretch != null) {
@@ -1109,15 +1105,15 @@ export class Synthesizer {
                                     const a: number = t0 * grainPeriod;
                                     const aInt: number = Math.floor(a + 0.5);
                                     const pA: number = a - aInt;
-                                    const tA: number = Math.max(0, pA * grainSize * pitchShift + aInt * playbackRate * grainSize);
+                                    const tA: number = Math.max(0, pA * grainSize * pitchShift + aInt * playbackRate * grainSize + startOffsetInSamples);
                                     const wA: number = (Math.cos(2.0 * Math.PI * pA) * 0.5 + 0.5);
-                                    const sampleIndexA: number = Math.floor(tA + startOffsetInSamples) % soundLength;
+                                    const sampleIndexA: number = Math.floor(tA) % soundLength;
                                     const b: number = (t0 * grainPeriod) + 0.5;
                                     const bInt: number = Math.floor(b + 0.5);
                                     const pB: number = b - bInt;
-                                    const tB: number = Math.max(0, pB * grainSize * pitchShift + bInt * playbackRate * grainSize - playbackRate * halfGrainSize);
+                                    const tB: number = Math.max(0, pB * grainSize * pitchShift + bInt * playbackRate * grainSize - playbackRate * halfGrainSize + startOffsetInSamples);
                                     const wB: number = (Math.cos(2.0 * Math.PI * pB) * 0.5 + 0.5);
-                                    const sampleIndexB: number = Math.floor(tB + startOffsetInSamples) % soundLength;
+                                    const sampleIndexB: number = Math.floor(tB) % soundLength;
                                     const sampleLA0: number = dataL[sampleIndexA] * wA;
                                     const sampleRA0: number = dataR[sampleIndexA] * wA;
                                     const sampleLB0: number = dataL[sampleIndexB] * wB;
