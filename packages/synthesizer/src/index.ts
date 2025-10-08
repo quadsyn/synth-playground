@@ -460,7 +460,7 @@ class SignalsmithTimeStretcherPool {
         }
 
         const index: number = this.freeInstancesCount;
-        if (index > this.freeInstances.length) {
+        if (index >= this.freeInstances.length) {
             this.freeInstances.push(instance);
             this.freeInstancesCount++;
         } else {
@@ -472,7 +472,7 @@ class SignalsmithTimeStretcherPool {
     public createInstance(): void {
         const instance: SignalsmithTimeStretcher = new SignalsmithTimeStretcher();
         const index: number = this.freeInstancesCount;
-        if (index > this.freeInstances.length) {
+        if (index >= this.freeInstances.length) {
             this.freeInstances.push(instance);
             this.freeInstancesCount++;
         } else {
