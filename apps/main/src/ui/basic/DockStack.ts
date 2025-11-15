@@ -43,6 +43,7 @@ export class DockStack implements Component
 		this.initialRender();
     }
 
+	/** Loads the provided panel data, unloads the previous if any. It should be inserted in the DockStack first. */
     public activatePanel(panel: DockPanel)
     {
         if (this.activeHeader?.panel === panel) {
@@ -51,12 +52,13 @@ export class DockStack implements Component
 
 		this.activeHeader?.active.set(false, true);
         this.activeHeader = panel.header.data ?? null;
-        this.activeHeader?.active.set(true, true);
+		this.activeHeader?.active.set(true, true);
     }
 
+	/** Adds a panel to the DockStack. If beforePanel is provided, it will be inserted before that panel. */
     public insertPanel(panel: DockPanel, beforePanel?: DockPanel)
     {
-        this._element.appendChild(panel.element);
+		this._element.appendChild(panel.element);
 
 		panel.header.data?.dispose();
 		panel.header.data?.element.remove();
@@ -70,6 +72,10 @@ export class DockStack implements Component
         }
     }
 
+	/**
+	 * Removes a panel from the DockStack. If it's the active panel, the first panel (if any) is selected, and if
+	 * there are no panels, the DockStack is destroyed.
+	 */
     public removePanel(panel: DockPanel)
     {
         const header = panel.header;
@@ -98,6 +104,7 @@ export class DockStack implements Component
         }
     }
 
+	/** Returns how many panels are actively loaded. */
     public getPanelCount()
     {
         return this.headers.childElementCount;
@@ -309,7 +316,7 @@ export class DockStack implements Component
 		if (firstHeader) {
 			this.activatePanel(firstHeader.panel);
 		}
-    }
+	}
 
 	public dispose() {
 		DockStack.registry.remove(this.id);

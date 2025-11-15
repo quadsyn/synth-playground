@@ -15,7 +15,7 @@ import { type DockContentRegistry, DockView } from "./DockView.js";
 import { Registry } from "./Registry.js";
 import type { Component } from "../types.js";
 
-/** A flexbox of dockable containers with splitters generated between each. This can be laid out in a DockView. */
+/** A flexbox of DockStack or other DockStrip containers with splitters generated between each. This can be laid out in a DockView. */
 export class DockStrip implements Component
 {
 	public static tagName = "ff-dock-strip";
@@ -46,7 +46,7 @@ export class DockStrip implements Component
 		);
 		
 		this.initialize(true);
-		this.direction.onChanged.Sub(() => this.renderDirectionChanged);
+		this.direction.onChanged.Sub(this.renderDirectionChanged.bind(this));
 	}
 
     public insertPanel(panel: DockPanel, stack: DockStack, zone: DropZone) {

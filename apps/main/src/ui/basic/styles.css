@@ -638,14 +638,14 @@ button, input {
   padding: 1px 3px 2px 2px;
 }
 
-.ff-tab-header:active,
-.ff-dock-panel-header:active {
+.ff-tab-header[active],
+.ff-dock-panel-header[active] {
 	background: linear-gradient(color-mix(in lab, var(--color-background), #fff 18%)), var(--color-background);
     color: var(--color-text);
 }
 
-.ff-tab-header label,
-.ff-dock-panel-header label {
+.ff-tab-header button,
+.ff-dock-panel-header button {
 	pointer-events: none;
 }
 

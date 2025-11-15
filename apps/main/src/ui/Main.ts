@@ -108,13 +108,16 @@ export class Main implements ManualComponent {
         });
 
 		// TODO: tests! Remove
-		const dpTest = new DockPanel("TestA", true, true);
-		const dpTest2 = new DockPanel("TestB", true, true);
-		dpTest.element.appendChild(document.createTextNode("Contents of panel A."));
-		dpTest2.element.appendChild(document.createTextNode("Contents of panel B."));
+		const dpTest = new DockPanel();
+		const dpTest2 = new DockPanel();
 		this._ffDock = new DockStack();
 		this._ffDock.insertPanel(dpTest);
 		this._ffDock.insertPanel(dpTest2);
+		this._ffDock.activatePanel(dpTest);
+		dpTest.text.set("Instrument", false);
+		dpTest2.text.set("Timeline", false);
+		dpTest.element.appendChild(document.createTextNode("*saxophone noises*"));
+		dpTest2.element.appendChild(document.createTextNode("1 2 3 4 ...6? I forgot how to count :("));
 
         this._ui = new UIContext(
             (timestamp: number): void => { this.render(); },
@@ -419,7 +422,6 @@ export class Main implements ManualComponent {
             },
         ]);
         this.element.appendChild(this._menuBar.element);
-        this.element.appendChild(this._dockviewContainer);
 		this.element.appendChild(this._ffDock.element);
         this.element.appendChild(this._commandPaletteContainer);
         this.element.appendChild(this._menuContainer);

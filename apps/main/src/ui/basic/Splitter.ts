@@ -60,8 +60,8 @@ export class Splitter implements Component
 			`
 		});
 
-		this.direction.onChanged.Sub(() => this.renderHorizontalChanged);
-		this.width.onChanged.Sub(() => this.renderWidthChanged);
+		this.direction.onChanged.Sub(this.renderHorizontalChanged.bind(this));
+		this.width.onChanged.Sub(this.renderWidthChanged.bind(this));
 
         this.element.addEventListener("pointerdown", e => this.onPointerDown(e));
         this.element.addEventListener("pointermove", e => this.onPointerMove(e));

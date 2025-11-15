@@ -12,20 +12,20 @@ export class IconButton implements Component {
     public readonly icon: Observable<SVGElement>;
     public readonly disabled: Observable<boolean>;
 
-    private _onClick: (event: MouseEvent) => void;
+    private _onClick: undefined | ((event: MouseEvent) => void);
 
-    constructor(icon: SVGElement, onClick: (event: MouseEvent) => void) {
+    constructor(icon: SVGElement, onClick?: (event: MouseEvent) => void) {
         this._onClick = onClick;
 
         this.icon = new Observable(icon.cloneNode(true) as SVGElement);
 		this.disabled = new Observable(false);
 
-		this.icon.onChanged.Sub(() => this.renderIconChanged);
-		this.disabled.onChanged.Sub(() => this.renderDisabledChanged);
+		this.icon.onChanged.Sub(this.renderIconChanged.bind(this));
+		this.disabled.onChanged.Sub(this.renderDisabledChanged.bind(this));
 
         this.element = H("button", {
             type: "button",
-            class: buttonClassName,
+            class: `${buttonClassName} ${ffClass.icon}`,
 			style: `
 				display: inline;
 			`
@@ -47,7 +47,7 @@ export class IconButton implements Component {
     }
 
     private _handleClick = (event: MouseEvent): void => {
-        this._onClick(event);
+        this._onClick?.(event);
 
         event.stopPropagation();
     };

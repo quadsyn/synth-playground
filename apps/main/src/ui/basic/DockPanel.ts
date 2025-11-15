@@ -46,11 +46,18 @@ export class DockPanel implements Component
     static readonly dragDropMimeType: string = "application/x-ff-dock-panel";
     public static registry = new Registry<DockPanel>();
 
-    public readonly text: Observable<string>;
-    public readonly closable: Observable<boolean>;
-    public readonly movable: Observable<boolean>;
+    public readonly text = new Observable("");
+
+	/** If true, this panel can be closed. Only set this if the panel header is set via insertPanel on a DockStack. */
+    public readonly closable = new Observable(false);
+	
+	/** If true, and if this panel can't be closed, then this panel can be moved. Only set this if the panel header is set via insertPanel on a DockStack. */
+    public readonly movable = new Observable(true);
+
+	/** Setting this to true will make this panel active within its parent DockStack. */
     public readonly active = new Observable(false);
-    public readonly element: HTMLDivElement;
+
+	public readonly element: HTMLDivElement;
     public header = new Observable<DockPanelHeader | undefined>(undefined);
     public readonly id = DockPanel.registry.add(this);
 
@@ -63,15 +70,11 @@ export class DockPanel implements Component
 	 * attributes are set, you are responsible for creating a DockPanelHeader and giving it a reference to this panel
 	 * in order for those to display.
 	 */
-    constructor(title?: string, closable?: boolean, movable?: boolean)
-    {
-		this.text = new Observable(title ?? "");
-		this.closable = new Observable(closable ?? true);
-		this.movable = new Observable(movable ?? true);
-
+    constructor() {
 		this.element = H('div', {
 			class: DockPanel.tagName,
             style: `
+			    display: none;
                 flex: 1 1 100%;
                 position: relative;
                 flex-direction: column;
@@ -80,8 +83,7 @@ export class DockPanel implements Component
             `
         });
 
-		this.header.onChanging.Sub(() => this.renderHeaderChanging);
-        this.active.onChanged.Sub(() => this.renderActiveChanged);
+        this.active.onChanged.Sub(this.renderActiveChanged.bind(this));
 
         this.onDragOver = this.onDragOver.bind(this);
         this.onDragLeave = this.onDragLeave.bind(this);
@@ -94,13 +96,11 @@ export class DockPanel implements Component
         this.dropZone = DropZone.none;
     }
 
-    get parentStack(): DockStack | undefined
-    {
+    get parentStack(): DockStack | undefined {
 		return DockStack.registry.find(this.element.parentElement);
     }
 
-    public setLayout(layout: IDockPanelLayout, registry: DockContentRegistry)
-    {
+    public setLayout(layout: IDockPanelLayout, registry: DockContentRegistry) {
         this.text.set(layout.text ?? "", true);
         this.closable.set(layout.closable ?? false, true);
         this.movable.set(layout.movable ?? false, true);
@@ -116,8 +116,7 @@ export class DockPanel implements Component
         }
     }
 
-    public getLayout(): IDockPanelLayout
-    {
+    public getLayout(): IDockPanelLayout {
         return {
             contentId: this.contentId,
             text: this.text.data,
@@ -127,8 +126,7 @@ export class DockPanel implements Component
     }
 
 	/** Moves this panel relative to other panels in its parent stack. */
-    public movePanel(originPanelId: number, zone: DropZone)
-    {
+    public movePanel(originPanelId: number, zone: DropZone) {
         const panel = DockPanel.registry.get(originPanelId);
         if (!panel) { return; }
 
@@ -179,34 +177,18 @@ export class DockPanel implements Component
     }
 
 	/** If this panel is part of a DockStack, it becomes the active panel in its stack. */
-    public activatePanel()
-    {
+    public activatePanel() {
         this.parentStack?.activatePanel(this);
     }
 
 	/** Removes this panel from its DockStack, or if not in one, unloads the element and disposes the panel. */
-    public closePanel()
-    {
-		if (this.parentStack) {
-			this.parentStack.removePanel(this);
-		} else {
-			if (this.header.data?.element) {
-				this.header.data.element.remove();
-				this.header.data.dispose();
-			}
-
-			this.element.remove();
-		}
-        
-		this.dispose();
+    public closePanel() {
+		this.parentStack?.removePanel(this);
 
         // panel configuration has changed, send global resize event so components can adjust to new size
         setTimeout(() => window.dispatchEvent(new CustomEvent("resize")), 0);
     }
 
-	private renderHeaderChanging() {
-		this.header.data?.dispose();
-	}
 	private renderActiveChanged() {
 		this.element.style.setProperty("display", this.active.data ? "flex" : "none");
 	}
@@ -219,8 +201,7 @@ export class DockPanel implements Component
         this.element.removeEventListener("drop", this.onDrop);
     }
 
-    private onDragOver(event: DragEvent)
-    {
+    private onDragOver(event: DragEvent) {
         if (event.dataTransfer) {
             const items = Array.from(event.dataTransfer.items);
             if (items.some(item => item.type === DockPanel.dragDropMimeType)) {
@@ -236,16 +217,14 @@ export class DockPanel implements Component
         }
     }
 
-    private onDragLeave(_: DragEvent)
-    {
+    private onDragLeave(_: DragEvent) {
         if (this.dropZone !== DropZone.none) {
             this.dropZone = DropZone.none;
             this.updateDropMarker(false);
         }
     }
 
-    private onDrop(event: DragEvent)
-    {
+    private onDrop(event: DragEvent) {
         if (event.dataTransfer) {
             const items = Array.from(event.dataTransfer.items);
             if (items.some(item => item.type === DockPanel.dragDropMimeType)) {
@@ -266,8 +245,7 @@ export class DockPanel implements Component
         }
     }
 
-    private getDropZone(event: DragEvent): DropZone
-    {
+    private getDropZone(event: DragEvent): DropZone {
         const rect = this.element.getBoundingClientRect();
         const x = (event.clientX - rect.left) / rect.width;
         const y = (event.clientY - rect.top) / rect.height;
@@ -280,13 +258,12 @@ export class DockPanel implements Component
         return zone;
     }
 
-    private updateDropMarker(show: boolean)
-    {
+    private updateDropMarker(show: boolean) {
         const getStyle = () => `
             pointer-events: none;
             z-index: 1;
             position: absolute;
-            left: ${this.dropZone === DropZone.right ? "50%" : "0"};
+            left: ${this.dropZone !== DropZone.right ? "50%" : "0"};
             right: ${this.dropZone === DropZone.left ? "50%" : "0"};
             top: ${this.dropZone === DropZone.bottom ? "50%" : "0"};
             bottom: ${this.dropZone === DropZone.top ? "50%" : "0"};`;
