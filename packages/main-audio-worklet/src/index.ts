@@ -70,6 +70,7 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
         const outR: Float32Array = output[1];
         const playheadBuffer: Float32Array | null = outputCount > 1 ? outputs[1][0] : null;
         const timeTakenBuffer: Float32Array | null = outputCount > 2 ? outputs[2][0] : null;
+        const trackMeterBuffer: Float32Array | null = outputCount > 3 ? outputs[3][0] : null;
         const blockSize: number = outL.length;
         if (this.synthesizer.playing || this.synthesizer.playingPianoNote) {
             this.synthesizer.processBlock(
@@ -78,6 +79,7 @@ class SynthesizerAudioWorklet extends AudioWorkletProcessor {
                 outR,
                 playheadBuffer,
                 timeTakenBuffer,
+                trackMeterBuffer,
             );
         }
         if (this._quit) {

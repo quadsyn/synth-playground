@@ -1,3 +1,4 @@
+import { clamp } from "@synth-playground/common/math.js";
 import * as IITree from "@synth-playground/common/iitree.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import * as Uint32ToUint32Table from "@synth-playground/common/hash/table/Uint32ToUint32Table.js";
@@ -143,12 +144,16 @@ class TrackState {
     public activeClipsLength: number;
     public activeClipsByClipId: Uint64ToUint32Table.Type;
     public muted: boolean;
+    public peakLeft: number;
+    public peakRight: number;
 
     constructor() {
         this.activeClips = [];
         this.activeClipsLength = 0;
         this.activeClipsByClipId = Uint64ToUint32Table.make(4);
         this.muted = false;
+        this.peakLeft = 0;
+        this.peakRight = 0;
     }
 
     public pushActiveClip(clip: ClipState): void {
@@ -315,6 +320,8 @@ export class Synthesizer {
         const trackCount: number = this.trackStates.length;
         for (let i: number = 0; i < trackCount; i++) {
             const trackState: TrackState = this.trackStates[i];
+            trackState.peakLeft = 0;
+            trackState.peakRight = 0;
             trackState.activeClips = [];
             trackState.activeClipsLength = 0;
             Uint64ToUint32Table.clear(trackState.activeClipsByClipId);
@@ -521,6 +528,7 @@ export class Synthesizer {
         outR: Float32Array,
         playheadBuffer: Float32Array | null,
         timeTakenBuffer: Float32Array |  null,
+        trackMeterBuffer: Float32Array | null,
     ): void {
         // @TODO: This shouldn't really be costing me much (I hope...), but in
         // case it is, add a way to only enable this for development builds.
@@ -627,6 +635,15 @@ export class Synthesizer {
                     }
                 }
 
+                // @TODO: This is for the track peak meters. If I had an audio
+                // graph here, I'd compute the peaks from the intermediate track
+                // buffers which would be necessary for such a graph. I have not
+                // implemented that yet, so I'm arbitrarily picking the first
+                // sample of this run per track, and doing a sum of the samples
+                // produced by all of the clips in this track.
+                let trackOutSampleLeft: number = 0;
+                let trackOutSampleRight: number = 0;
+
                 const activeClips: (ClipState | null)[] = trackState.activeClips;
                 const activeClipCount: number = trackState.activeClipsLength;
                 for (let clipIndex: number = 0; clipIndex < activeClipCount; clipIndex++) {
@@ -680,6 +697,11 @@ export class Synthesizer {
 
                                 const outSampleL: number = outSample;
                                 const outSampleR: number = outSample;
+
+                                if (i === 0) {
+                                    trackOutSampleLeft += outSampleL;
+                                    trackOutSampleRight += outSampleR;
+                                }
 
                                 outL[bufferIndex + i] += outSampleL;
                                 outR[bufferIndex + i] += outSampleR;
@@ -754,6 +776,10 @@ export class Synthesizer {
                                     const sampleRB0: number = dataR[sampleIndexB] * wB;
                                     const outSampleL: number = sampleLA0 + sampleLB0;
                                     const outSampleR: number = sampleRA0 + sampleRB0;
+                                    if (i === 0) {
+                                        trackOutSampleLeft += outSampleL;
+                                        trackOutSampleRight += outSampleR;
+                                    }
                                     outL[bufferIndex + i] += outSampleL;
                                     outR[bufferIndex + i] += outSampleR;
                                     t0++;
@@ -772,6 +798,10 @@ export class Synthesizer {
                                     const sampleR1: number = dataR[sampleIndex1];
                                     const outSampleL: number = sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract;
                                     const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
+                                    if (i === 0) {
+                                        trackOutSampleLeft += outSampleL;
+                                        trackOutSampleRight += outSampleR;
+                                    }
                                     outL[bufferIndex + i] += outSampleL;
                                     outR[bufferIndex + i] += outSampleR;
                                     t = (t + playbackRate) % soundLength;
@@ -780,6 +810,9 @@ export class Synthesizer {
                         }
                     }
                 }
+
+                trackState.peakLeft = Math.abs(trackOutSampleLeft);
+                trackState.peakRight = Math.abs(trackOutSampleRight);
             }
 
             if (this.playingPianoNote) {
@@ -906,6 +939,27 @@ export class Synthesizer {
             const fraction: number = ((samplesPerTick - previousTickSampleCountdown) + (size - 1)) * invSamplesPerTick;
             const disambiguator: number = 1;
             playheadBuffer[playheadBuffer.length - 1] = (previousTick + fraction) + disambiguator;
+        }
+
+        if (this.playing)
+        if (trackMeterBuffer != null) {
+            const trackMeterBufferSize: number = trackMeterBuffer.length;
+            let trackMeterBufferIndex: number = trackMeterBufferSize - 1;
+            for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+                const trackState: TrackState = trackStates[trackIndex];
+                const peakLeft: number = trackState.peakLeft;
+                const peakRight: number = trackState.peakRight;
+                // We can identify the first value of the sequence by looking at
+                // its first bit. Subsequent values should have that set to 0.
+                const packedTrackIndex: number = (trackIndex << 1) | 1;
+                const encodedPeakLeft: number = (clamp(peakLeft, 0, 1) * 255) >>> 0;
+                const encodedPeakRight: number = (clamp(peakRight, 0, 1) * 255) >>> 0;
+                const packedPeaks: number = ((encodedPeakLeft << 8) | encodedPeakRight) << 1;
+                if (trackMeterBufferIndex > 0) {
+                    trackMeterBuffer[trackMeterBufferIndex--] = packedTrackIndex;
+                    trackMeterBuffer[trackMeterBufferIndex--] = packedPeaks;
+                }
+            }
         }
 
         const timeTakenEnd: number = Date.now();

@@ -85,7 +85,6 @@ export function drawClipBackground(
     const y: number = trackTop - 1;
     const h: number = clipHeaderHeight + bodyHeight;
 
-    // Draw clip background.
     // context.fillStyle = "#3090d0";
     context.fillStyle = "#0c6735";
     context.strokeStyle = "#000000";

@@ -95,3 +95,12 @@ export function mostSignificantPowerOf(x: number): number {
     x |= x >>> 16;
     return u32((x >>> 1) + (x & 1));
 }
+
+// @TODO: Find fast approximations for these.
+export function linearToDecibels(x: number): number {
+    // `x` should really be a ratio, but we just assume the reference amplitude is 1 here.
+    return 20.0 * Math.log10(x);
+}
+export function decibelsToLinear(x: number): number {
+    return Math.pow(10.0, x / 20.0);
+}

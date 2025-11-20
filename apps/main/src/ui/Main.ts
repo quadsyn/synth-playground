@@ -1,5 +1,6 @@
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../SongDocument.js";
+import * as TrackMeterState from "../data/TrackMeterState.js";
 import { type Component } from "./types.js";
 import { DockablePanel } from "./dockable/DockablePanel.js";
 import { UIContext } from "./UIContext.js";
@@ -633,6 +634,18 @@ export class Main implements Component {
     public render(): void {
         if (!this._mounted) {
             this.onDidMount();
+        }
+
+        if (this._isAnimating()) {
+            const dt: number = this._ui.dt;
+            this._doc.updateTrackMeterStates(this._ui.frame);
+            const trackCount: number = this._doc.project.song.tracks.length;
+            for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+                const state: TrackMeterState.Type = this._doc.trackMeterStates[trackIndex];
+                const peakLeft: number = state.peakLeft;
+                const peakRight: number = state.peakRight;
+                TrackMeterState.update(state, dt, peakLeft, peakRight);
+            }
         }
 
         this._menuBar.render();

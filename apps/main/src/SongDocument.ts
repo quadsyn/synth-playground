@@ -1,4 +1,4 @@
-import { clamp } from "@synth-playground/common/math.js";
+import { clamp, unlerp, linearToDecibels } from "@synth-playground/common/math.js";
 import * as LongId from "@synth-playground/common/LongId.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import * as Uint32ToUint32Table from "@synth-playground/common/hash/table/Uint32ToUint32Table.js";
@@ -21,6 +21,7 @@ import { MessageKind } from "@synth-playground/main-audio-worklet/MessageKind.js
 import { NotePitchBoundsTracker } from "./data/NotePitchBoundsTracker.js";
 import { type PatternInfo } from "./data/PatternInfo.js";
 import * as Peaks from "./data/Peaks.js";
+import * as TrackMeterState from "./data/TrackMeterState.js";
 
 // @TODO: Use the vscode design where .event can be used to register a listener,
 // but the emitter is not accessible from the outside.
@@ -81,6 +82,8 @@ export class SongDocument {
     public outputAnalyserTimeCounter: number | null;
     public playheadAnalyser: ValueAnalyser<number | null>;
     public timeTakenAnalyser: ValueAnalyser<number>;
+    public trackMeterStates: TrackMeterState.Type[];
+    public trackMeterAnalyser: ValueAnalyser<void>;
     public audioWorkletNode: AudioWorkletNode | null;
     public sentSongForTheFirstTime: boolean; // @TODO: Use a version number?
     public patternInfoCache: WeakMap<Pattern.Type, PatternInfo>;
@@ -183,12 +186,14 @@ export class SongDocument {
         this.samplesPerSecond = 48000;
 
         this.audioContext = null;
+
         this.fftSize = 2048;
         this.outputAnalyserNode = null;
         this.outputAnalyserBuffer = null;
         this.outputAnalyserFreqBuffer = null;
         this.outputAnalyserFreqCounter = null;
         this.outputAnalyserTimeCounter = null;
+
         this.playheadAnalyser = new ValueAnalyser(buffer => {
             if (buffer == null || !this.playing) {
                 return this.timeCursor;
@@ -206,6 +211,7 @@ export class SongDocument {
             }
             return playhead;
         });
+
         this.timeTakenAnalyser = new ValueAnalyser(buffer => {
             if (buffer == null || (!this.playing && !this.playingPianoNote)) {
                 return 0.0;
@@ -223,7 +229,62 @@ export class SongDocument {
             }
             return timeTaken;
         });
+
+        this.trackMeterStates = [];
+        const trackCount: number = this.project.song.tracks.length;
+        for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+            const state: TrackMeterState.Type = TrackMeterState.make();
+            this.trackMeterStates.push(state);
+        }
+
+        // @TODO: I probably should add special code for this instead of reusing
+        // ValueAnalyser.
+        this.trackMeterAnalyser = new ValueAnalyser(buffer => {
+            if (buffer == null || (!this.playing && !this.playingPianoNote)) {
+                return;
+            }
+
+            const trackCount: number = this.project.song.tracks.length;
+            const count: number = buffer.length;
+            for (let index: number = count - 1; index >= 0; index--) {
+                const value: number = buffer[index];
+                const isFirstValue: boolean = (value & 1) !== 0;
+                const hasNextValue: boolean = index > 0;
+                if (isFirstValue && hasNextValue) {
+                    const trackIndex: number = value >> 1;
+                    const nextValue: number = buffer[index - 1] >> 1;
+                    if (trackIndex >= 0 && trackIndex <= trackCount - 1) {
+                        const state: TrackMeterState.Type = this.trackMeterStates[trackIndex];
+                        // @TODO: Pass dt here somehow so I can call update.
+                        const peakLeftLinear: number = ((nextValue >> 8) & 0xFF) * (1.0 / 255.0);
+                        const peakRightLinear: number = (nextValue & 0xFF) * (1.0 / 255.0);
+                        const peakLeftDecibels: number = clamp(
+                            linearToDecibels(peakLeftLinear),
+                            TrackMeterState.Constants.MinDecibels,
+                            TrackMeterState.Constants.MaxDecibels
+                        );
+                        const peakRightDecibels: number = clamp(
+                            linearToDecibels(peakRightLinear),
+                            TrackMeterState.Constants.MinDecibels,
+                            TrackMeterState.Constants.MaxDecibels
+                        );
+                        state.peakLeft = unlerp(
+                            peakLeftDecibels,
+                            TrackMeterState.Constants.MinDecibels,
+                            TrackMeterState.Constants.MaxDecibels
+                        );
+                        state.peakRight = unlerp(
+                            peakRightDecibels,
+                            TrackMeterState.Constants.MinDecibels,
+                            TrackMeterState.Constants.MaxDecibels
+                        );
+                    }
+                }
+            }
+        });
+
         this.audioWorkletNode = null;
+
         this.sentSongForTheFirstTime = false;
 
         this._markProjectAsDirtyRequest = null;
@@ -265,13 +326,14 @@ export class SongDocument {
         }
         this.playheadAnalyser.create(this.audioContext);
         this.timeTakenAnalyser.create(this.audioContext);
+        this.trackMeterAnalyser.create(this.audioContext);
         this.audioWorkletNode = new AudioWorkletNode(
             this.audioContext,
             "SynthesizerAudioWorklet",
             {
                 numberOfInputs: 0,
-                numberOfOutputs: 3,
-                outputChannelCount: [2, 1, 1],
+                numberOfOutputs: 4,
+                outputChannelCount: [2, 1, 1, 1],
                 parameterData: {},
                 processorOptions: {},
             },
@@ -281,12 +343,14 @@ export class SongDocument {
         this.audioWorkletNode.connect(this.outputAnalyserNode, 0, 0);
         this.playheadAnalyser.plug(this.audioWorkletNode, 1);
         this.timeTakenAnalyser.plug(this.audioWorkletNode, 2);
+        this.trackMeterAnalyser.plug(this.audioWorkletNode, 3);
     }
 
     public destroyAudioContext(): void {
         if (this.audioContext != null) {
             this.playheadAnalyser.destroy();
             this.timeTakenAnalyser.destroy();
+            this.trackMeterAnalyser.destroy();
             this.audioContext.close();
             this.audioContext = null;
         }
@@ -327,6 +391,12 @@ export class SongDocument {
             from: clamp(this.timeCursor, 0, this.project.song.duration),
         });
 
+        const trackCount: number = this.project.song.tracks.length;
+        for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
+            const state: TrackMeterState.Type = this.trackMeterStates[trackIndex];
+            TrackMeterState.clear(state);
+        }
+
         this.playing = true;
         this.onStartedPlaying.notifyListeners();
     }
@@ -354,6 +424,8 @@ export class SongDocument {
         // this.audioWorkletNode = null;
 
         // @TODO: Suspend the audio context?
+
+        // @TODO: Clear track meter states?
 
         this.playing = false;
         this.onStoppedPlaying.notifyListeners();
@@ -443,6 +515,10 @@ export class SongDocument {
 
     public getTimeTaken(frame: number): number {
         return this.timeTakenAnalyser.getValue(frame);
+    }
+
+    public updateTrackMeterStates(frame: number): void {
+        this.trackMeterAnalyser.getValue(frame);
     }
 
     public setCurrentPattern(patternIndex: number, trackIndex: number, clipIndex: number): void {

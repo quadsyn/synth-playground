@@ -1,8 +1,10 @@
+import { clamp } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { BrowserSlider } from "../basic/BrowserSlider.js";
 import * as Lane from "./Lane.js";
+import * as TrackMeterState from "../../data/TrackMeterState.js";
 
 // @TODO:
 // - For event handling I'll need to record the track index here.
@@ -18,12 +20,15 @@ export class TrackOutlinerLane implements Component {
     private _trackSoloButton: HTMLButtonElement;
     private _trackControls: HTMLDivElement;
     private _trackLeftHandle: HTMLDivElement;
+    private _trackMeterContainer: HTMLDivElement;
+    private _trackMeter: TrackMeter;
     private _automationLabelDisplay: HTMLDivElement;
     private _automationControls: HTMLDivElement;
     private _kind: Lane.Kind;
     private _trackName: string;
     private _trackGain: number;
     private _trackPan: number;
+    private _trackMeterState: TrackMeterState.Type | null;
     private _automationLabel: string;
     private _visible: boolean;
     private _width: number;
@@ -57,6 +62,7 @@ export class TrackOutlinerLane implements Component {
         this._trackName = "";
         this._trackGain = 1;
         this._trackPan = 0;
+        this._trackMeterState = null;
         this._automationLabel = "";
         this._selected = false;
 
@@ -197,6 +203,12 @@ export class TrackOutlinerLane implements Component {
                 height: 100%;
             `,
         });
+        // @TODO: It'd be better to create this lazily, but the virtualization
+        // done in the outliner will make it pointless.
+        this._trackMeter = new TrackMeter(this._height);
+        this._trackMeterContainer = H("div", {},
+            this._trackMeter.element,
+        );
         this.element = H("div", {
             style: `
                 box-sizing: border-box;
@@ -227,12 +239,14 @@ export class TrackOutlinerLane implements Component {
                 this._trackControls,
                 this._automationControls,
             ),
+            this._trackMeterContainer,
         );
     }
 
     public dispose(): void {
         this._trackGainSlider.dispose();
         this._trackPanSlider.dispose();
+        this._trackMeter.dispose();
     }
 
     public render(): void {
@@ -240,14 +254,17 @@ export class TrackOutlinerLane implements Component {
             if (this._kind === Lane.Kind.Track) {
                 this._trackControls.style.display = "";
                 this._trackLeftHandle.style.display = "";
+                this._trackMeterContainer.style.display = "";
                 this._automationControls.style.display = "none";
             } else if (this._kind === Lane.Kind.Automation) {
                 this._trackControls.style.display = "none";
                 this._trackLeftHandle.style.display = "none";
+                this._trackMeterContainer.style.display = "none";
                 this._automationControls.style.display = "";
             } else if (this._kind === Lane.Kind.TempoAutomation) {
                 this._trackControls.style.display = "none";
                 this._trackLeftHandle.style.display = "none";
+                this._trackMeterContainer.style.display = "none";
                 this._automationControls.style.display = "";
             }
             this._renderedKind = this._kind;
@@ -296,6 +313,18 @@ export class TrackOutlinerLane implements Component {
 
                 this._trackPanSlider.setValue(this._trackPan);
                 this._trackPanSlider.render();
+
+                if (this._trackMeterState != null) {
+                    const peakLeft: number = this._trackMeterState.peakLeft;
+                    const peakRight: number = this._trackMeterState.peakRight;
+                    const trailLeft: number = this._trackMeterState.trailLeft;
+                    const trailRight: number = this._trackMeterState.trailRight;
+                    this._trackMeter.setState(peakLeft, peakRight, trailLeft, trailRight);
+                } else {
+                    this._trackMeter.setState(0, 0, 0, 0);
+                }
+                this._trackMeter.setHeight(this._height);
+                this._trackMeter.render();
             } else if (this._kind === Lane.Kind.Automation) {
                 if (this._renderedAutomationLabel !== this._automationLabel) {
                     this._automationLabelDisplay.textContent = this._automationLabel;
@@ -350,11 +379,179 @@ export class TrackOutlinerLane implements Component {
         this._trackPan = pan;
     }
 
+    public setTrackMeterState(state: TrackMeterState.Type | null): void {
+        this._trackMeterState = state;
+    }
+
     public setAutomationLabel(label: string): void {
         this._automationLabel = label;
     }
 
     public setSelected(selected: boolean): void {
         this._selected = selected;
+    }
+}
+
+class TrackMeter implements Component {
+    public element: HTMLCanvasElement;
+    private _width: number;
+    private _height: number;
+    private _resized: boolean;
+    private _trailSize: number;
+    private _context: CanvasRenderingContext2D;
+    private _peakLeft: number;
+    private _peakRight: number;
+    private _renderedPeakLeft: number;
+    private _renderedPeakRight: number;
+    private _trailLeft: number;
+    private _trailRight: number;
+    private _renderedTrailLeft: number;
+    private _renderedTrailRight: number;
+
+    constructor(height: number) {
+        this._width = 10;
+        this._height = height;
+        this._resized = true;
+
+        this._trailSize = 1;
+
+        this._peakLeft = 0;
+        this._peakRight = 0;
+        this._renderedPeakLeft = this._peakLeft;
+        this._renderedPeakRight = this._peakRight;
+        this._trailLeft = 0;
+        this._trailRight = 0;
+        this._renderedTrailLeft = this._trailLeft;
+        this._renderedTrailRight = this._trailRight;
+
+        this.element = H("canvas", {
+            width: this._width + "",
+            height: this._height + "",
+            style: `
+                width: ${this._width}px;
+                height: ${this._height}px;
+                outline: 1px solid #000000;
+                background: #222222;
+            `,
+        });
+
+        this._context = this.element.getContext("2d")!;
+    }
+
+    public dispose(): void {
+    }
+
+    public render(): void {
+        let cleared: boolean = false;
+
+        let dirty: boolean = (
+            this._peakLeft !== this._renderedPeakLeft
+            || this._peakRight !== this._renderedPeakRight
+            || this._trailLeft !== this._renderedTrailLeft
+            || this._trailRight !== this._renderedTrailRight
+        );
+
+        if (this._resized) {
+            this.element.width = this._width;
+            this.element.height = this._height;
+            this.element.style.width = this._width + "px";
+            this.element.style.height = this._height + "px";
+            this._resized = false;
+            cleared = true;
+            dirty = true;
+        }
+
+        const width: number = this._width;
+        const halfWidth: number = width * 0.5;
+        const height: number = this._height;
+        const context: CanvasRenderingContext2D = this._context;
+
+        if (!dirty) {
+            return;
+        }
+
+        if (!cleared) {
+            context.clearRect(0, 0, width, height);
+            cleared = true;
+        }
+
+        const trailSize: number = this._trailSize;
+        const verticalRange: number = (height + 1) + trailSize;
+
+        const peakLeft: number = clamp(this._peakLeft, 0, 1);
+        const peakRight: number = clamp(this._peakRight, 0, 1);
+        const trailLeft: number = clamp(this._trailLeft, 0, 1);
+        const trailRight: number = clamp(this._trailRight, 0, 1);
+
+        const leftX: number = 0;
+        const leftW: number = halfWidth - 1;
+        const leftY0: number = ((1.0 - peakLeft) * verticalRange + trailSize) | 0;
+        const leftY1: number = (height + trailSize) | 0;
+        const leftY: number = leftY0;
+        const leftH: number = leftY1 - leftY0;
+
+        const trailLeftX: number = leftX;
+        const trailLeftW: number = leftW;
+        const trailLeftY1: number = ((1.0 - trailLeft) * verticalRange + trailSize) | 0;
+        const trailLeftY0: number = (trailLeftY1 - trailSize) | 0;
+        const trailLeftY: number = trailLeftY0;
+        const trailLeftH: number = trailLeftY1 - trailLeftY0;
+
+        const rightX: number = leftX + leftW + 1;
+        const rightW: number = halfWidth - 1;
+        const rightY0: number = ((1.0 - peakRight) * verticalRange + trailSize) | 0;
+        const rightY1: number = (height + trailSize) | 0;
+        const rightY: number = rightY0;
+        const rightH: number = rightY1 - rightY0;
+
+        const trailRightX: number = rightX;
+        const trailRightW: number = rightW;
+        const trailRightY1: number = ((1.0 - trailRight) * verticalRange + trailSize) | 0;
+        const trailRightY0: number = (trailRightY1 - trailSize) | 0;
+        const trailRightY: number = trailRightY0;
+        const trailRightH: number = trailRightY1 - trailRightY0;
+
+        // @TODO: Only set this when needed.
+        context.fillStyle = "#28f16b";
+
+        if (leftY < height) {
+            context.fillRect(leftX, leftY, leftW, leftH);
+        }
+        if (trailLeftY < height) {
+            context.fillRect(trailLeftX, trailLeftY, trailLeftW, trailLeftH);
+        }
+        if (rightY < height) {
+            context.fillRect(rightX, rightY, rightW, rightH);
+        }
+        if (trailRightY < height) {
+            context.fillRect(trailRightX, trailRightY, trailRightW, trailRightH);
+        }
+
+        this._renderedPeakLeft = this._peakLeft;
+        this._renderedPeakRight = this._peakRight;
+        this._renderedTrailLeft = this._trailLeft;
+        this._renderedTrailRight = this._trailRight;
+    }
+
+    /** The values are expected to be normalized (i.e. in the range [0, 1]). */
+    public setState(
+        peakLeft: number,
+        peakRight: number,
+        trailLeft: number,
+        trailRight: number,
+    ): void {
+        // @TODO: Take bytes instead?
+        this._peakLeft = peakLeft;
+        this._peakRight = peakRight;
+        this._trailLeft = trailLeft;
+        this._trailRight = trailRight;
+    }
+
+    public setHeight(height: number): void {
+        const changed: boolean = height !== this._height;
+        if (changed) {
+            this._height = height;
+            this._resized = true;
+        }
     }
 }

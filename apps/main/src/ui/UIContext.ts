@@ -9,6 +9,9 @@ export type RenderFunction = (timestamp: number) => void;
 export class UIContext {
     public resizeObserver: CoordinatedResizeObserver;
     public frame: number;
+    public timestamp: number;
+    public previousTimestamp: number;
+    public dt: number;
     public inputManager: InputManager;
     public dialogManager: DialogManager;
     public localizationManager: LocalizationManager;
@@ -25,6 +28,9 @@ export class UIContext {
         dialogManager: DialogManager,
     ) {
         this.frame = 0;
+        this.timestamp = 0;
+        this.previousTimestamp = 0;
+        this.dt = 1;
         this._mainRenderFn = mainRenderFn;
         this._mainRenderRequest = null;
         this._animating = false;
@@ -76,6 +82,9 @@ export class UIContext {
         }
 
         this.frame++;
+        this.previousTimestamp = this.timestamp;
+        this.timestamp = timestamp;
+        this.dt = (this.timestamp - this.previousTimestamp) * 0.001;
 
         // @TODO: Use a specialized animation render function instead?
         this._mainRenderFn(timestamp);

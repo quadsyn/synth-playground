@@ -1,3 +1,4 @@
+import { insideRange } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { SongDocument } from "../../SongDocument.js";
 import { type Component } from "../types.js";
@@ -9,6 +10,7 @@ import * as Lane from "./Lane.js";
 import { type LaneLayout } from "./LaneLayout.js";
 import { LaneManager } from "./LaneManager.js";
 import { TrackOutlinerLane } from "./TrackOutlinerLane.js";
+import * as TrackMeterState from "../../data/TrackMeterState.js";
 
 // @TODO:
 // - When one of the elements inside a lane gets focus, the lanes will shift
@@ -111,10 +113,11 @@ export class TrackOutliner implements Component {
         }
         // Excess elements are hidden below.
 
+        const laneElementCount: number = this._laneElements.length;
+        let laneElementIndex: number = 0;
+
         // Update lane elements.
         if (dirty) {
-            const laneElementCount: number = this._laneElements.length;
-            let laneElementIndex: number = 0;
             if (firstLaneIndex !== -1) {
                 // Render all visible lanes.
                 let laneIndex: number = firstLaneIndex;
@@ -126,12 +129,19 @@ export class TrackOutliner implements Component {
                     const depth: number = lane.depth;
                     const kind: Lane.Kind = lane.kind;
                     const trackIndex: number = lane.trackIndex;
+                    const trackMeterState: TrackMeterState.Type | null = (
+                        insideRange(trackIndex, 0, this._doc.trackMeterStates.length - 1)
+                        ? this._doc.trackMeterStates[trackIndex]
+                        : null
+                    );
                     const indent: number = Lane.IndentSize * depth;
                     const y0: number = laneLayout.y0 - viewportY0;
                     // const y1: number = laneLayout.y1 - viewportY0;
+
                     if (y0 > height) {
                         break;
                     }
+
                     laneElement.setVisible(true);
                     laneElement.setHasTopBorder(laneIndex === 0);
                     laneElement.setTop(y0);
@@ -139,6 +149,7 @@ export class TrackOutliner implements Component {
                     laneElement.setWidth(width - indent);
                     laneElement.setHeight(laneHeight);
                     laneElement.setKind(kind);
+
                     if (kind === Lane.Kind.Track) {
                         const track: Track.Type = this._doc.project.song.tracks[trackIndex];
                         const trackGain: number = track.gain;
@@ -148,13 +159,16 @@ export class TrackOutliner implements Component {
                         laneElement.setTrackName(trackName);
                         laneElement.setTrackGain(trackGain);
                         laneElement.setTrackPan(trackPan);
+                        laneElement.setTrackMeterState(trackMeterState);
                         laneElement.setSelected(trackIndex === this._selectedTrackIndex);
                     } else if (kind === Lane.Kind.TempoAutomation) {
                         // @TODO: Cached localization.
                         laneElement.setAutomationLabel("Tempo");
                         laneElement.setSelected(false); // @TODO: Track this?
+                        laneElement.setTrackMeterState(null);
                     } else if (kind === Lane.Kind.Automation) {
                         laneElement.setSelected(false);
+                        laneElement.setTrackMeterState(null);
                     }
                     laneElement.render();
 
@@ -162,6 +176,7 @@ export class TrackOutliner implements Component {
                     laneIndex++;
                 }
             }
+
             // Hide the excess.
             while (laneElementIndex < laneElementCount) {
                 const laneElement: TrackOutlinerLane = this._laneElements[laneElementIndex];
@@ -169,6 +184,40 @@ export class TrackOutliner implements Component {
                 laneElement.render();
 
                 laneElementIndex++;
+            }
+        } else if (this._doc.playing || this._doc.playingPianoNote) {
+            // Special case: if there's audio playing, and no structural changes
+            // have happened here (i.e. `dirty` is false), then we still need to
+            // update track meters.
+
+            if (firstLaneIndex !== -1) {
+                // Iterate over all visible lanes.
+                let laneIndex: number = firstLaneIndex;
+                while (laneElementIndex < laneElementCount && laneIndex < laneCount) {
+                    const laneElement: TrackOutlinerLane = this._laneElements[laneElementIndex];
+                    const lane: Lane.Type = lanes[laneIndex];
+                    const laneLayout: LaneLayout = laneLayouts[laneIndex];
+                    const kind: Lane.Kind = lane.kind;
+                    const trackIndex: number = lane.trackIndex;
+                    const trackMeterState: TrackMeterState.Type | null = (
+                        insideRange(trackIndex, 0, this._doc.trackMeterStates.length - 1)
+                        ? this._doc.trackMeterStates[trackIndex]
+                        : null
+                    );
+                    const y0: number = laneLayout.y0 - viewportY0;
+
+                    if (y0 > height) {
+                        break;
+                    }
+
+                    if (kind === Lane.Kind.Track) {
+                        laneElement.setTrackMeterState(trackMeterState);
+                        laneElement.render();
+                    }
+
+                    laneElementIndex++;
+                    laneIndex++;
+                }
             }
         }
 
