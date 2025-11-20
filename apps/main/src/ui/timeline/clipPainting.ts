@@ -1,4 +1,11 @@
-import { remap, clamp, rangesOverlap } from "@synth-playground/common/math.js";
+import {
+    remap,
+    clamp,
+    rangesOverlap,
+    u8ToI8,
+    mostSignificantPowerOf,
+    leastSignificantPowerOf,
+} from "@synth-playground/common/math.js";
 import * as Uint32ToUint32Table from "@synth-playground/common/hash/table/Uint32ToUint32Table.js";
 import * as Uint64ToUint32Table from "@synth-playground/common/hash/table/Uint64ToUint32Table.js";
 import * as Note from "@synth-playground/synthesizer/data/Note.js";
@@ -10,6 +17,7 @@ import * as TempoMap from "@synth-playground/synthesizer/data/TempoMap.js";
 import * as Viewport from "../common/Viewport.js";
 import { type PatternInfo } from "../../data/PatternInfo.js";
 import { NotePitchBoundsTracker } from "../../data/NotePitchBoundsTracker.js";
+import * as Peaks from "../../data/Peaks.js";
 
 const clipHeaderHeight: number = 15;
 
@@ -172,6 +180,7 @@ export function drawClipContents(
     context: CanvasRenderingContext2D,
     project: Project.Type,
     patternInfoCache: WeakMap<Pattern.Type, PatternInfo>,
+    peaksCache: WeakMap<Sound.Type, Peaks.Type>,
     tempoMap: TempoMap.Type,
     samplesPerSecond: number,
     clip: Clip.Type,
@@ -216,6 +225,7 @@ export function drawClipContents(
                 canvasHeight,
                 context,
                 project,
+                peaksCache,
                 tempoMap,
                 samplesPerSecond,
                 clip,
@@ -352,6 +362,7 @@ function drawSoundClipContents(
     canvasHeight: number,
     context: CanvasRenderingContext2D,
     project: Project.Type,
+    peaksCache: WeakMap<Sound.Type, Peaks.Type>,
     tempoMap: TempoMap.Type,
     samplesPerSecond: number,
     clip: Clip.Type,
@@ -388,12 +399,21 @@ function drawSoundClipContents(
         clip.soundId,
     );
     if (soundTableIndex === -1) {
-        throw new Error("Couldn't find sound index");
+        console.error("Couldn't find sound " + clip.soundId);
+        return;
     }
     const soundIndex: number = Uint32ToUint32Table.getValueFromIndex(soundsById, soundTableIndex);
     const sound: Sound.Type = project.sounds[soundIndex];
     const dataL: Float32Array = sound.dataL;
+    const dataR: Float32Array | null = sound.dataR;
     const soundDurationInSamples: number = dataL.length;
+    const channelCount: number = sound.dataR != null ? 2 : 1;
+
+    const peaks: Peaks.Type | undefined = peaksCache.get(sound);
+    if (peaks == null) {
+        console.error("Couldn't find peaks for sound " + sound.id);
+        return;
+    }
 
     context.fillStyle = "#17d15b";
 
@@ -453,66 +473,48 @@ function drawSoundClipContents(
     let relativeTimeInSamples0: number = (((
         absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds
     ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
-    let relativeTimeInSamples1: number = (((
-        absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
-    ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
+    // let relativeTimeInSamples1: number = (((
+    //     absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
+    // ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
 
     let peakX: number = ((visibleStartTick - viewportX0) * pixelsPerTick) | 0;
     let peakNextX: number = ((absoluteTimeInTicks1 - viewportX0) * pixelsPerTick) | 0;
     const peakEndX: number = Math.min(x + w, ((visibleEndTick - viewportX0) * pixelsPerTick) | 0);
     const peakTopY: number = y + headerHeight;
-    let hasPrevPeakY: boolean = false;
-    let prevPeakY0: number = 0;
-    let prevPeakY1: number = 0;
+    const peakCenterY: number = peakTopY + halfBodyHeight;
+    const halfChannelHeight: number = channelCount === 2 ? (halfBodyHeight * 0.5) : halfBodyHeight;
+    const peakCenterYL: number = channelCount === 2 ? (peakCenterY - halfChannelHeight) : peakCenterY;
+    const peakCenterYR: number = channelCount === 2 ? (peakCenterY + halfChannelHeight) : peakCenterY;
 
     while (peakX < peakEndX) {
         if (regionDurationInTicks > 0) {
-            // @TODO: Store a downsampled copy of the sound's peaks. This gets
-            // slower and slower the more times we loop through the sound.
-            let peakMin: number = Infinity;
-            let peakMax: number = -Infinity;
-            let peakSampleIndex: number = clamp(
+            const visualGain: number = 1;
+            const sampleStartIndex: number = clamp(
                 ((relativeTimeInSamples0 % soundDurationInSamples) | 0),
                 0,
                 soundDurationInSamples - 1
             );
-            const peakSampleEndIndex: number = peakSampleIndex + Math.max(1, samplesPerPixel | 0);
-            while (peakSampleIndex < peakSampleEndIndex) {
-                if (peakSampleIndex >= soundDurationInSamples || peakSampleIndex > relativeTimeInSamples1) {
-                    break;
-                }
-                const sample: number = dataL[peakSampleIndex];
-                peakMin = Math.min(peakMin, sample);
-                peakMax = Math.max(peakMax, sample);
-                peakSampleIndex++;
-            }
-            if (peakMin === Infinity) {
-                peakMin = 0;
-                peakMax = 0;
-            }
-            relativeTimeInSamples0 += samplesPerPixel;
-
-            const visualGain: number = 1;
-            const nextPeakY0: number = (
-                (peakTopY + halfBodyHeight - clamp(peakMax * visualGain, -1, 1) * halfBodyHeight) | 0
+            const startX: number = peakX;
+            const endX: number = Math.min(
+                Math.min(peakX + (soundDurationInSamples - sampleStartIndex) / samplesPerPixel, peakNextX),
+                peakEndX
             );
-            const nextPeakY1: number = (
-                (peakTopY + halfBodyHeight - clamp(peakMin * visualGain, -1, 1) * halfBodyHeight) | 0
+            drawSoundClipWaveform(
+                context,
+                dataL,
+                dataR,
+                peaks,
+                samplesPerPixel,
+                sampleStartIndex,
+                startX,
+                endX,
+                peakCenterYL,
+                peakCenterYR,
+                halfChannelHeight,
+                visualGain,
             );
-            const peakY0: number = hasPrevPeakY ? Math.min(prevPeakY1, nextPeakY0) : nextPeakY0;
-            const peakY1: number = hasPrevPeakY ? Math.max(prevPeakY0, nextPeakY1) : nextPeakY1;
-            const peakY: number = peakY0;
-            const peakH: number = Math.max(1, peakY1 - peakY0);
-            hasPrevPeakY = true;
-            prevPeakY0 = peakY0;
-            prevPeakY1 = peakY1;
-
-            const peakX0: number = peakX;
-            const peakX1: number = Math.min(x + w, peakX0 + peakW);
-
-            context.fillRect(peakX, peakY, peakX1 - peakX0, peakH);
-
-            peakX += peakW;
+            relativeTimeInSamples0 += (endX - startX) * samplesPerPixel;
+            peakX = endX;
         }
 
         if (regionDurationInTicks <= 0 || peakX >= peakNextX) {
@@ -535,11 +537,322 @@ function drawSoundClipContents(
             relativeTimeInSamples0 = (((
                 absoluteTimeInSeconds0 - startAbsoluteTimeInSeconds
             ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
-            relativeTimeInSamples1 = (((
-                absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
-            ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
+            // relativeTimeInSamples1 = (((
+            //     absoluteTimeInSeconds1 - startAbsoluteTimeInSeconds
+            // ) * soundPlaybackRate + soundStartOffsetInSeconds) * samplesPerSecond) | 0;
 
             peakNextX = ((absoluteTimeInTicks1 - viewportX0) * pixelsPerTick) | 0;
         }
+    }
+}
+
+// @TODO:
+// - If `samplesPerPixel >= (sampleCount >>> 1)`, I could draw a large rectangle
+//   from `startX` to `endX` and use the total min and max. Around that point
+//   the aliasing becomes very confusing visually anyway.
+// - The scheduled rectangle stuff may not be worth keeping.
+
+function drawSoundClipWaveform(
+    context: CanvasRenderingContext2D,
+    dataL: Float32Array,
+    dataR: Float32Array | null,
+    peaks: Peaks.Type,
+    samplesPerPixel: number,
+    sampleStartIndex: number,
+    startX: number,
+    endX: number,
+    centerYL: number,
+    centerYR: number,
+    halfChannelHeight: number,
+    visualGain: number,
+): void {
+    const samplesPerBlock: number = peaks.samplesPerBlock;
+    const sampleCount: number = dataL.length;
+    const channelCount: number = dataR != null ? 2 : 1;
+
+    let minL: number = 0;
+    let maxL: number = 0;
+    let minR: number = 0;
+    let maxR: number = 0;
+
+    // We store the vertical bounds of the previous peak to fill gaps.
+    let hasPrevPeak: boolean = false;
+    let prevPeakY0L: number = 0;
+    let prevPeakY1L: number = 0;
+    let prevPeakY0R: number = 0;
+    let prevPeakY1R: number = 0;
+
+    // This is to support merging adjacent rectangles.
+    let scheduledRectL: boolean = false;
+    let scheduledRectXL: number = 0;
+    let scheduledRectYL: number = 0;
+    let scheduledRectWL: number = 0;
+    let scheduledRectHL: number = 0;
+    let scheduledRectR: boolean = false;
+    let scheduledRectXR: number = 0;
+    let scheduledRectYR: number = 0;
+    let scheduledRectWR: number = 0;
+    let scheduledRectHR: number = 0;
+
+    let x: number = startX;
+
+    let i0: number = sampleStartIndex;
+    let i1: number = i0 + samplesPerPixel;
+
+    if (samplesPerPixel < samplesPerBlock) {
+        // This is what I initially implemented: the minimum and maximum peaks
+        // are computed directly from the stored audio. This gets slow quickly.
+        while (x < endX) {
+            // Compute peaks.
+            minL = Infinity;
+            maxL = -Infinity;
+            const peakSampleStartIndex: number = Math.floor(i0);
+            const peakSampleEndIndex: number = Math.floor(i1);
+            let peakSampleIndex: number = peakSampleStartIndex;
+            while (peakSampleIndex < peakSampleEndIndex) {
+                if (peakSampleIndex >= sampleCount) break;
+                const sampleL: number = clamp(dataL[peakSampleIndex] * visualGain, -1, 1);
+                minL = Math.min(minL, sampleL);
+                maxL = Math.max(maxL, sampleL);
+                peakSampleIndex++;
+            }
+            if (minL === Infinity) minL = maxL = 0;
+            if (channelCount === 2) {
+                minR = Infinity;
+                maxR = -Infinity;
+                peakSampleIndex = peakSampleStartIndex;
+                while (peakSampleIndex < peakSampleEndIndex) {
+                    if (peakSampleIndex >= sampleCount) break;
+                    const sampleR: number = clamp(dataR![peakSampleIndex] * visualGain, -1, 1);
+                    minR = Math.min(minR, sampleR);
+                    maxR = Math.max(maxR, sampleR);
+                    peakSampleIndex++;
+                }
+                if (minR === Infinity) minR = maxR = 0;
+            }
+
+            i0 = i1;
+            i1 += samplesPerPixel;
+
+            const peakX: number = x | 0;
+            const peakW: number = 1;
+
+            // Draw left channel.
+            const nextPeakY0L: number = (maxL * -halfChannelHeight + centerYL) | 0;
+            const nextPeakY1L: number = (minL * -halfChannelHeight + centerYL) | 0;
+            const peakY0L: number = hasPrevPeak ? Math.min(prevPeakY1L, nextPeakY0L) : nextPeakY0L;
+            const peakY1L: number = hasPrevPeak ? Math.max(prevPeakY0L, nextPeakY1L) : nextPeakY1L;
+            const peakYL: number = peakY0L;
+            let peakHL = peakY1L - peakY0L;
+            if (peakHL > -1 && peakHL < 1) peakHL = 1;
+            prevPeakY0L = peakY0L;
+            prevPeakY1L = peakY1L;
+
+            if (!scheduledRectL) {
+                scheduledRectL = true;
+                scheduledRectXL = peakX;
+                scheduledRectYL = peakYL;
+                scheduledRectWL = peakW;
+                scheduledRectHL = peakHL;
+            } else {
+                if (scheduledRectYL === peakYL && scheduledRectHL === peakHL) {
+                    // Merge with previous scheduled rectangle.
+                    scheduledRectWL++;
+                } else {
+                    // Can't merge, so draw the previous rectangle, and schedule
+                    // this one.
+                    context.fillRect(scheduledRectXL, scheduledRectYL, scheduledRectWL, scheduledRectHL);
+                    scheduledRectXL = peakX;
+                    scheduledRectYL = peakYL;
+                    scheduledRectWL = peakW;
+                    scheduledRectHL = peakHL;
+                }
+            }
+
+            // Draw right channel.
+            if (channelCount === 2) {
+                const nextPeakY0R: number = (maxR * -halfChannelHeight + centerYR) | 0;
+                const nextPeakY1R: number = (minR * -halfChannelHeight + centerYR) | 0;
+                const peakY0R: number = hasPrevPeak ? Math.min(prevPeakY1R, nextPeakY0R) : nextPeakY0R;
+                const peakY1R: number = hasPrevPeak ? Math.max(prevPeakY0R, nextPeakY1R) : nextPeakY1R;
+                const peakYR: number = peakY0R;
+                let peakHR: number = peakY1R - peakY0R;
+                if (peakHR > -1 && peakHR < 1) peakHR = 1;
+                prevPeakY0R = peakY0R;
+                prevPeakY1R = peakY1R;
+
+                if (!scheduledRectR) {
+                    scheduledRectR = true;
+                    scheduledRectXR = peakX;
+                    scheduledRectYR = peakYR;
+                    scheduledRectWR = peakW;
+                    scheduledRectHR = peakHR;
+                } else {
+                    if (scheduledRectYR === peakYR && scheduledRectHR === peakHR) {
+                        // Merge with previous scheduled rectangle.
+                        scheduledRectWR++;
+                    } else {
+                        // Can't merge, so draw the previous rectangle, and schedule
+                        // this one.
+                        context.fillRect(scheduledRectXR, scheduledRectYR, scheduledRectWR, scheduledRectHR);
+                        scheduledRectXR = peakX;
+                        scheduledRectYR = peakYR;
+                        scheduledRectWR = peakW;
+                        scheduledRectHR = peakHR;
+                    }
+                }
+            }
+
+            hasPrevPeak = true;
+
+            x++;
+        }
+    } else {
+        // Zooming out more, peaks are computed via a segment tree.
+
+        const tree: Uint16Array = peaks.data;
+        const peakCount: number = peaks.length;
+        const leafCount: number = (peakCount + 1) >>> 1;
+        const invSamplesPerBlock: number = 1.0 / samplesPerBlock;
+        const normalizationFactor: number = (1.0 / 127.0) * visualGain;
+
+        while (x < endX) {
+            // Compute indices appropriate for the peak cache.
+            let index0 = (i0 * invSamplesPerBlock) >>> 0;
+            let index1 = (i1 * invSamplesPerBlock) >>> 0;
+
+            // Get peaks from cache.
+            minL = 0;
+            maxL = 0;
+            minR = 0;
+            maxR = 0;
+            if (channelCount === 2) {
+                // Inlined copy of Peaks.queryStereo.
+                if (!((index0 < 0 && index1 <= 0) || (index0 >= leafCount && index1 > leafCount))) {
+                    if (index0 >= index1) index1 = index0 + 1;
+                    index0 = clamp(index0, 0, leafCount - 1) * 2;
+                    index1 = clamp(index1, 0, leafCount) * 2;
+                    let offset: number = leastSignificantPowerOf(index0 | mostSignificantPowerOf(index1 - index0));
+                    let packedIndex: number = (index0 - 1 + (offset >>> 1)) * 2;
+                    let packedL: number = tree[packedIndex + 0];
+                    let packedR: number = tree[packedIndex + 1];
+                    minL = u8ToI8(packedL >> 8);
+                    maxL = u8ToI8(packedL & 0xFF);
+                    minR = u8ToI8(packedR >> 8);
+                    maxR = u8ToI8(packedR & 0xFF);
+                    for (index0 += offset; index0 < index1; index0 += offset) {
+                        offset = leastSignificantPowerOf(index0 | mostSignificantPowerOf(index1 - index0));
+                        packedIndex = (index0 - 1 + (offset >>> 1)) * 2;
+                        packedL = tree[packedIndex + 0];
+                        packedR = tree[packedIndex + 1];
+                        minL = Math.min(minL, u8ToI8(packedL >> 8));
+                        maxL = Math.max(maxL, u8ToI8(packedL & 0xFF));
+                        minR = Math.min(minR, u8ToI8(packedR >> 8));
+                        maxR = Math.max(maxR, u8ToI8(packedR & 0xFF));
+                    }
+                }
+            } else {
+                // Inlined copy of Peaks.queryMono.
+                if (!((index0 < 0 && index1 <= 0) || (index0 >= leafCount && index1 > leafCount))) {
+                    if (index0 >= index1) index1 = index0 + 1;
+                    index0 = clamp(index0, 0, leafCount - 1) * 2;
+                    index1 = clamp(index1, 0, leafCount) * 2;
+                    let offset: number = leastSignificantPowerOf(index0 | mostSignificantPowerOf(index1 - index0));
+                    let packedL: number = tree[index0 - 1 + (offset >>> 1)];
+                    minL = u8ToI8(packedL >> 8);
+                    maxL = u8ToI8(packedL & 0xFF);
+                    for (index0 += offset; index0 < index1; index0 += offset) {
+                        offset = leastSignificantPowerOf(index0 | mostSignificantPowerOf(index1 - index0));
+                        packedL = tree[index0 - 1 + (offset >>> 1)];
+                        minL = Math.min(minL, u8ToI8(packedL >> 8));
+                        maxL = Math.max(maxL, u8ToI8(packedL & 0xFF));
+                    }
+                }
+            }
+
+            i0 = i1;
+            i1 += samplesPerPixel;
+
+            const peakX: number = x | 0;
+            const peakW: number = 1;
+
+            // Draw left channel.
+            const nextPeakY0L: number = (clamp(maxL * normalizationFactor, -1, 1) * -halfChannelHeight + centerYL) | 0;
+            const nextPeakY1L: number = (clamp(minL * normalizationFactor, -1, 1) * -halfChannelHeight + centerYL) | 0;
+            const peakY0L: number = hasPrevPeak ? Math.min(prevPeakY1L, nextPeakY0L) : nextPeakY0L;
+            const peakY1L: number = hasPrevPeak ? Math.max(prevPeakY0L, nextPeakY1L) : nextPeakY1L;
+            const peakYL: number = peakY0L;
+            let peakHL: number = peakY1L - peakY0L;
+            if (peakHL > -1 && peakHL < 1) peakHL = 1;
+            prevPeakY0L = peakY0L;
+            prevPeakY1L = peakY1L;
+
+            if (!scheduledRectL) {
+                scheduledRectL = true;
+                scheduledRectXL = peakX;
+                scheduledRectYL = peakYL;
+                scheduledRectWL = peakW;
+                scheduledRectHL = peakHL;
+            } else {
+                if (scheduledRectYL === peakYL && scheduledRectHL === peakHL) {
+                    // Merge with previous scheduled rectangle.
+                    scheduledRectWL++;
+                } else {
+                    // Can't merge, so draw the previous rectangle, and schedule
+                    // this one.
+                    context.fillRect(scheduledRectXL, scheduledRectYL, scheduledRectWL, scheduledRectHL);
+                    scheduledRectXL = peakX;
+                    scheduledRectYL = peakYL;
+                    scheduledRectWL = peakW;
+                    scheduledRectHL = peakHL;
+                }
+            }
+
+            // Draw right channel.
+            if (channelCount === 2) {
+                const nextPeakY0R: number = (clamp(maxR * normalizationFactor, -1, 1) * -halfChannelHeight + centerYR) | 0;
+                const nextPeakY1R: number = (clamp(minR * normalizationFactor, -1, 1) * -halfChannelHeight + centerYR) | 0;
+                const peakY0R: number = hasPrevPeak ? Math.min(prevPeakY1R, nextPeakY0R) : nextPeakY0R;
+                const peakY1R: number = hasPrevPeak ? Math.max(prevPeakY0R, nextPeakY1R) : nextPeakY1R;
+                const peakYR: number = peakY0R;
+                let peakHR: number = peakY1R - peakY0R;
+                if (peakHR > -1 && peakHR < 1) peakHR = 1;
+                prevPeakY0R = peakY0R;
+                prevPeakY1R = peakY1R;
+
+                if (!scheduledRectR) {
+                    scheduledRectR = true;
+                    scheduledRectXR = peakX;
+                    scheduledRectYR = peakYR;
+                    scheduledRectWR = peakW;
+                    scheduledRectHR = peakHR;
+                } else {
+                    if (scheduledRectYR === peakYR && scheduledRectHR === peakHR) {
+                        // Merge with previous scheduled rectangle.
+                        scheduledRectWR++;
+                    } else {
+                        // Can't merge, so draw the previous rectangle, and schedule
+                        // this one.
+                        context.fillRect(scheduledRectXR, scheduledRectYR, scheduledRectWR, scheduledRectHR);
+                        scheduledRectXR = peakX;
+                        scheduledRectYR = peakYR;
+                        scheduledRectWR = peakW;
+                        scheduledRectHR = peakHR;
+                    }
+                }
+            }
+
+            hasPrevPeak = true;
+
+            x++;
+        }
+    }
+
+    if (scheduledRectL) {
+        context.fillRect(scheduledRectXL, scheduledRectYL, scheduledRectWL, scheduledRectHL);
+    }
+
+    if (scheduledRectR) {
+        context.fillRect(scheduledRectXR, scheduledRectYR, scheduledRectWR, scheduledRectHR);
     }
 }

@@ -65,3 +65,33 @@ export function insideRange(x: number, a: number, b: number): boolean {
 export function rangesOverlap(a: number, b: number, c: number, d: number): boolean {
     return a <= d && b >= c;
 }
+
+/** This assumes x is in the range `[0, 255]`. */
+export function u8ToI8(x: number): number {
+    return (x << 24) >> 24;
+}
+
+export function u8(x: number): number {
+    return (x >>> 0) & 0xFF;
+}
+
+export function u16(x: number): number {
+    return (x >>> 0) & 0xFFFF;
+}
+
+export function u32(x: number): number {
+    return x >>> 0;
+}
+
+export function leastSignificantPowerOf(x: number): number {
+    return u32(x & -x);
+}
+
+export function mostSignificantPowerOf(x: number): number {
+    x |= x >>> 1;
+    x |= x >>> 2;
+    x |= x >>> 4;
+    x |= x >>> 8;
+    x |= x >>> 16;
+    return u32((x >>> 1) + (x & 1));
+}

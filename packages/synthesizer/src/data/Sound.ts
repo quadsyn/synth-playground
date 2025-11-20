@@ -8,6 +8,9 @@ export interface Type {
 
     samplesPerSecond: number;
 
+    // @TODO: Store duration in samples separately so I can allocate extra
+    // samples and avoid bounds checks when doing interpolated reads.
+
     dataL: Float32Array;
     dataR: Float32Array | null;
 }

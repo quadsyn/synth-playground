@@ -622,6 +622,7 @@ export class Timeline implements Component {
                             context,
                             this._doc.project,
                             this._doc.patternInfoCache,
+                            this._doc.peaksCache,
                             this._doc.project.song.tempoMap,
                             this._doc.samplesPerSecond,
                             clip,

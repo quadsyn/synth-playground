@@ -20,6 +20,7 @@ import audioWorkletUrl from "inlineworker!@synth-playground/main-audio-worklet";
 import { MessageKind } from "@synth-playground/main-audio-worklet/MessageKind.js";
 import { NotePitchBoundsTracker } from "./data/NotePitchBoundsTracker.js";
 import { type PatternInfo } from "./data/PatternInfo.js";
+import * as Peaks from "./data/Peaks.js";
 
 // @TODO: Use the vscode design where .event can be used to register a listener,
 // but the emitter is not accessible from the outside.
@@ -83,6 +84,7 @@ export class SongDocument {
     public audioWorkletNode: AudioWorkletNode | null;
     public sentSongForTheFirstTime: boolean; // @TODO: Use a version number?
     public patternInfoCache: WeakMap<Pattern.Type, PatternInfo>;
+    public peaksCache: WeakMap<Sound.Type, Peaks.Type>;
     public pianoRollPatternIndex: number;
     public pianoRollTrackIndex: number;
     public pianoRollClipIndex: number;
@@ -93,6 +95,7 @@ export class SongDocument {
 
     constructor() {
         this.patternInfoCache = new WeakMap();
+        this.peaksCache = new WeakMap();
 
         this.project = Project.make();
         const pattern: Pattern.Type = this._insertPattern();
@@ -465,10 +468,17 @@ export class SongDocument {
             dataR,
         );
         const index: number = this.project.sounds.length;
+
         this.project.sounds.push(sound);
         Uint32ToUint32Table.set(this.project.soundsById, id, index);
+
         // Keep this as an unsigned 32-bit integer.
         this.project.soundIdGenerator = (this.project.soundIdGenerator + 1) >>> 0;
+
+        // @TODO: Compute this in a worker.
+        const peaks: Peaks.Type = Peaks.fromSound(sound);
+        this.peaksCache.set(sound, peaks);
+
         return sound;
     }
 
