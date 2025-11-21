@@ -156,6 +156,14 @@ class TrackState {
         this.peakRight = 0;
     }
 
+    public reset(): void {
+        this.peakLeft = 0;
+        this.peakRight = 0;
+        this.activeClips = [];
+        this.activeClipsLength = 0;
+        Uint64ToUint32Table.clear(this.activeClipsByClipId);
+    }
+
     public pushActiveClip(clip: ClipState): void {
         if (this.activeClipsLength === this.activeClips.length) {
             this.activeClips.push(clip);
@@ -281,6 +289,15 @@ export class Synthesizer {
             const trackState: TrackState = this.trackStates[i];
             if (trackState.muted !== track.muted) {
                 trackState.muted = track.muted;
+                if (trackState.muted) {
+                    trackState.reset();
+                }
+
+                // If any of the tracks are muted or unmuted, the sequential
+                // assumption is violated, as muted tracks have their state
+                // cleared, and unmuted tracks should immediately start playing
+                // whatever is currently active.
+                this.assumptionsAreInvalid = true;
             }
         }
     }
@@ -320,11 +337,7 @@ export class Synthesizer {
         const trackCount: number = this.trackStates.length;
         for (let i: number = 0; i < trackCount; i++) {
             const trackState: TrackState = this.trackStates[i];
-            trackState.peakLeft = 0;
-            trackState.peakRight = 0;
-            trackState.activeClips = [];
-            trackState.activeClipsLength = 0;
-            Uint64ToUint32Table.clear(trackState.activeClipsByClipId);
+            trackState.reset();
         }
         this.assumptionsAreInvalid = true;
     }
@@ -596,6 +609,9 @@ export class Synthesizer {
             for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
                 // const track: Track = tracks[trackIndex];
                 const trackState: TrackState = trackStates[trackIndex];
+                if (trackState.muted) {
+                    continue;
+                }
 
                 if (this.isAtStartOfTick) {
                     this._determineActiveClips(trackIndex);

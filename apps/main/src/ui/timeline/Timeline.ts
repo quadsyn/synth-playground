@@ -645,6 +645,12 @@ export class Timeline implements Component {
                         );
                     },
                 );
+
+                // @TODO: Only set this if necessary.
+                context.fillStyle = "rgba(0, 0, 0, 0.5)";
+                if (track.muted) {
+                    context.fillRect(0, top - 2, width, laneHeight);
+                }
             }
         }
     }
@@ -2542,6 +2548,24 @@ export class Timeline implements Component {
                     );
                     this._ui.inputManager.setActiveOperationHandler(this._onUpdateOperation);
                     return ActionResponse.StartedOperation;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.ToggleMuteSelectedTrack: {
+                if (isKeyboardGesture(context.gesture1)) {
+                    this._doc.toggleMuteTrack(this._state.selectedTrackIndex);
+
+                    return ActionResponse.Done;
+                }
+
+                return ActionResponse.NotApplicable;
+            };
+            case ActionKind.ToggleSoloSelectedTrack: {
+                if (isKeyboardGesture(context.gesture1)) {
+                    this._doc.toggleSoloTrack(this._state.selectedTrackIndex);
+
+                    return ActionResponse.Done;
                 }
 
                 return ActionResponse.NotApplicable;

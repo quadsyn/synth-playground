@@ -107,7 +107,7 @@ export class TrackOutliner implements Component {
 
         // Allocate new lane elements if necessary.
         while (this._laneElements.length < visibleLaneCount) {
-            const laneElement: TrackOutlinerLane = new TrackOutlinerLane(this._ui);
+            const laneElement: TrackOutlinerLane = new TrackOutlinerLane(this._ui, this._doc);
             this._laneElements.push(laneElement);
             this.element.appendChild(laneElement.element);
         }
@@ -156,6 +156,7 @@ export class TrackOutliner implements Component {
                         const trackPan: number = track.pan;
                         const trackMetadata: TrackMetadata.Type = this._doc.project.tracksMetadata[trackIndex];
                         const trackName: string = trackMetadata.name;
+                        laneElement.setTrackIndex(trackIndex);
                         laneElement.setTrackName(trackName);
                         laneElement.setTrackGain(trackGain);
                         laneElement.setTrackPan(trackPan);
@@ -165,9 +166,11 @@ export class TrackOutliner implements Component {
                         // @TODO: Cached localization.
                         laneElement.setAutomationLabel("Tempo");
                         laneElement.setSelected(false); // @TODO: Track this?
+                        laneElement.setTrackIndex(-1);
                         laneElement.setTrackMeterState(null);
                     } else if (kind === Lane.Kind.Automation) {
                         laneElement.setSelected(false);
+                        laneElement.setTrackIndex(-1); // @TODO: Set this to the index of the associated track?
                         laneElement.setTrackMeterState(null);
                     }
                     laneElement.render();

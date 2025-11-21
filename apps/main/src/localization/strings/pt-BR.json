@@ -73,7 +73,9 @@
             "createTempoEnvelopePoint": "Create tempo envelope point",
             "removeTempoEnvelopePoint": "Remove tempo envelope point",
             "moveTempoEnvelopePointBounded": "Move tempo envelope point (bounded)",
-            "importSample": "Import sample"
+            "importSample": "Import sample",
+            "toggleMuteSelectedTrack": "Mute selected track",
+            "toggleSoloSelectedTrack": "Solo selected track"
         }
     },
     "panelTitles": {

@@ -2,6 +2,7 @@ import { clamp } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
+import { SongDocument } from "../../SongDocument.js";
 import { BrowserSlider } from "../basic/BrowserSlider.js";
 import * as Lane from "./Lane.js";
 import * as TrackMeterState from "../../data/TrackMeterState.js";
@@ -13,6 +14,7 @@ export class TrackOutlinerLane implements Component {
     public element: HTMLDivElement;
 
     private _ui: UIContext;
+    private _doc: SongDocument;
     private _trackNameDisplay: HTMLDivElement;
     private _trackGainSlider: BrowserSlider;
     private _trackPanSlider: BrowserSlider;
@@ -25,6 +27,7 @@ export class TrackOutlinerLane implements Component {
     private _automationLabelDisplay: HTMLDivElement;
     private _automationControls: HTMLDivElement;
     private _kind: Lane.Kind;
+    private _trackIndex: number;
     private _trackName: string;
     private _trackGain: number;
     private _trackPan: number;
@@ -49,8 +52,9 @@ export class TrackOutlinerLane implements Component {
     private _renderedHasTopBorder: boolean | null;
     private _renderedSelected: boolean | null;
 
-    constructor(ui: UIContext) {
+    constructor(ui: UIContext, doc: SongDocument) {
         this._ui = ui;
+        this._doc = doc;
 
         this._visible = true;
         this._width = 100;
@@ -59,6 +63,7 @@ export class TrackOutlinerLane implements Component {
         this._left = 0;
         this._hasTopBorder = true;
         this._kind = Lane.Kind.Track;
+        this._trackIndex = -1;
         this._trackName = "";
         this._trackGain = 1;
         this._trackPan = 0;
@@ -241,9 +246,14 @@ export class TrackOutlinerLane implements Component {
             ),
             this._trackMeterContainer,
         );
+
+        this._trackMuteButton.addEventListener("click", this._handleMuteButtonClick);
+        this._trackSoloButton.addEventListener("click", this._handleSoloButtonClick);
     }
 
     public dispose(): void {
+        this._trackMuteButton.removeEventListener("click", this._handleMuteButtonClick);
+        this._trackSoloButton.removeEventListener("click", this._handleSoloButtonClick);
         this._trackGainSlider.dispose();
         this._trackPanSlider.dispose();
         this._trackMeter.dispose();
@@ -339,6 +349,14 @@ export class TrackOutlinerLane implements Component {
         }
     }
 
+    private _handleMuteButtonClick = (event: MouseEvent): void => {
+        this._doc.toggleMuteTrack(this._trackIndex);
+    };
+
+    private _handleSoloButtonClick = (event: MouseEvent): void => {
+        this._doc.toggleSoloTrack(this._trackIndex);
+    };
+
     public setVisible(value: boolean): void {
         this._visible = value;
     }
@@ -365,6 +383,10 @@ export class TrackOutlinerLane implements Component {
 
     public setKind(kind: Lane.Kind): void {
         this._kind = kind;
+    }
+
+    public setTrackIndex(trackIndex: number): void {
+        this._trackIndex = trackIndex;
     }
 
     public setTrackName(name: string): void {

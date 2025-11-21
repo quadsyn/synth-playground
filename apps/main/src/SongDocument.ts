@@ -1266,6 +1266,56 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
+    public toggleMuteTrack(trackIndex: number): void {
+        const tracks: Track.Type[] = this.project.song.tracks;
+        const trackCount: number = tracks.length;
+
+        if (trackIndex < 0 || trackIndex >= trackCount) {
+            return;
+        }
+
+        tracks[trackIndex].muted = !tracks[trackIndex].muted;
+        this.markProjectAsDirty();
+    }
+
+    public toggleSoloTrack(trackIndex: number): void {
+        const tracks: Track.Type[] = this.project.song.tracks;
+        const trackCount: number = tracks.length;
+
+        if (trackIndex < 0 || trackIndex >= trackCount) {
+            return;
+        }
+
+        let givenTrackIsMuted: boolean = true;
+        let allOthersAreMuted: boolean = true;
+        for (let otherTrackIndex: number = 0; otherTrackIndex < trackCount; otherTrackIndex++) {
+            const track: Track.Type = tracks[otherTrackIndex];
+            if (otherTrackIndex === trackIndex) {
+                givenTrackIsMuted = track.muted;
+            } else {
+                if (!track.muted) {
+                    allOthersAreMuted = false;
+                }
+            }
+        }
+
+        if (!givenTrackIsMuted && allOthersAreMuted) {
+            // Unsolo.
+            for (let otherTrackIndex: number = 0; otherTrackIndex < trackCount; otherTrackIndex++) {
+                const track: Track.Type = tracks[otherTrackIndex];
+                track.muted = false;
+            }
+        } else {
+            // Solo.
+            for (let otherTrackIndex: number = 0; otherTrackIndex < trackCount; otherTrackIndex++) {
+                const track: Track.Type = tracks[otherTrackIndex];
+                track.muted = otherTrackIndex !== trackIndex;
+            }
+        }
+
+        this.markProjectAsDirty();
+    }
+
     private _createPatternInfoCacheFor(song: Song.Type, pattern: Pattern.Type): void {
         const patternInfo: PatternInfo = {
             pitchBounds: new NotePitchBoundsTracker(song.maxPitch),

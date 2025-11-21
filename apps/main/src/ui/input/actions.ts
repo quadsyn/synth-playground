@@ -84,6 +84,8 @@ export const enum ActionKind {
     RemoveTempoEnvelopePoint,
     MoveTempoEnvelopePointBounded,
     TimelineImportSample,
+    ToggleMuteSelectedTrack,
+    ToggleSoloSelectedTrack,
 }
 
 export const enum ActionTags {
@@ -706,6 +708,22 @@ type ActionTableEntry = [
         [],
         <ActionId>"timeline.importSample",
         StringId.TimelineActionImportSample,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.ToggleMuteSelectedTrack,
+        AreaKind.Timeline,
+        [GestureKind.Press | Key.M],
+        <ActionId>"timeline.toggleMuteSelectedTrack",
+        StringId.TimelineActionToggleMuteSelectedTrack,
+    ],
+    [
+        ActionTags.ShowInCommandPalette,
+        ActionKind.ToggleSoloSelectedTrack,
+        AreaKind.Timeline,
+        [],
+        <ActionId>"timeline.toggleSoloSelectedTrack",
+        StringId.TimelineActionToggleSoloSelectedTrack,
     ],
 ]).forEach(([tags, action, area, defaultShortcuts, id, labelId]) => {
     registerAction(tags, action, area, defaultShortcuts, id, labelId);
