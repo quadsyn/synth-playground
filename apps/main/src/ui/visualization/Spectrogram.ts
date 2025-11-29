@@ -9,8 +9,17 @@ import { UIContext } from "../UIContext.js";
 import { type Component } from "../types.js";
 import { SongDocument } from "../../SongDocument.js";
 
-// @TODO: Formalize how time advances here. I think I'll need to persist some
-// amount of spectrums instead of drawing and immediately forgetting them.
+// @TODO:
+// - Store min and max dB constants somewhere else.
+// - I should use the same amplitude correction factor I used for the spectrum
+//   analyzer. It's currently not a big deal because there's no text showing the
+//   values directly...
+// - Show pitch name and octave after frequency.
+//   - Also a piano overlay?
+// - Formalize how time advances here. I think I'll need to persist some
+//   amount of spectrums instead of drawing and immediately forgetting them.
+//   - I may also need this for showing volume...
+// - Option to use other colormaps?
 
 export class Spectrogram implements Component {
     public element: HTMLDivElement;
@@ -19,13 +28,20 @@ export class Spectrogram implements Component {
     private _doc: SongDocument;
     private _width: number;
     private _height: number;
+    private _resized: boolean;
     private _canvas: HTMLCanvasElement;
     private _context: CanvasRenderingContext2D;
     private _currentImage: ImageData | null;
     private _paletteSize: number;
     private _palette: Uint8ClampedArray;
+    private _pitchInfo: HTMLDivElement;
+    private _infoContainer: HTMLDivElement;
+    private _infoVisible: boolean;
+    private _mouseFrequency: string;
 
     private _renderedCounter: number | null;
+    private _renderedInfoVisible: boolean;
+    private _renderedMouseFrequency: string;
 
     constructor(ui: UIContext, doc: SongDocument) {
         this._ui = ui;
@@ -33,6 +49,7 @@ export class Spectrogram implements Component {
 
         this._width = 1;
         this._height = 1;
+        this._resized = true;
 
         this._currentImage = null;
         this._paletteSize = 256;
@@ -49,28 +66,70 @@ export class Spectrogram implements Component {
 
         this._renderedCounter = null;
 
+        this._infoVisible = false;
+        this._renderedInfoVisible = this._infoVisible;
+
+        this._mouseFrequency = "";
+        this._renderedMouseFrequency = this._mouseFrequency;
+
         this._canvas = H("canvas", {
             width: this._width + "",
             height: this._height + "",
             style: `
                 position: absolute;
+                width: ${this._width}px;
+                height: ${this._height}px;
             `,
         });
         this._context = this._canvas.getContext("2d")!;
+
+        this._pitchInfo = H("div", {
+            style: `
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                background-color: rgba(0, 0, 0, 0.75);
+                padding: 5px;
+            `,
+        }, this._mouseFrequency);
+        this._infoContainer = H("div", {
+            style: `
+                display: none;
+                position: relative;
+                width: ${this._width}px;
+                height: ${this._height}px;
+            `,
+        },
+            this._pitchInfo,
+        );
 
         this.element = H("div", {
             style: `
                 position: relative;
             `,
-        }, this._canvas);
+        },
+            this._canvas,
+            this._infoContainer,
+        );
+
+        this.element.addEventListener("mouseout", this._handleMouseOut);
+        this.element.addEventListener("mousemove", this._handleMouseMove);
     }
 
-    public dispose(): void {}
+    public dispose(): void {
+        this.element.removeEventListener("mouseout", this._handleMouseOut);
+        this.element.removeEventListener("mousemove", this._handleMouseMove);
+    }
 
     public render(): void {
-        if (this._canvas.width !== this._width || this._canvas.height !== this._height) {
+        if (this._resized) {
             this._canvas.width = this._width;
             this._canvas.height = this._height;
+            this._canvas.style.width = this._width + "px";
+            this._canvas.style.height = this._height + "px";
+            this._infoContainer.style.width = this._width + "px";
+            this._infoContainer.style.height = this._height + "px";
+
             const r: number = this._palette[0] * 256;
             const g: number = this._palette[1] * 256;
             const b: number = this._palette[2] * 256;
@@ -78,39 +137,47 @@ export class Spectrogram implements Component {
             this._context.fillRect(0, 0, this._width, this._height);
         }
 
+        this._renderInfo();
         this._renderSpectrogram();
+
+        this._resized = false;
+        this._renderedInfoVisible = this._infoVisible;
     }
 
     private _renderSpectrogram(): void {
-        const fftSize: number = this._doc.fftSize;
         if (this._doc.outputAnalyserNode == null) {
             return;
         }
+
         const data: Float32Array | null = this._doc.getOutputFreqDomainData(this._ui.frame);
         if (data == null) {
             return;
         }
+
         const counter: number | null = this._doc.outputAnalyserFreqCounter;
         if (counter === this._renderedCounter) {
             return;
         }
         this._renderedCounter = counter;
+
         const canvas: HTMLCanvasElement = this._canvas;
         const context: CanvasRenderingContext2D = this._context;
         const width: number = this._width;
         const height: number = this._height;
         const samplesPerSecond: number = this._doc.samplesPerSecond;
+        const fftSize: number = this._doc.fftSize;
         const binCount: number = data.length;
         // const mask: number = binCount - 1;
         // const binBandwidth: number = samplesPerSecond / fftSize;
         const invBinBandwidth: number = fftSize / samplesPerSecond;
-        const minFreq: number = 10;
-        const maxFreq: number = 22050;
-        const minDb: number = this._doc.outputAnalyserNode.minDecibels;
-        const maxDb: number = this._doc.outputAnalyserNode.maxDecibels;
-        // const minFreqLog: number = Math.log(minFreq);
-        // const maxFreqLog: number = Math.log(maxFreq);
+        const minFreq: number = Constants.MinFrequency;
+        const maxFreq: number = Constants.MaxFrequency;
+        // const minFreqLog: number = Constants.MinFrequencyLog;
+        // const maxFreqLog: number = Constants.MaxFrequencyLog;
         // const freqRangeLog: number = maxFreqLog - minFreqLog;
+        const minDb: number = Constants.MinDecibels;
+        const maxDb: number = Constants.MaxDecibels;
+
         const imageWidth: number = 1;
         if (this._currentImage == null || this._currentImage.height !== height) {
             this._currentImage = context.createImageData(imageWidth, height);
@@ -118,6 +185,7 @@ export class Spectrogram implements Component {
         const imageBits: Uint8ClampedArray = this._currentImage.data;
         const palette: Uint8ClampedArray = this._palette;
         const paletteSize: number = this._paletteSize;
+
         let frequency: number = maxFreq;
         let frequencyScale: number = Math.pow(minFreq / maxFreq, 1 / (height - 1));
         for (let y: number = 0; y < height; y++) {
@@ -147,8 +215,50 @@ export class Spectrogram implements Component {
         context.putImageData(this._currentImage, width - imageWidth, 0);
     }
 
+    private _renderInfo(): void {
+        if (this._infoVisible !== this._renderedInfoVisible) {
+            this._infoContainer.style.display = this._infoVisible ? "" : "none";
+        }
+
+        if (this._infoVisible) {
+            if (this._mouseFrequency !== this._renderedMouseFrequency) {
+                this._pitchInfo.textContent = this._mouseFrequency;
+                this._renderedMouseFrequency = this._mouseFrequency;
+            }
+        }
+    }
+
     public resize(width: number, height: number): void {
         this._width = width;
         this._height = height;
+        this._resized = true;
     }
+
+    private _handleMouseMove = (event: MouseEvent): void => {
+        const bounds: DOMRect = this.element.getBoundingClientRect();
+        // const mouseX: number = event.clientX - bounds.left;
+        const mouseY: number = event.clientY - bounds.top;
+        this._mouseFrequency = (frequencyFromMouse(mouseY, bounds.height) | 0) + " Hz";
+        this._infoVisible = true;
+        this._ui.scheduleMainRender();
+    };
+
+    private _handleMouseOut = (event: MouseEvent): void => {
+        this._infoVisible = false;
+        this._ui.scheduleMainRender();
+    };
+}
+
+function frequencyFromMouse(y: number, height: number): number {
+    return Math.exp(remap(y, height, 0, Constants.MinFrequencyLog, Constants.MaxFrequencyLog));
+}
+
+const enum Constants {
+    MinFrequency = 10,
+    MaxFrequency = 22050,
+    MinFrequencyLog = 2.302585092994046, // Math.log(10)
+    MaxFrequencyLog = 10.001067880874992, // Math.log(22050)
+
+    MinDecibels = -90,
+    MaxDecibels = 0,
 }
