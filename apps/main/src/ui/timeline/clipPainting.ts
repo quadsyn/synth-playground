@@ -608,7 +608,7 @@ function drawSoundClipWaveform(
             const peakSampleStartIndex: number = Math.floor(i0);
             const peakSampleEndIndex: number = Math.floor(i1);
             let peakSampleIndex: number = peakSampleStartIndex;
-            while (peakSampleIndex < peakSampleEndIndex) {
+            while (peakSampleIndex <= peakSampleEndIndex) {
                 if (peakSampleIndex >= sampleCount) break;
                 const sampleL: number = clamp(dataL[peakSampleIndex] * visualGain, -1, 1);
                 minL = Math.min(minL, sampleL);
@@ -620,7 +620,7 @@ function drawSoundClipWaveform(
                 minR = Infinity;
                 maxR = -Infinity;
                 peakSampleIndex = peakSampleStartIndex;
-                while (peakSampleIndex < peakSampleEndIndex) {
+                while (peakSampleIndex <= peakSampleEndIndex) {
                     if (peakSampleIndex >= sampleCount) break;
                     const sampleR: number = clamp(dataR![peakSampleIndex] * visualGain, -1, 1);
                     minR = Math.min(minR, sampleR);
