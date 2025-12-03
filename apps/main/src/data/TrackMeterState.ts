@@ -7,6 +7,10 @@ export interface Type {
     trailRight: number;
     trailRightVelocity: number;
     trailRightHoldTimer: number;
+
+    // @TODO: Set a bit here if clipping happens. Like in REAPER, that bit can
+    // be cleared manually by the user (and maybe in more cases other than the
+    // obvious, like when a track is deleted, or a new project is created).
 }
 
 export function make(): Type {
@@ -86,7 +90,7 @@ export function clear(state: Type): void {
 
 export const enum Constants {
     MinDecibels = -60,
-    MaxDecibels = 2,
+    MaxDecibels = 0,
     HoldDuration = 1, // In seconds.
     Gravity = -0.5, // In units per second.
 }

@@ -99,8 +99,11 @@ export function mostSignificantPowerOf(x: number): number {
 // @TODO: Find fast approximations for these.
 export function linearToDecibels(x: number): number {
     // `x` should really be a ratio, but we just assume the reference amplitude is 1 here.
-    return 20.0 * Math.log10(x);
+    return Math.log(x) * 8.685889638065035 /* 20 / Math.log(10) */;
+    // return 20.0 * Math.log10(x);
 }
+
 export function decibelsToLinear(x: number): number {
-    return Math.pow(10.0, x / 20.0);
+    return Math.exp(x * 0.11512925464970229 /* Math.log(10) / 20 */);
+    // return Math.pow(10.0, x / 20.0);
 }

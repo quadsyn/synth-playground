@@ -72,10 +72,22 @@ export function make(): Type {
         tempoMap: tempoMap,
         maxPitch: maxPitch,
         tracks: [
-            Track.make(1, 0),
-            Track.make(1, 0),
-            Track.make(1, 0),
-            Track.make(1, 0),
+            Track.make(
+                Track.Constants.GainDefault,
+                0,
+            ),
+            Track.make(
+                Track.Constants.GainDefault,
+                0,
+            ),
+            Track.make(
+                Track.Constants.GainDefault,
+                0,
+            ),
+            Track.make(
+                Track.Constants.GainDefault,
+                0,
+            ),
         ],
         patterns: [],
         patternsById: Uint64ToUint32Table.make(32),

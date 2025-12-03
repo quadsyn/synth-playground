@@ -143,6 +143,7 @@ class TrackState {
     public activeClips: (ClipState | null)[];
     public activeClipsLength: number;
     public activeClipsByClipId: Uint64ToUint32Table.Type;
+    public gain: number;
     public muted: boolean;
     public peakLeft: number;
     public peakRight: number;
@@ -151,6 +152,7 @@ class TrackState {
         this.activeClips = [];
         this.activeClipsLength = 0;
         this.activeClipsByClipId = Uint64ToUint32Table.make(4);
+        this.gain = 1.0;
         this.muted = false;
         this.peakLeft = 0;
         this.peakRight = 0;
@@ -607,7 +609,7 @@ export class Synthesizer {
 
             if (this.playing)
             for (let trackIndex: number = 0; trackIndex < trackCount; trackIndex++) {
-                // const track: Track = tracks[trackIndex];
+                const track: Track.Type = tracks[trackIndex];
                 const trackState: TrackState = trackStates[trackIndex];
                 if (trackState.muted) {
                     continue;
@@ -649,7 +651,11 @@ export class Synthesizer {
                             activeClip.absoluteStartTimeInSamples = absoluteStartTimeInSamples;
                         }
                     }
+
+                    trackState.gain = Track.gainNormalizedToInternal(track.gain);
                 }
+
+                const trackGain: number = trackState.gain;
 
                 // @TODO: This is for the track peak meters. If I had an audio
                 // graph here, I'd compute the peaks from the intermediate track
@@ -711,8 +717,8 @@ export class Synthesizer {
                                 phaseDelta *= phaseDeltaScale;
                                 volume += volumeDelta;
 
-                                const outSampleL: number = outSample;
-                                const outSampleR: number = outSample;
+                                const outSampleL: number = outSample * trackGain;
+                                const outSampleR: number = outSample * trackGain;
 
                                 if (i === 0) {
                                     trackOutSampleLeft += outSampleL;
@@ -790,8 +796,8 @@ export class Synthesizer {
                                     const sampleRA0: number = dataR[sampleIndexA] * wA;
                                     const sampleLB0: number = dataL[sampleIndexB] * wB;
                                     const sampleRB0: number = dataR[sampleIndexB] * wB;
-                                    const outSampleL: number = sampleLA0 + sampleLB0;
-                                    const outSampleR: number = sampleRA0 + sampleRB0;
+                                    const outSampleL: number = (sampleLA0 + sampleLB0) * trackGain;
+                                    const outSampleR: number = (sampleRA0 + sampleRB0) * trackGain;
                                     if (i === 0) {
                                         trackOutSampleLeft += outSampleL;
                                         trackOutSampleRight += outSampleR;
@@ -812,8 +818,8 @@ export class Synthesizer {
                                     const sampleL1: number = dataL[sampleIndex1];
                                     const sampleR0: number = dataR[sampleIndex0];
                                     const sampleR1: number = dataR[sampleIndex1];
-                                    const outSampleL: number = sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract;
-                                    const outSampleR: number = sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract;
+                                    const outSampleL: number = (sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract) * trackGain;
+                                    const outSampleR: number = (sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract) * trackGain;
                                     if (i === 0) {
                                         trackOutSampleLeft += outSampleL;
                                         trackOutSampleRight += outSampleR;
@@ -848,6 +854,7 @@ export class Synthesizer {
                         if (phase >= 1) phase -= 1;
                         volume += volumeDelta;
 
+                        // @TODO: Associate this with a track so I can multiply this with its gain.
                         const outSampleL: number = outSample;
                         const outSampleR: number = outSample;
 

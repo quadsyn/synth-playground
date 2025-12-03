@@ -1,6 +1,11 @@
 import { H } from "@synth-playground/browser/dom.js";
+import { clamp } from "@synth-playground/common/math.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
+
+// @TODO:
+// - Ensure the value is quantized using the step in the same way as the input
+//   element would do it.
 
 export class BrowserSlider implements Component {
     public element: HTMLInputElement;
@@ -12,6 +17,9 @@ export class BrowserSlider implements Component {
     private _max: number;
     private _step: number;
     private _value: number;
+    private _renderedValue: number;
+    private _title: string;
+    private _renderedTitle: string;
 
     constructor(
         ui: UIContext,
@@ -31,6 +39,9 @@ export class BrowserSlider implements Component {
         this._max = max;
         this._step = step;
         this._value = value;
+        this._renderedValue = this._value;
+        this._title = "";
+        this._renderedTitle = this._title;
 
         this.element = H("input", {
             type: "range",
@@ -70,13 +81,17 @@ export class BrowserSlider implements Component {
     }
 
     private _handleInput = (event: Event): void => {
-        const value: number = +this.element.value;
+        const value: number = clamp(+this.element.value, this._min, this._max);
+        this._value = value;
+        this._renderedValue = value;
         this._onInput(value);
         this._ui.scheduleMainRender();
     };
 
     private _handleChange = (event: Event): void => {
-        const value: number = +this.element.value;
+        const value: number = clamp(+this.element.value, this._min, this._max);
+        this._value = value;
+        this._renderedValue = value;
         this._onChange(value);
         this._ui.scheduleMainRender();
     };
@@ -86,21 +101,22 @@ export class BrowserSlider implements Component {
     };
 
     public render(): void {
-        if (document.activeElement === this.element) {
-            return;
+        if (this._title !== this._renderedTitle) {
+            this.element.title = this._title;
+            this._renderedTitle = this._title;
         }
 
-        const valueStr: string = this._value + "";
-        // @TODO: I probably shouldn't be reading this from the DOM, but if I
-        // don't do it, then I may miss that the value actually changed after,
-        // due to e.g. being out of range.
-        if (this.element.value === valueStr) {
-            return;
+        if (this._value !== this._renderedValue) {
+            this.element.value = this._value + "";
+            this._renderedValue = this._value;
         }
-        this.element.value = valueStr;
     }
 
     public setValue(value: number): void {
         this._value = value;
+    }
+
+    public setTitle(title: string): void {
+        this._title = title;
     }
 }

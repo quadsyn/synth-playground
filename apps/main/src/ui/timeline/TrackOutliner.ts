@@ -34,6 +34,7 @@ export class TrackOutliner implements Component {
     private _renderedViewport: Viewport.Type | null;
     private _renderedLanesVersion: number | null;
     private _renderedSelectedTrackIndex: number | null;
+    private _projectChanged: boolean;
 
     constructor(
         ui: UIContext,
@@ -67,6 +68,7 @@ export class TrackOutliner implements Component {
         this._renderedViewport = null;
         this._renderedLanesVersion = null;
         this._renderedSelectedTrackIndex = null;
+        this._projectChanged = true;
 
         this.element = H("div", {
             style: `
@@ -82,9 +84,13 @@ export class TrackOutliner implements Component {
 
         this._laneElements = [];
         this._selectedTrackIndex = -1;
+
+        this._doc.onProjectChanged.addListener(this._handleProjectChanged);
     }
 
-    public dispose(): void {}
+    public dispose(): void {
+        this._doc.onProjectChanged.removeListener(this._handleProjectChanged);
+    }
 
     public render(): void {
         const width: number = this._width;
@@ -103,6 +109,7 @@ export class TrackOutliner implements Component {
             || visibleLaneCount !== this._laneElements.length
             || this._selectedTrackIndex !== this._renderedSelectedTrackIndex
             || lanesVersion !== this._renderedLanesVersion
+            || this._projectChanged
         );
 
         // Allocate new lane elements if necessary.
@@ -227,6 +234,7 @@ export class TrackOutliner implements Component {
         this._renderedViewport = Viewport.updateRendered(this._renderedViewport, this._viewport);
         this._renderedLanesVersion = lanesVersion;
         this._renderedSelectedTrackIndex = this._selectedTrackIndex;
+        this._projectChanged = false;
     }
 
     public resize(size: number, height: number): void {
@@ -249,4 +257,9 @@ export class TrackOutliner implements Component {
     public setSelectedTrackIndex(index: number): void {
         this._selectedTrackIndex = index;
     }
+
+    private _handleProjectChanged = (): void => {
+        // @TODO: Invalidate precisely.
+        this._projectChanged = true;
+    };
 }

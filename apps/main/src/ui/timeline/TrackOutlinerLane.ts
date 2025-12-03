@@ -1,5 +1,6 @@
 import { clamp } from "@synth-playground/common/math.js";
 import { H } from "@synth-playground/browser/dom.js";
+import * as Track from "@synth-playground/synthesizer/data/Track.js";
 import { type Component } from "../types.js";
 import { UIContext } from "../UIContext.js";
 import { SongDocument } from "../../SongDocument.js";
@@ -122,10 +123,15 @@ export class TrackOutlinerLane implements Component {
             this._ui,
             /* min */ 0,
             /* max */ 1,
-            /* step */ 0.1,
-            /* value */ 1,
-            /* onInput */ () => {},
-            /* onChange */ () => {},
+            /* step */ Track.Constants.GainStep,
+            /* value */ Track.Constants.GainDefault,
+            /* onInput */ (value: number): void => {
+                this._doc.setTrackGain(this._trackIndex, value);
+            },
+            /* onChange */ (value: number): void => {
+                this._doc.setTrackGain(this._trackIndex, value);
+                this._ui.scheduleMainRender();
+            },
         );
         this._trackGainSlider.element.style.width = "100%";
         this._trackPanSlider = new BrowserSlider(
@@ -244,11 +250,14 @@ export class TrackOutlinerLane implements Component {
             this._trackMeterContainer,
         );
 
+        // @TODO: Move this into BrowserSlider?
+        this._trackGainSlider.element.addEventListener("dblclick", this._handleGainSliderDoubleClick);
         this._trackMuteButton.addEventListener("click", this._handleMuteButtonClick);
         this._trackSoloButton.addEventListener("click", this._handleSoloButtonClick);
     }
 
     public dispose(): void {
+        this._trackGainSlider.element.removeEventListener("dblclick", this._handleGainSliderDoubleClick);
         this._trackMuteButton.removeEventListener("click", this._handleMuteButtonClick);
         this._trackSoloButton.removeEventListener("click", this._handleSoloButtonClick);
         this._trackGainSlider.dispose();
@@ -316,6 +325,8 @@ export class TrackOutlinerLane implements Component {
                 }
 
                 this._trackGainSlider.setValue(this._trackGain);
+                // @TODO: Avoid this string allocation here when it's not necessary.
+                this._trackGainSlider.setTitle(Track.gainNormalizedToString(this._trackGain));
                 this._trackGainSlider.render();
 
                 this._trackPanSlider.setValue(this._trackPan);
@@ -345,6 +356,10 @@ export class TrackOutlinerLane implements Component {
             }
         }
     }
+
+    private _handleGainSliderDoubleClick = (event: MouseEvent): void => {
+        this._doc.setTrackGain(this._trackIndex, Track.Constants.GainDefault);
+    };
 
     private _handleMuteButtonClick = (event: MouseEvent): void => {
         this._doc.toggleMuteTrack(this._trackIndex);
