@@ -1331,6 +1331,21 @@ export class SongDocument {
         this.markProjectAsDirty();
     }
 
+    public setTrackPan(trackIndex: number, pan: number): void {
+        const tracks: Track.Type[] = this.project.song.tracks;
+        const trackCount: number = tracks.length;
+
+        if (trackIndex < 0 || trackIndex >= trackCount) {
+            return;
+        }
+
+        const track: Track.Type = tracks[trackIndex];
+        const normalized: number = clamp(pan, 0, 1);
+        track.pan = normalized;
+
+        this.markProjectAsDirty();
+    }
+
     private _createPatternInfoCacheFor(song: Song.Type, pattern: Pattern.Type): void {
         const patternInfo: PatternInfo = {
             pitchBounds: new NotePitchBoundsTracker(song.maxPitch),

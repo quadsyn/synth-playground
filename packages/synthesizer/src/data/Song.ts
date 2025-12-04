@@ -74,19 +74,19 @@ export function make(): Type {
         tracks: [
             Track.make(
                 Track.Constants.GainDefault,
-                0,
+                Track.Constants.PanDefault,
             ),
             Track.make(
                 Track.Constants.GainDefault,
-                0,
+                Track.Constants.PanDefault,
             ),
             Track.make(
                 Track.Constants.GainDefault,
-                0,
+                Track.Constants.PanDefault,
             ),
             Track.make(
                 Track.Constants.GainDefault,
-                0,
+                Track.Constants.PanDefault,
             ),
         ],
         patterns: [],

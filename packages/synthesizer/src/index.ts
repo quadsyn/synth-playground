@@ -144,6 +144,8 @@ class TrackState {
     public activeClipsLength: number;
     public activeClipsByClipId: Uint64ToUint32Table.Type;
     public gain: number;
+    public panGainL: number;
+    public panGainR: number;
     public muted: boolean;
     public peakLeft: number;
     public peakRight: number;
@@ -153,6 +155,8 @@ class TrackState {
         this.activeClipsLength = 0;
         this.activeClipsByClipId = Uint64ToUint32Table.make(4);
         this.gain = 1.0;
+        this.panGainL = 1.0;
+        this.panGainR = 1.0;
         this.muted = false;
         this.peakLeft = 0;
         this.peakRight = 0;
@@ -653,9 +657,13 @@ export class Synthesizer {
                     }
 
                     trackState.gain = Track.gainNormalizedToInternal(track.gain);
+                    trackState.panGainL = Track.panNormalizedToInternalL(track.pan);
+                    trackState.panGainR = Track.panNormalizedToInternalR(track.pan);
                 }
 
                 const trackGain: number = trackState.gain;
+                const trackGainL: number = trackState.panGainL * trackGain;
+                const trackGainR: number = trackState.panGainR * trackGain;
 
                 // @TODO: This is for the track peak meters. If I had an audio
                 // graph here, I'd compute the peaks from the intermediate track
@@ -717,8 +725,8 @@ export class Synthesizer {
                                 phaseDelta *= phaseDeltaScale;
                                 volume += volumeDelta;
 
-                                const outSampleL: number = outSample * trackGain;
-                                const outSampleR: number = outSample * trackGain;
+                                const outSampleL: number = outSample * trackGainL;
+                                const outSampleR: number = outSample * trackGainR;
 
                                 if (i === 0) {
                                     trackOutSampleLeft += outSampleL;
@@ -796,8 +804,8 @@ export class Synthesizer {
                                     const sampleRA0: number = dataR[sampleIndexA] * wA;
                                     const sampleLB0: number = dataL[sampleIndexB] * wB;
                                     const sampleRB0: number = dataR[sampleIndexB] * wB;
-                                    const outSampleL: number = (sampleLA0 + sampleLB0) * trackGain;
-                                    const outSampleR: number = (sampleRA0 + sampleRB0) * trackGain;
+                                    const outSampleL: number = (sampleLA0 + sampleLB0) * trackGainL;
+                                    const outSampleR: number = (sampleRA0 + sampleRB0) * trackGainR;
                                     if (i === 0) {
                                         trackOutSampleLeft += outSampleL;
                                         trackOutSampleRight += outSampleR;
@@ -818,8 +826,8 @@ export class Synthesizer {
                                     const sampleL1: number = dataL[sampleIndex1];
                                     const sampleR0: number = dataR[sampleIndex0];
                                     const sampleR1: number = dataR[sampleIndex1];
-                                    const outSampleL: number = (sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract) * trackGain;
-                                    const outSampleR: number = (sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract) * trackGain;
+                                    const outSampleL: number = (sampleL0 * (1 - sampleFract) + sampleL1 * sampleFract) * trackGainL;
+                                    const outSampleR: number = (sampleR0 * (1 - sampleFract) + sampleR1 * sampleFract) * trackGainR;
                                     if (i === 0) {
                                         trackOutSampleLeft += outSampleL;
                                         trackOutSampleRight += outSampleR;

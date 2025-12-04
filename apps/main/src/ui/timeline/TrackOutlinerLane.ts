@@ -136,12 +136,17 @@ export class TrackOutlinerLane implements Component {
         this._trackGainSlider.element.style.width = "100%";
         this._trackPanSlider = new BrowserSlider(
             this._ui,
-            /* min */ -1,
+            /* min */ 0,
             /* max */ 1,
-            /* step */ 0.1,
-            /* value */ 0,
-            /* onInput */ () => {},
-            /* onChange */ () => {},
+            /* step */ Track.Constants.PanStep,
+            /* value */ Track.Constants.PanDefault,
+            /* onInput */ (value: number): void => {
+                this._doc.setTrackPan(this._trackIndex, value);
+            },
+            /* onChange */ (value: number): void => {
+                this._doc.setTrackPan(this._trackIndex, value);
+                this._ui.scheduleMainRender();
+            },
         );
         this._trackPanSlider.element.style.width = "50%";
         this._trackControls = H("div", {
@@ -252,12 +257,14 @@ export class TrackOutlinerLane implements Component {
 
         // @TODO: Move this into BrowserSlider?
         this._trackGainSlider.element.addEventListener("dblclick", this._handleGainSliderDoubleClick);
+        this._trackPanSlider.element.addEventListener("dblclick", this._handlePanSliderDoubleClick);
         this._trackMuteButton.addEventListener("click", this._handleMuteButtonClick);
         this._trackSoloButton.addEventListener("click", this._handleSoloButtonClick);
     }
 
     public dispose(): void {
         this._trackGainSlider.element.removeEventListener("dblclick", this._handleGainSliderDoubleClick);
+        this._trackPanSlider.element.removeEventListener("dblclick", this._handlePanSliderDoubleClick);
         this._trackMuteButton.removeEventListener("click", this._handleMuteButtonClick);
         this._trackSoloButton.removeEventListener("click", this._handleSoloButtonClick);
         this._trackGainSlider.dispose();
@@ -330,6 +337,8 @@ export class TrackOutlinerLane implements Component {
                 this._trackGainSlider.render();
 
                 this._trackPanSlider.setValue(this._trackPan);
+                // @TODO: Avoid this string allocation here when it's not necessary.
+                this._trackPanSlider.setTitle(Track.panNormalizedToString(this._trackPan));
                 this._trackPanSlider.render();
 
                 if (this._trackMeterState != null) {
@@ -359,6 +368,10 @@ export class TrackOutlinerLane implements Component {
 
     private _handleGainSliderDoubleClick = (event: MouseEvent): void => {
         this._doc.setTrackGain(this._trackIndex, Track.Constants.GainDefault);
+    };
+
+    private _handlePanSliderDoubleClick = (event: MouseEvent): void => {
+        this._doc.setTrackPan(this._trackIndex, Track.Constants.PanDefault);
     };
 
     private _handleMuteButtonClick = (event: MouseEvent): void => {
