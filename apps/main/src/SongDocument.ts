@@ -76,8 +76,8 @@ export class SongDocument {
     public samplesPerSecond: number;
     public fftSize: number;
     public outputAnalyserNode: AnalyserNode | null;
-    public outputAnalyserBuffer: Float32Array | null;
-    public outputAnalyserFreqBuffer: Float32Array | null;
+    public outputAnalyserBuffer: Float32Array<ArrayBuffer> | null;
+    public outputAnalyserFreqBuffer: Float32Array<ArrayBuffer> | null;
     public outputAnalyserFreqCounter: number | null;
     public outputAnalyserTimeCounter: number | null;
     public playheadAnalyser: ValueAnalyser<number | null>;
@@ -478,7 +478,7 @@ export class SongDocument {
         ) {
             return null;
         }
-        const buffer: Float32Array | null = this.outputAnalyserBuffer;
+        const buffer: Float32Array<ArrayBuffer> | null = this.outputAnalyserBuffer;
         if (buffer == null) {
             return null;
         }
@@ -498,7 +498,7 @@ export class SongDocument {
         ) {
             return null;
         }
-        const buffer: Float32Array | null = this.outputAnalyserFreqBuffer;
+        const buffer: Float32Array<ArrayBuffer> | null = this.outputAnalyserFreqBuffer;
         if (buffer == null) {
             return null;
         }

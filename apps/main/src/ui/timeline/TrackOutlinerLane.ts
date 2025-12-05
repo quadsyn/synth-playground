@@ -132,6 +132,9 @@ export class TrackOutlinerLane implements Component {
                 this._doc.setTrackGain(this._trackIndex, value);
                 this._ui.scheduleMainRender();
             },
+            /* onTitleChange */ (value: number): string => {
+                return Track.gainNormalizedToString(value);
+            },
         );
         this._trackGainSlider.element.style.width = "100%";
         this._trackPanSlider = new BrowserSlider(
@@ -146,6 +149,9 @@ export class TrackOutlinerLane implements Component {
             /* onChange */ (value: number): void => {
                 this._doc.setTrackPan(this._trackIndex, value);
                 this._ui.scheduleMainRender();
+            },
+            /* onTitleChange */ (value: number): string => {
+                return Track.panNormalizedToString(value);
             },
         );
         this._trackPanSlider.element.style.width = "50%";
@@ -332,13 +338,9 @@ export class TrackOutlinerLane implements Component {
                 }
 
                 this._trackGainSlider.setValue(this._trackGain);
-                // @TODO: Avoid this string allocation here when it's not necessary.
-                this._trackGainSlider.setTitle(Track.gainNormalizedToString(this._trackGain));
                 this._trackGainSlider.render();
 
                 this._trackPanSlider.setValue(this._trackPan);
-                // @TODO: Avoid this string allocation here when it's not necessary.
-                this._trackPanSlider.setTitle(Track.panNormalizedToString(this._trackPan));
                 this._trackPanSlider.render();
 
                 if (this._trackMeterState != null) {

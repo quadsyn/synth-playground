@@ -13,6 +13,7 @@ export class BrowserSlider implements Component {
     private _ui: UIContext;
     private _onInput: (value: number) => void;
     private _onChange: (value: number) => void;
+    private _onTitleChange: ((value: number) => string) | null;
     private _min: number;
     private _max: number;
     private _step: number;
@@ -28,12 +29,14 @@ export class BrowserSlider implements Component {
         step: number,
         value: number,
         onInput: (value: number) => void,
-        onChange: (value: number) => void
+        onChange: (value: number) => void,
+        onTitleChange: ((value: number) => string) | null,
     ) {
         this._ui = ui;
 
         this._onInput = onInput;
         this._onChange = onChange;
+        this._onTitleChange = onTitleChange;
 
         this._min = min;
         this._max = max;
@@ -82,7 +85,7 @@ export class BrowserSlider implements Component {
 
     private _handleInput = (event: Event): void => {
         const value: number = clamp(+this.element.value, this._min, this._max);
-        this._value = value;
+        this.setValue(value);
         this._renderedValue = value;
         this._onInput(value);
         this._ui.scheduleMainRender();
@@ -90,7 +93,7 @@ export class BrowserSlider implements Component {
 
     private _handleChange = (event: Event): void => {
         const value: number = clamp(+this.element.value, this._min, this._max);
-        this._value = value;
+        this.setValue(value);
         this._renderedValue = value;
         this._onChange(value);
         this._ui.scheduleMainRender();
@@ -114,9 +117,8 @@ export class BrowserSlider implements Component {
 
     public setValue(value: number): void {
         this._value = value;
-    }
-
-    public setTitle(title: string): void {
-        this._title = title;
+        if (this._onTitleChange != null && this._value !== this._renderedValue) {
+            this._title = this._onTitleChange(value);
+        }
     }
 }
